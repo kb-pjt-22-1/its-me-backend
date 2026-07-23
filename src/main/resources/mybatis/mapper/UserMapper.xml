@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="site.benepay.domain.user.mapper.UserMapper">
+
+    <resultMap id="userResultMap" type="site.benepay.domain.user.vo.User">
+        <id column="user_id" property="userId" />
+        <result column="email" property="email" />
+        <result column="login_id" property="loginId" />
+        <result column="password_hash" property="passwordHash" />
+        <result column="pin_hash" property="pinHash" />
+        <result column="ci_hash" property="ciHash" />
+        <result column="name" property="name" />
+        <result column="phone_number" property="phoneNumber" />
+        <result column="role" property="role" />
+        <result column="di" property="di" />
+        <result column="created_at" property="createdAt" />
+        <result column="is_deleted" property="deleted" />
+    </resultMap>
+
+    <insert id="insert" parameterType="site.benepay.domain.user.vo.User"
+            useGeneratedKeys="true" keyProperty="userId" keyColumn="user_id">
+        INSERT INTO users (
+            email, login_id, password_hash, pin_hash, ci_hash, name,
+            phone_number, role, di, created_at, is_deleted
+        ) VALUES (
+            #{email}, #{loginId}, #{passwordHash}, #{pinHash}, #{ciHash}, #{name},
+            #{phoneNumber}, #{role}, #{di}, #{createdAt}, #{deleted}
+        )
+    </insert>
+
+    <select id="findByUserId" resultMap="userResultMap">
+        SELECT user_id, email, login_id, password_hash, pin_hash, ci_hash, name,
+               phone_number, role, di, created_at, is_deleted
+        FROM users
+        WHERE user_id = #{userId}
+          AND is_deleted = FALSE
+    </select>
+
+    <select id="findByLoginId" resultMap="userResultMap">
+        SELECT user_id, email, login_id, password_hash, pin_hash, ci_hash, name,
+               phone_number, role, di, created_at, is_deleted
+        FROM users
+        WHERE login_id = #{loginId}
+          AND is_deleted = FALSE
+    </select>
+
+    <select id="findByEmail" resultMap="userResultMap">
+        SELECT user_id, email, login_id, password_hash, pin_hash, ci_hash, name,
+               phone_number, role, di, created_at, is_deleted
+        FROM users
+        WHERE email = #{email}
+          AND is_deleted = FALSE
+    </select>
+
+    <select id="existsByLoginId" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM users WHERE login_id = #{loginId} AND is_deleted = FALSE
+        )
+    </select>
+
+    <select id="existsByEmail" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM users WHERE email = #{email} AND is_deleted = FALSE
+        )
+    </select>
+
+    <select id="existsByDiHash" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM users WHERE di = #{diHash} AND is_deleted = FALSE
+        )
+    </select>
+
+    <update id="updateProfile">
+        UPDATE users
+        SET email = #{email},
+            phone_number = #{phoneNumber}
+        WHERE user_id = #{userId}
+          AND is_deleted = FALSE
+    </update>
+
+    <update id="updatePinHash">
+        UPDATE users
+        SET pin_hash = #{pinHash}
+        WHERE user_id = #{userId}
+          AND is_deleted = FALSE
+    </update>
+
+    <update id="softDeleteAndAnonymize">
+        UPDATE users
+        SET is_deleted = TRUE,
+            email = CONCAT('withdrawn_', user_id, '@deleted.local'),
+            login_id = NULL,
+            name = '탈퇴회원',
+            phone_number = NULL,
+            pin_hash = NULL,
+            ci_hash = NULL,
+            di = NULL
+        WHERE user_id = #{userId}
+    </update>
+
+</mapper>
