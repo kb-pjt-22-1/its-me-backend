@@ -1,0 +1,35 @@
+package site.benepay.common.util;
+
+public final class RedisKeys {
+
+    private RedisKeys() {
+    }
+
+    public static String loginFailure(Long userId) {
+        return "login:failure:" + userId;
+    }
+
+    public static String loginLock(Long userId) {
+        return "login:lock:" + userId;
+    }
+
+    public static String refresh(Long userId) {
+        return "refresh:" + userId;
+    }
+
+    public static String pinFailure(Long userId) {
+        return "pin:failure:" + userId;
+    }
+
+    public static String pinLock(Long userId) {
+        return "pin:lock:" + userId;
+    }
+
+    public static String blacklist(String jti) {
+        return "blacklist:" + jti;
+    }
+
+    public static String alert(Long userId) {
+        return "alert:" + userId;
+    }
+}
