@@ -5,8 +5,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
-import site.benepay.common.util.RedisKeys;
-import site.benepay.common.util.TokenExtractor;
+import site.benepay.auth.common.util.RedisKeys;
+import site.benepay.auth.common.util.TokenExtractor;
 
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;

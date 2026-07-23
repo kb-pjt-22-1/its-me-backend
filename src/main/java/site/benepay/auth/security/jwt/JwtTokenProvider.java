@@ -3,17 +3,18 @@ package site.benepay.auth.security.jwt;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Component;
-import site.benepay.domain.user.vo.Role;
-import site.benepay.domain.user.vo.User;
+import site.benepay.auth.domain.user.entity.Role;
+import site.benepay.auth.domain.user.entity.User;
 
 import javax.annotation.PostConstruct;
-import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.security.Key;
 import java.util.Collections;
 import java.util.Date;
 import java.util.UUID;
@@ -27,7 +28,7 @@ public class JwtTokenProvider {
     public static final String TOKEN_TYPE_REFRESH = "refresh";
 
     private final JwtProperties jwtProperties;
-    private SecretKey signingKey;
+    private Key signingKey;
 
     public JwtTokenProvider(JwtProperties jwtProperties) {
         this.jwtProperties = jwtProperties;
@@ -52,14 +53,14 @@ public class JwtTokenProvider {
         Date expiry = new Date(now.getTime() + expirationMillis);
 
         return Jwts.builder()
-                .id(jti)
-                .issuer(jwtProperties.getIssuer())
-                .subject(String.valueOf(user.getUserId()))
+                .setId(jti)
+                .setIssuer(jwtProperties.getIssuer())
+                .setSubject(String.valueOf(user.getUserId()))
                 .claim(CLAIM_ROLE, user.getRole().name())
                 .claim(CLAIM_TYPE, tokenType)
-                .issuedAt(now)
-                .expiration(expiry)
-                .signWith(signingKey)
+                .setIssuedAt(now)
+                .setExpiration(expiry)
+                .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
     }
 
@@ -102,11 +103,11 @@ public class JwtTokenProvider {
     }
 
     private Claims parseClaims(String token) {
-        return Jwts.parser()
-                .verifyWith(signingKey)
+        return Jwts.parserBuilder()
+                .setSigningKey(signingKey)
                 .requireIssuer(jwtProperties.getIssuer())
                 .build()
-                .parseSignedClaims(token)
-                .getPayload();
+                .parseClaimsJws(token)
+                .getBody();
     }
 }

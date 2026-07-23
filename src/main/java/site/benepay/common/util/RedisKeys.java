@@ -32,8 +32,4 @@ public final class RedisKeys {
     public static String alert(Long userId) {
         return "alert:" + userId;
     }
-
-    public static String signupVerification(String token) {
-        return "signup:verify:" + token;
-    }
 }

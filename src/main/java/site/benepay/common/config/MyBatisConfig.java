@@ -11,12 +11,7 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import javax.sql.DataSource;
 
 @Configuration
-@MapperScan(basePackages = {
-        "site.benepay.domain.user.mapper",
-        "site.benepay.domain.card.mapper",
-        "site.benepay.domain.merchant.mapper",
-        "site.benepay.common.crypto.mapper"
-})
+@MapperScan(basePackages = "site.benepay.auth.domain.user.mapper")
 public class MyBatisConfig {
 
     @Bean
@@ -25,15 +20,7 @@ public class MyBatisConfig {
         factoryBean.setDataSource(dataSource);
         factoryBean.setMapperLocations(
                 new PathMatchingResourcePatternResolver().getResources("classpath:mybatis/mapper/*.xml"));
-        factoryBean.setTypeAliasesPackage("site.benepay.domain.user.vo");
-
-        // snake_case → camelCase 자동 매핑 설정
-        org.apache.ibatis.session.Configuration mybatisConfiguration =
-                new org.apache.ibatis.session.Configuration();
-
-        mybatisConfiguration.setMapUnderscoreToCamelCase(true);
-
-        factoryBean.setConfiguration(mybatisConfiguration);
+        factoryBean.setTypeAliasesPackage("site.benepay.auth.domain.user.entity");
         return factoryBean.getObject();
     }
 

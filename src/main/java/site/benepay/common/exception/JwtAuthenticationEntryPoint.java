@@ -7,6 +7,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
+import site.benepay.common.exception.exception.ErrorResponse;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
@@ -25,7 +26,7 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
-        ErrorResponse errorResponse = new ErrorResponse(
+        site.benepay.common.exception.exception.ErrorResponse errorResponse = new ErrorResponse(
                 HttpStatus.UNAUTHORIZED.value(), "authentication required", request.getRequestURI(), LocalDateTime.now());
         response.getWriter().write(objectMapper.writeValueAsString(errorResponse));
     }
