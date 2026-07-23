@@ -7,7 +7,6 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -16,7 +15,6 @@ import site.benepay.common.exception.AccountLockedException;
 import site.benepay.common.exception.DuplicateUserException;
 import site.benepay.common.exception.InvalidCredentialsException;
 import site.benepay.common.exception.InvalidPinFormatException;
-import site.benepay.common.exception.InvalidTokenException;
 import site.benepay.common.exception.PinAlreadyRegisteredException;
 import site.benepay.common.exception.UserNotFoundException;
 import site.benepay.common.exception.WithdrawalNotConfirmedException;
@@ -56,27 +54,19 @@ class UserServiceTest {
     @Mock
     private TokenService tokenService;
 
-    @Mock
-    private SignupVerificationStore signupVerificationStore;
-
     private UserService userService;
 
     @BeforeEach
     void setUp() {
-        userService = new UserServiceImpl(userMapper, passwordEncoder, redisLockoutService, tokenService,
-                signupVerificationStore);
-    }
-
-    private SignupVerificationStore.VerifiedIdentity verifiedIdentity() {
-        return new SignupVerificationStore.VerifiedIdentity(
-                "New User", "010-1111-2222", "19900101", "ci-encrypted", "di-hash");
+        userService = new UserServiceImpl(userMapper, passwordEncoder, redisLockoutService, tokenService);
     }
 
     private User activeUser(String pinHash) {
         return User.builder()
                 .userId(USER_ID)
+                .email("tester01@example.com")
                 .loginId("tester01")
-                .loginPasswordHash("hashed-password")
+                .passwordHash("hashed-password")
                 .pinHash(pinHash)
                 .name("Tester")
                 .phoneNumber("010-9999-0001")
@@ -90,80 +80,51 @@ class UserServiceTest {
 
     @Test
     void signUpSucceedsWhenNothingIsDuplicate() {
-        SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
+        SignUpRequestDto request = new SignUpRequestDto(
+                "new@example.com", "newuser", "Test1234!", "New User", "010-1111-2222", "ci-hash", "di-hash");
         when(userMapper.existsByLoginId("newuser")).thenReturn(false);
-        when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
+        when(userMapper.existsByEmail("new@example.com")).thenReturn(false);
         when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
         when(passwordEncoder.encode("Test1234!")).thenReturn("encoded-password");
 
         UserResponseDto response = userService.signUp(request);
 
+        assertThat(response.getEmail()).isEqualTo("new@example.com");
         assertThat(response.getLoginId()).isEqualTo("newuser");
-        assertThat(response.getBirthDate()).isEqualTo("19900101");
         assertThat(response.getRole()).isEqualTo(Role.USER);
         verify(userMapper).insert(any(User.class));
     }
 
     @Test
-    void signUpMapsVerifiedIdentityAndRequestFieldsOntoTheInsertedUser() {
-        SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
-        when(userMapper.existsByLoginId("newuser")).thenReturn(false);
-        when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
-        when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
-        when(passwordEncoder.encode("Test1234!")).thenReturn("encoded-password");
-
-        userService.signUp(request);
-
-        ArgumentCaptor<User> inserted = ArgumentCaptor.forClass(User.class);
-        verify(userMapper).insert(inserted.capture());
-
-        User user = inserted.getValue();
-        // loginId/password/fcmToken은 요청에서, name/phoneNumber/birthDate/di/ciEncrypted는
-        // 토큰으로 복원한 검증 결과에서 온다 - 클라이언트가 개인정보를 직접 못 정하는 게 핵심이다.
-        assertThat(user.getLoginId()).isEqualTo("newuser");
-        assertThat(user.getLoginPasswordHash()).isEqualTo("encoded-password");
-        assertThat(user.getFcmToken()).isEqualTo("fcm-token");
-        assertThat(user.getName()).isEqualTo("New User");
-        assertThat(user.getPhoneNumber()).isEqualTo("010-1111-2222");
-        assertThat(user.getBirthDate()).isEqualTo("19900101");
-        assertThat(user.getDi()).isEqualTo("di-hash");
-        assertThat(user.getCiEncrypted()).isEqualTo("ci-encrypted");
-        assertThat(user.getRole()).isEqualTo(Role.USER);
-        assertThat(user.isDeleted()).isFalse();
-        // user_id는 AUTO_INCREMENT라 insert 시점에는 비어 있고 MyBatis가 채워 넣는다.
-        assertThat(user.getUserId()).isNull();
-    }
-
-    @Test
-    void signUpWithDuplicateLoginIdThrowsAndNeverTouchesTheVerificationToken() {
-        SignUpRequestDto request = new SignUpRequestDto("existing", "Test1234!", "valid-token", "fcm-token");
+    void signUpWithDuplicateLoginIdThrowsAndNeverInserts() {
+        SignUpRequestDto request = new SignUpRequestDto(
+                "new@example.com", "existing", "Test1234!", "New User", "010-1111-2222", "ci-hash", "di-hash");
         when(userMapper.existsByLoginId("existing")).thenReturn(true);
 
         assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
 
-        // 아이디 중복은 토큰이 유효한지와 무관한 실패라, 토큰을 소모(redeem)하기 전에 끝나야
-        // 한다 - 그래야 아이디만 다시 골라 같은 토큰으로 재시도할 수 있다.
-        verify(signupVerificationStore, never()).redeem(any());
         verify(userMapper, never()).insert(any());
     }
 
     @Test
-    void signUpWithInvalidOrExpiredTokenThrowsAndNeverInserts() {
-        SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "stale-token", "fcm-token");
+    void signUpWithDuplicateEmailThrows() {
+        SignUpRequestDto request = new SignUpRequestDto(
+                "dup@example.com", "newuser", "Test1234!", "New User", "010-1111-2222", "ci-hash", "di-hash");
         when(userMapper.existsByLoginId("newuser")).thenReturn(false);
-        when(signupVerificationStore.redeem("stale-token")).thenReturn(Optional.empty());
+        when(userMapper.existsByEmail("dup@example.com")).thenReturn(true);
 
-        assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(InvalidTokenException.class);
+        assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
 
         verify(userMapper, never()).insert(any());
     }
 
     @Test
-    void signUpWithDuplicateDiHashThrowsAfterRedeemingTheToken() {
-        SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
+    void signUpWithDuplicateDiHashThrows() {
+        SignUpRequestDto request = new SignUpRequestDto(
+                "new@example.com", "newuser", "Test1234!", "New User", "010-1111-2222", "ci-hash", "dup-di-hash");
         when(userMapper.existsByLoginId("newuser")).thenReturn(false);
-        when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
-        when(userMapper.existsByDiHash("di-hash")).thenReturn(true);
+        when(userMapper.existsByEmail("new@example.com")).thenReturn(false);
+        when(userMapper.existsByDiHash("dup-di-hash")).thenReturn(true);
 
         assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
 
@@ -179,6 +140,7 @@ class UserServiceTest {
         UserResponseDto response = userService.getMyProfile(USER_ID);
 
         assertThat(response.getUserId()).isEqualTo(USER_ID);
+        assertThat(response.getEmail()).isEqualTo("tester01@example.com");
     }
 
     @Test
@@ -189,23 +151,23 @@ class UserServiceTest {
     }
 
     @Test
-    void updateProfileUpdatesPhoneNumber() {
+    void updateProfileUpdatesEmailAndPhoneNumber() {
         when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser(null)));
-        UpdateProfileRequestDto request = new UpdateProfileRequestDto("010-2222-3333");
+        UpdateProfileRequestDto request = new UpdateProfileRequestDto("updated@example.com", "010-2222-3333");
 
         userService.updateProfile(USER_ID, request);
 
-        verify(userMapper).updateProfile(USER_ID, "010-2222-3333");
+        verify(userMapper).updateProfile(USER_ID, "updated@example.com", "010-2222-3333");
     }
 
     @Test
     void updateProfileThrowsWhenUserDoesNotExist() {
         when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.empty());
-        UpdateProfileRequestDto request = new UpdateProfileRequestDto("010-2222-3333");
+        UpdateProfileRequestDto request = new UpdateProfileRequestDto("updated@example.com", "010-2222-3333");
 
         assertThatThrownBy(() -> userService.updateProfile(USER_ID, request)).isInstanceOf(UserNotFoundException.class);
 
-        verify(userMapper, never()).updateProfile(any(), any());
+        verify(userMapper, never()).updateProfile(any(), any(), any());
     }
 
     // ---- PIN registration ----

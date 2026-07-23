@@ -1,42 +1,195 @@
 package site.benepay.domain.user.vo;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-
 import java.time.LocalDateTime;
 
 /**
- * users 테이블의 한 행. 필드 순서는 스키마의 컬럼 순서를 따른다.
- *
- * <p>생성 시점에 확정되는 식별·감사 컬럼에는 setter를 두지 않는다. 생성 이후 애플리케이션이
- * 실제로 갱신하는 컬럼(phoneNumber, pinHash, deleted - UserMapper.xml 참고)에만 필드 단위로
- * @Setter를 붙였다.
+ * Wraps a single row of the users table. Identity/audit columns are fixed at creation and
+ * expose no setter; only columns the application actually updates after creation
+ * (email, phoneNumber, pinHash, deleted - see UserMapper.xml) do.
  */
-@Getter
-@NoArgsConstructor // MyBatis가 리플렉션으로 필드를 채우려면 기본 생성자가 필요하다
-@AllArgsConstructor // @Builder가 내부적으로 사용
-@Builder
 public class User {
 
     private Long userId;
+    private String email;
     private String loginId;
-    private String loginPasswordHash;
-    @Setter
+    private String passwordHash;
     private String pinHash;
+    private String ciHash;
     private String name;
-    @Setter
     private String phoneNumber;
-    // 컬럼이 CHAR(8) 'YYYYMMDD'이다. LocalDate로 받으면 TypeHandler를 따로 붙여야 하는데,
-    // 날짜 연산을 하는 곳이 없어 저장 형식 그대로 두는 편이 단순하다.
-    private String birthDate;
     private Role role;
     private String di;
-    private String ciEncrypted;
     private LocalDateTime createdAt;
-    @Setter
-    private boolean deleted;
-    private String fcmToken;
+    private Boolean deleted;
+
+    public User() {
+    }
+
+    public User(Long userId, String email, String loginId, String passwordHash, String pinHash,
+                 String ciHash, String name, String phoneNumber, Role role, String di,
+                 LocalDateTime createdAt, boolean deleted) {
+        this.userId = userId;
+        this.email = email;
+        this.loginId = loginId;
+        this.passwordHash = passwordHash;
+        this.pinHash = pinHash;
+        this.ciHash = ciHash;
+        this.name = name;
+        this.phoneNumber = phoneNumber;
+        this.role = role;
+        this.di = di;
+        this.createdAt = createdAt;
+        this.deleted = deleted;
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public String getLoginId() {
+        return loginId;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public String getPinHash() {
+        return pinHash;
+    }
+
+    public String getCiHash() {
+        return ciHash;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public String getPhoneNumber() {
+        return phoneNumber;
+    }
+
+    public Role getRole() {
+        return role;
+    }
+
+    public String getDi() {
+        return di;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public boolean isDeleted() {
+        return deleted;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public void setPhoneNumber(String phoneNumber) {
+        this.phoneNumber = phoneNumber;
+    }
+
+    public void setPinHash(String pinHash) {
+        this.pinHash = pinHash;
+    }
+
+    public void setDeleted(boolean deleted) {
+        this.deleted = deleted;
+    }
+
+    public static final class Builder {
+        private Long userId;
+        private String email;
+        private String loginId;
+        private String passwordHash;
+        private String pinHash;
+        private String ciHash;
+        private String name;
+        private String phoneNumber;
+        private Role role;
+        private String di;
+        private LocalDateTime createdAt;
+        private boolean deleted;
+
+        private Builder() {
+        }
+
+        public Builder userId(Long userId) {
+            this.userId = userId;
+            return this;
+        }
+
+        public Builder email(String email) {
+            this.email = email;
+            return this;
+        }
+
+        public Builder loginId(String loginId) {
+            this.loginId = loginId;
+            return this;
+        }
+
+        public Builder passwordHash(String passwordHash) {
+            this.passwordHash = passwordHash;
+            return this;
+        }
+
+        public Builder pinHash(String pinHash) {
+            this.pinHash = pinHash;
+            return this;
+        }
+
+        public Builder ciHash(String ciHash) {
+            this.ciHash = ciHash;
+            return this;
+        }
+
+        public Builder name(String name) {
+            this.name = name;
+            return this;
+        }
+
+        public Builder phoneNumber(String phoneNumber) {
+            this.phoneNumber = phoneNumber;
+            return this;
+        }
+
+        public Builder role(Role role) {
+            this.role = role;
+            return this;
+        }
+
+        public Builder di(String di) {
+            this.di = di;
+            return this;
+        }
+
+        public Builder createdAt(LocalDateTime createdAt) {
+            this.createdAt = createdAt;
+            return this;
+        }
+
+        public Builder deleted(boolean deleted) {
+            this.deleted = deleted;
+            return this;
+        }
+
+        public User build() {
+            return new User(userId, email, loginId, passwordHash, pinHash, ciHash, name,
+                    phoneNumber, role, di, createdAt, deleted);
+        }
+    }
 }

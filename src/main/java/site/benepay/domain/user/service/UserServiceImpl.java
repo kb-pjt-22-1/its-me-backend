@@ -6,7 +6,6 @@ import org.springframework.transaction.annotation.Transactional;
 import site.benepay.common.exception.AccountLockedException;
 import site.benepay.common.exception.DuplicateUserException;
 import site.benepay.common.exception.InvalidCredentialsException;
-import site.benepay.common.exception.InvalidTokenException;
 import site.benepay.common.exception.PinAlreadyRegisteredException;
 import site.benepay.common.exception.UserNotFoundException;
 import site.benepay.common.exception.WithdrawalNotConfirmedException;
@@ -31,16 +30,13 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final RedisLockoutService redisLockoutService;
     private final TokenService tokenService;
-    private final SignupVerificationStore signupVerificationStore;
 
     public UserServiceImpl(UserMapper userMapper, PasswordEncoder passwordEncoder,
-                            RedisLockoutService redisLockoutService, TokenService tokenService,
-                            SignupVerificationStore signupVerificationStore) {
+                            RedisLockoutService redisLockoutService, TokenService tokenService) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.redisLockoutService = redisLockoutService;
         this.tokenService = tokenService;
-        this.signupVerificationStore = signupVerificationStore;
     }
 
     @Override
@@ -49,31 +45,24 @@ public class UserServiceImpl implements UserService {
         if (userMapper.existsByLoginId(request.getLoginId())) {
             throw new DuplicateUserException("login id already in use: " + request.getLoginId());
         }
-
-        SignupVerificationStore.VerifiedIdentity identity = signupVerificationStore
-                .redeem(request.getVerificationToken())
-                .orElseThrow(() -> new InvalidTokenException("identity verification token is invalid or expired"));
-
-        // PortOne 인증 시점에 이미 한 번 걸렀지만, 그 사이 다른 요청이 같은 DI로 먼저
-        // 가입했을 수 있어 여기서 한 번 더 확인한다. 최종 방어선은 어차피 users.di UNIQUE다.
-        if (userMapper.existsByDiHash(identity.diHash)) {
+        if (userMapper.existsByEmail(request.getEmail())) {
+            throw new DuplicateUserException("email already in use: " + request.getEmail());
+        }
+        if (userMapper.existsByDiHash(request.getDiHash())) {
             throw new DuplicateUserException("identity already registered");
         }
 
         User user = User.builder()
+                .email(request.getEmail())
                 .loginId(request.getLoginId())
-                .loginPasswordHash(passwordEncoder.encode(request.getPassword()))
-                .name(identity.name)
-                .phoneNumber(identity.phoneNumber)
-                .birthDate(identity.birthDate)
+                .passwordHash(passwordEncoder.encode(request.getPassword()))
+                .name(request.getName())
+                .phoneNumber(request.getPhoneNumber())
                 .role(Role.USER)
-                .di(identity.diHash)
-                .ciEncrypted(identity.ciEncrypted)
-                // 컬럼에 DEFAULT CURRENT_TIMESTAMP가 붙었지만, insert 후 재조회하지 않고
-                // 이 객체를 그대로 응답으로 내보내므로 값을 직접 채워 둔다.
+                .ciHash(request.getCiHash())
+                .di(request.getDiHash())
                 .createdAt(LocalDateTime.now())
                 .deleted(false)
-                .fcmToken(request.getFcmToken())
                 .build();
 
         userMapper.insert(user);
@@ -92,7 +81,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserResponseDto updateProfile(Long userId, UpdateProfileRequestDto request) {
         findActiveUser(userId);
-        userMapper.updateProfile(userId, request.getPhoneNumber());
+        userMapper.updateProfile(userId, request.getEmail(), request.getPhoneNumber());
         return getMyProfile(userId);
     }
 

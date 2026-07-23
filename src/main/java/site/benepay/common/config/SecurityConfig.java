@@ -11,8 +11,9 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
-import site.benepay.auth.common.exception.JwtAuthenticationEntryPoint;
+import site.benepay.common.exception.JwtAuthenticationEntryPoint;
 import site.benepay.auth.security.jwt.JwtAuthenticationFilter;
 import site.benepay.auth.security.jwt.JwtTokenProvider;
 
@@ -40,8 +41,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/logout").authenticated()
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(new AntPathRequestMatcher("/api/auth/logout")).authenticated()
+                        .requestMatchers(new AntPathRequestMatcher("/api/auth/**")).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider, redisTemplate), UsernamePasswordAuthenticationFilter.class);
 
