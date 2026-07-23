@@ -1,4 +1,4 @@
-package common.exception;
+package site.benepay.common.exception;
 
 import java.time.LocalDateTime;
 
