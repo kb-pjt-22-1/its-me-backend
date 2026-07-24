@@ -5,12 +5,11 @@ import java.time.LocalDateTime;
 /**
  * Wraps a single row of the users table. Identity/audit columns are fixed at creation and
  * expose no setter; only columns the application actually updates after creation
- * (email, phoneNumber, pinHash, deleted - see UserMapper.xml) do.
+ * (phoneNumber, pinHash, deleted - see UserMapper.xml) do.
  */
 public class User {
 
     private Long userId;
-    private String email;
     private String loginId;
     private String passwordHash;
     private String pinHash;
@@ -25,11 +24,10 @@ public class User {
     public User() {
     }
 
-    public User(Long userId, String email, String loginId, String passwordHash, String pinHash,
+    public User(Long userId, String loginId, String passwordHash, String pinHash,
                  String ciHash, String name, String phoneNumber, Role role, String di,
                  LocalDateTime createdAt, boolean deleted) {
         this.userId = userId;
-        this.email = email;
         this.loginId = loginId;
         this.passwordHash = passwordHash;
         this.pinHash = pinHash;
@@ -48,10 +46,6 @@ public class User {
 
     public Long getUserId() {
         return userId;
-    }
-
-    public String getEmail() {
-        return email;
     }
 
     public String getLoginId() {
@@ -94,10 +88,6 @@ public class User {
         return deleted;
     }
 
-    public void setEmail(String email) {
-        this.email = email;
-    }
-
     public void setPhoneNumber(String phoneNumber) {
         this.phoneNumber = phoneNumber;
     }
@@ -112,7 +102,6 @@ public class User {
 
     public static final class Builder {
         private Long userId;
-        private String email;
         private String loginId;
         private String passwordHash;
         private String pinHash;
@@ -129,11 +118,6 @@ public class User {
 
         public Builder userId(Long userId) {
             this.userId = userId;
-            return this;
-        }
-
-        public Builder email(String email) {
-            this.email = email;
             return this;
         }
 
@@ -188,7 +172,7 @@ public class User {
         }
 
         public User build() {
-            return new User(userId, email, loginId, passwordHash, pinHash, ciHash, name,
+            return new User(userId, loginId, passwordHash, pinHash, ciHash, name,
                     phoneNumber, role, di, createdAt, deleted);
         }
     }

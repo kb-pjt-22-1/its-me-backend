@@ -14,7 +14,6 @@ import java.time.LocalDateTime;
 public class UserResponseDto {
 
     private Long userId;
-    private String email;
     private String loginId;
     private String name;
     private String phoneNumber;
@@ -24,7 +23,6 @@ public class UserResponseDto {
     public static UserResponseDto from(User user) {
         return UserResponseDto.builder()
                 .userId(user.getUserId())
-                .email(user.getEmail())
                 .loginId(user.getLoginId())
                 .name(user.getName())
                 .phoneNumber(user.getPhoneNumber())
