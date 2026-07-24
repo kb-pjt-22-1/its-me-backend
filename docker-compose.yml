@@ -1,3 +1,7 @@
+networks:
+  kong-net:
+    driver: bridge
+
 services:
   nginx:
     image: jonasal/nginx-certbot:latest

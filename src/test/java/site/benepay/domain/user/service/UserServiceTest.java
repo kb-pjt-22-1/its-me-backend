@@ -64,7 +64,6 @@ class UserServiceTest {
     private User activeUser(String pinHash) {
         return User.builder()
                 .userId(USER_ID)
-                .email("tester01@example.com")
                 .loginId("tester01")
                 .passwordHash("hashed-password")
                 .pinHash(pinHash)
@@ -81,15 +80,13 @@ class UserServiceTest {
     @Test
     void signUpSucceedsWhenNothingIsDuplicate() {
         SignUpRequestDto request = new SignUpRequestDto(
-                "new@example.com", "newuser", "Test1234!", "New User", "010-1111-2222", "ci-hash", "di-hash");
+                "newuser", "Test1234!", "New User", "010-1111-2222", "ci-hash", "di-hash");
         when(userMapper.existsByLoginId("newuser")).thenReturn(false);
-        when(userMapper.existsByEmail("new@example.com")).thenReturn(false);
         when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
         when(passwordEncoder.encode("Test1234!")).thenReturn("encoded-password");
 
         UserResponseDto response = userService.signUp(request);
 
-        assertThat(response.getEmail()).isEqualTo("new@example.com");
         assertThat(response.getLoginId()).isEqualTo("newuser");
         assertThat(response.getRole()).isEqualTo(Role.USER);
         verify(userMapper).insert(any(User.class));
@@ -98,20 +95,8 @@ class UserServiceTest {
     @Test
     void signUpWithDuplicateLoginIdThrowsAndNeverInserts() {
         SignUpRequestDto request = new SignUpRequestDto(
-                "new@example.com", "existing", "Test1234!", "New User", "010-1111-2222", "ci-hash", "di-hash");
+                "existing", "Test1234!", "New User", "010-1111-2222", "ci-hash", "di-hash");
         when(userMapper.existsByLoginId("existing")).thenReturn(true);
-
-        assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
-
-        verify(userMapper, never()).insert(any());
-    }
-
-    @Test
-    void signUpWithDuplicateEmailThrows() {
-        SignUpRequestDto request = new SignUpRequestDto(
-                "dup@example.com", "newuser", "Test1234!", "New User", "010-1111-2222", "ci-hash", "di-hash");
-        when(userMapper.existsByLoginId("newuser")).thenReturn(false);
-        when(userMapper.existsByEmail("dup@example.com")).thenReturn(true);
 
         assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
 
@@ -121,9 +106,8 @@ class UserServiceTest {
     @Test
     void signUpWithDuplicateDiHashThrows() {
         SignUpRequestDto request = new SignUpRequestDto(
-                "new@example.com", "newuser", "Test1234!", "New User", "010-1111-2222", "ci-hash", "dup-di-hash");
+                "newuser", "Test1234!", "New User", "010-1111-2222", "ci-hash", "dup-di-hash");
         when(userMapper.existsByLoginId("newuser")).thenReturn(false);
-        when(userMapper.existsByEmail("new@example.com")).thenReturn(false);
         when(userMapper.existsByDiHash("dup-di-hash")).thenReturn(true);
 
         assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
@@ -140,7 +124,6 @@ class UserServiceTest {
         UserResponseDto response = userService.getMyProfile(USER_ID);
 
         assertThat(response.getUserId()).isEqualTo(USER_ID);
-        assertThat(response.getEmail()).isEqualTo("tester01@example.com");
     }
 
     @Test
@@ -151,23 +134,23 @@ class UserServiceTest {
     }
 
     @Test
-    void updateProfileUpdatesEmailAndPhoneNumber() {
+    void updateProfileUpdatesPhoneNumber() {
         when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser(null)));
-        UpdateProfileRequestDto request = new UpdateProfileRequestDto("updated@example.com", "010-2222-3333");
+        UpdateProfileRequestDto request = new UpdateProfileRequestDto("010-2222-3333");
 
         userService.updateProfile(USER_ID, request);
 
-        verify(userMapper).updateProfile(USER_ID, "updated@example.com", "010-2222-3333");
+        verify(userMapper).updateProfile(USER_ID, "010-2222-3333");
     }
 
     @Test
     void updateProfileThrowsWhenUserDoesNotExist() {
         when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.empty());
-        UpdateProfileRequestDto request = new UpdateProfileRequestDto("updated@example.com", "010-2222-3333");
+        UpdateProfileRequestDto request = new UpdateProfileRequestDto("010-2222-3333");
 
         assertThatThrownBy(() -> userService.updateProfile(USER_ID, request)).isInstanceOf(UserNotFoundException.class);
 
-        verify(userMapper, never()).updateProfile(any(), any(), any());
+        verify(userMapper, never()).updateProfile(any(), any());
     }
 
     // ---- PIN registration ----

@@ -4,7 +4,6 @@
 
     <resultMap id="userResultMap" type="site.benepay.domain.user.vo.User">
         <id column="user_id" property="userId" />
-        <result column="email" property="email" />
         <result column="login_id" property="loginId" />
         <result column="password_hash" property="passwordHash" />
         <result column="pin_hash" property="pinHash" />
@@ -20,16 +19,16 @@
     <insert id="insert" parameterType="site.benepay.domain.user.vo.User"
             useGeneratedKeys="true" keyProperty="userId" keyColumn="user_id">
         INSERT INTO users (
-            email, login_id, password_hash, pin_hash, ci_hash, name,
+            login_id, password_hash, pin_hash, ci_hash, name,
             phone_number, role, di, created_at, is_deleted
         ) VALUES (
-            #{email}, #{loginId}, #{passwordHash}, #{pinHash}, #{ciHash}, #{name},
+            #{loginId}, #{passwordHash}, #{pinHash}, #{ciHash}, #{name},
             #{phoneNumber}, #{role}, #{di}, #{createdAt}, #{deleted}
         )
     </insert>
 
     <select id="findByUserId" resultMap="userResultMap">
-        SELECT user_id, email, login_id, password_hash, pin_hash, ci_hash, name,
+        SELECT user_id, login_id, password_hash, pin_hash, ci_hash, name,
                phone_number, role, di, created_at, is_deleted
         FROM users
         WHERE user_id = #{userId}
@@ -37,30 +36,16 @@
     </select>
 
     <select id="findByLoginId" resultMap="userResultMap">
-        SELECT user_id, email, login_id, password_hash, pin_hash, ci_hash, name,
+        SELECT user_id, login_id, password_hash, pin_hash, ci_hash, name,
                phone_number, role, di, created_at, is_deleted
         FROM users
         WHERE login_id = #{loginId}
           AND is_deleted = FALSE
     </select>
 
-    <select id="findByEmail" resultMap="userResultMap">
-        SELECT user_id, email, login_id, password_hash, pin_hash, ci_hash, name,
-               phone_number, role, di, created_at, is_deleted
-        FROM users
-        WHERE email = #{email}
-          AND is_deleted = FALSE
-    </select>
-
     <select id="existsByLoginId" resultType="boolean">
         SELECT EXISTS (
             SELECT 1 FROM users WHERE login_id = #{loginId} AND is_deleted = FALSE
-        )
-    </select>
-
-    <select id="existsByEmail" resultType="boolean">
-        SELECT EXISTS (
-            SELECT 1 FROM users WHERE email = #{email} AND is_deleted = FALSE
         )
     </select>
 
@@ -72,8 +57,7 @@
 
     <update id="updateProfile">
         UPDATE users
-        SET email = #{email},
-            phone_number = #{phoneNumber}
+        SET phone_number = #{phoneNumber}
         WHERE user_id = #{userId}
           AND is_deleted = FALSE
     </update>
@@ -88,7 +72,6 @@
     <update id="softDeleteAndAnonymize">
         UPDATE users
         SET is_deleted = TRUE,
-            email = CONCAT('withdrawn_', user_id, '@deleted.local'),
             login_id = NULL,
             name = '탈퇴회원',
             phone_number = NULL,
