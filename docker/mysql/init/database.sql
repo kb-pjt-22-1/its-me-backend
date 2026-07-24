@@ -1,4 +1,4 @@
-DROP DATABASE IF EXISTS benepay;
+ DROP DATABASE IF EXISTS benepay;
 CREATE DATABASE benepay;
 USE benepay;
 

@@ -70,14 +70,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Copy docker-compose.yml to EC2
+      - name: Copy deploy files to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           port: ${{ secrets.EC2_PORT || 22 }}
-          source: "docker-compose.yml"
+          source: "docker-compose.yml,docker/mysql/init/*,docker/nginx/user_conf.d/*"
           target: ${{ secrets.EC2_APP_DIR }}
 
       - name: Pull image & restart via docker compose
@@ -91,8 +91,8 @@ jobs:
           script: |
             cd ${{ secrets.EC2_APP_DIR }}
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker compose pull
-            docker compose up -d
+            docker compose --profile prod pull
+            docker compose --profile prod up -d
             docker image prune -f
         env:
           IMAGE_TAG: ${{ needs.docker-build-push.outputs.image_tag }}
