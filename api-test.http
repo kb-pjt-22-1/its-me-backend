@@ -1,0 +1,52 @@
+@baseUrl = http://localhost:8080/benepay-payment
+
+### 홈 데이터
+GET {{baseUrl}}/api/v1/home
+
+### 주변 매장
+GET {{baseUrl}}/api/v1/merchants
+
+### 북마크 조회
+GET {{baseUrl}}/api/v1/bookmarks
+
+### 북마크 등록
+POST {{baseUrl}}/api/v1/bookmarks
+Content-Type: application/json
+
+{"merchantId":3}
+
+### 추천 카드
+GET {{baseUrl}}/api/v1/recommend?merchantId=3&amount=4800
+
+### PIN 인증
+POST {{baseUrl}}/api/v1/auth/pin/verify
+Content-Type: application/json
+
+{"pin":"123456"}
+
+### 결제 토큰 발급
+POST {{baseUrl}}/api/v1/payment-tokens
+Content-Type: application/json
+
+{"userCardId":1,"merchantId":3,"amount":4800}
+
+### 결제 내역
+GET {{baseUrl}}/api/v1/payments
+
+### 결제 취소
+POST http://localhost:8080/benepay-payment/api/v1/payments/1/cancel
+Content-Type: application/json
+
+{
+  "reason": "사용자 요청"
+}
+
+### 카드 실적 내부 API (같은 paymentId/eventType 중복 반영 방지)
+POST http://localhost:8080/benepay-payment/internal/api/v1/card-performance-events
+Content-Type: application/json
+X-Internal-Key: benepay-demo-key
+
+{
+  "paymentId": 1,
+  "eventType": "APPROVED"
+}

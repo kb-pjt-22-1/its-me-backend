@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1, maximum-scale=1"
+    >
+
+    <title>BenePay 결제 내역</title>
+
+    <link rel="stylesheet" href="assets/app.css">
+</head>
+
+<body>
+
+<div class="app-shell">
+
+    <header class="page-header">
+        <div class="page-title">
+            결제 내역
+        </div>
+
+        <div class="mini-grid">
+            ▦
+        </div>
+    </header>
+
+
+    <main class="simple-page">
+
+        <div class="filter-row">
+
+            <button
+                    class="filter-chip active"
+                    data-filter="ALL"
+            >
+                전체
+            </button>
+
+            <button
+                    class="filter-chip"
+                    data-filter="APPROVED"
+            >
+                결제 완료
+            </button>
+
+            <button
+                    class="filter-chip"
+                    data-filter="DECLINED"
+            >
+                결제 실패
+            </button>
+
+        </div>
+
+
+        <div
+                id="historyList"
+                class="history-card"
+        >
+            <div class="loading">
+                결제 내역을 불러오는 중...
+            </div>
+        </div>
+
+    </main>
+
+
+    <nav
+            id="bottomNav"
+            class="bottom-nav"
+    ></nav>
+
+</div>
+
+
+<script src="assets/common.js"></script>
+
+<script>
+
+    let allPayments = [];
+    let currentFilter = 'ALL';
+
+
+    (async function initializePage() {
+
+        await loadPaymentHistory();
+
+        pageReady('home');
+
+    })();
+
+
+    /*
+     * DB에 저장된 결제 내역 조회
+     */
+    async function loadPaymentHistory() {
+
+        try {
+
+            allPayments =
+                await api('/api/v1/payments');
+
+            renderPaymentHistory();
+
+        } catch (error) {
+
+            document.getElementById(
+                'historyList'
+            ).innerHTML = `
+                <div class="empty-state">
+                    결제 내역을 불러오지 못했습니다.
+                </div>
+            `;
+
+            showToast(
+                error.message ||
+                '결제 내역 조회에 실패했습니다.',
+                'error'
+            );
+        }
+    }
+
+
+    /*
+     * 결제 상태 한글 변환
+     */
+    function statusText(status) {
+
+        if (status === 'APPROVED') {
+            return '결제 완료';
+        }
+
+        if (status === 'DECLINED') {
+            return '결제 실패';
+        }
+
+        return status || '-';
+    }
+
+
+    /*
+     * 결제 내역 출력
+     */
+    function renderPaymentHistory() {
+
+        const filteredPayments =
+            currentFilter === 'ALL'
+                ? allPayments.filter(
+                    payment =>
+                        payment.paymentStatus !==
+                        'CANCELED'
+                )
+                : allPayments.filter(
+                    payment =>
+                        payment.paymentStatus ===
+                        currentFilter
+                );
+
+
+        const historyList =
+            document.getElementById(
+                'historyList'
+            );
+
+
+        if (!filteredPayments.length) {
+
+            historyList.innerHTML = `
+                <div class="empty-state">
+                    결제 내역이 없습니다.
+                </div>
+            `;
+
+            return;
+        }
+
+
+        historyList.innerHTML =
+            filteredPayments.map(
+                payment => `
+                    <div class="history-item">
+
+                        <div class="history-top">
+
+                            <span>
+                                ${escapeHtml(
+                    payment.merchantName ||
+                    '일반 결제'
+                )}
+                            </span>
+
+                            <span>
+                                ${won(
+                    payment.finalAmount
+                )}
+                            </span>
+
+                        </div>
+
+
+                        <div class="history-detail">
+
+                            ${formatDate(
+                    payment.paymentTime
+                )}
+
+                            |
+
+                            ${escapeHtml(
+                    payment.cardName
+                )}
+
+                            ••••
+
+                            ${escapeHtml(
+                    payment.cardLast4
+                )}
+
+                            |
+
+                            ${statusText(
+                    payment.paymentStatus
+                )}
+
+                        </div>
+
+
+                        <div class="history-benefit">
+
+                            ${benefitLabel(payment)}
+
+                            ${
+                    payment.benefitDescription
+                        ? ` · ${escapeHtml(
+                            payment.benefitDescription
+                        )}`
+                        : ''
+                }
+
+                        </div>
+
+
+                        ${
+                    payment.paymentStatus ===
+                    'DECLINED'
+                        ? `
+                                    <div class="failure-reason">
+                                        실패 사유:
+                                        ${escapeHtml(
+                            payment.failureReason ||
+                            '결제 승인 실패'
+                        )}
+                                    </div>
+                                `
+                        : ''
+                }
+
+                    </div>
+                `
+            ).join('');
+    }
+
+
+    /*
+     * 필터 버튼
+     */
+    document
+        .querySelectorAll('[data-filter]')
+        .forEach(button => {
+
+            button.onclick = () => {
+
+                currentFilter =
+                    button.dataset.filter;
+
+
+                document
+                    .querySelectorAll(
+                        '[data-filter]'
+                    )
+                    .forEach(item => {
+
+                        item.classList.toggle(
+                            'active',
+                            item === button
+                        );
+                    });
+
+
+                renderPaymentHistory();
+            };
+        });
+
+</script>
+
+</body>
+</html>
