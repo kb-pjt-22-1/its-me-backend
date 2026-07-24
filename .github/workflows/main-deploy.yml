@@ -1,8 +1,6 @@
-name: Prod - Build, Push & Trigger Infra Deploy
+name: Prod - Build, Push & Deploy to EC2
 
-# dev -> main 브랜치 merge(push) 시: 빌드 + 테스트 + 도커 이미지 생성/푸시 + its-me-infra에 배포 트리거
-# 실제 EC2 배포(SSH/docker compose)는 its-me-infra 레포의 deploy.yml이 담당한다.
-# 이 레포는 EC2 접속 정보를 갖지 않는다 (its-me-infra README 참고).
+# dev -> main 브랜치 merge(push) 시: 빌드 + 테스트 + 도커 이미지 생성/푸시 + AWS EC2 배포
 on:
   push:
     branches: [main]
@@ -32,13 +30,6 @@ jobs:
 
       - name: Build and test
         run: ./gradlew build
-
-      - name: Upload test report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: build/reports/tests/test
 
   docker-build-push:
     needs: build-and-test
@@ -72,15 +63,36 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.image_tag }}
 
-  trigger-infra-deploy:
+  deploy:
     needs: docker-build-push
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch deploy to its-me-infra
-        uses: peter-evans/repository-dispatch@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy docker-compose.yml to EC2
+        uses: appleboy/scp-action@v0.1.7
         with:
-          token: ${{ secrets.INFRA_DISPATCH_PAT }}
-          repository: kb-pjt-22-1/its-me-infra
-          event-type: deploy
-          client-payload: >-
-            {"service": "backend", "image_tag": "${{ needs.docker-build-push.outputs.image_tag }}"}
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_PORT || 22 }}
+          source: "docker-compose.yml"
+          target: ${{ secrets.EC2_APP_DIR }}
+
+      - name: Pull image & restart via docker compose
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: ${{ secrets.EC2_PORT || 22 }}
+          envs: IMAGE_TAG
+          script: |
+            cd ${{ secrets.EC2_APP_DIR }}
+            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker compose pull
+            docker compose up -d
+            docker image prune -f
+        env:
+          IMAGE_TAG: ${{ needs.docker-build-push.outputs.image_tag }}
