@@ -45,15 +45,11 @@ public class UserServiceImpl implements UserService {
         if (userMapper.existsByLoginId(request.getLoginId())) {
             throw new DuplicateUserException("login id already in use: " + request.getLoginId());
         }
-        if (userMapper.existsByEmail(request.getEmail())) {
-            throw new DuplicateUserException("email already in use: " + request.getEmail());
-        }
         if (userMapper.existsByDiHash(request.getDiHash())) {
             throw new DuplicateUserException("identity already registered");
         }
 
         User user = User.builder()
-                .email(request.getEmail())
                 .loginId(request.getLoginId())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .name(request.getName())
@@ -81,7 +77,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserResponseDto updateProfile(Long userId, UpdateProfileRequestDto request) {
         findActiveUser(userId);
-        userMapper.updateProfile(userId, request.getEmail(), request.getPhoneNumber());
+        userMapper.updateProfile(userId, request.getPhoneNumber());
         return getMyProfile(userId);
     }
 
