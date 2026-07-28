@@ -61,7 +61,7 @@ class AuthServiceTest {
         user = User.builder()
                 .userId(USER_ID)
                 .loginId("tester01")
-                .passwordHash("hashed-password")
+                .loginPasswordHash("hashed-password")
                 .role(Role.USER)
                 .createdAt(LocalDateTime.now())
                 .build();

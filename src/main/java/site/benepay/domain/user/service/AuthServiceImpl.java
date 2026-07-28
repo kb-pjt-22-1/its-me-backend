@@ -49,7 +49,7 @@ public class AuthServiceImpl implements AuthService {
             throw new AccountLockedException("account temporarily locked due to repeated login failures");
         }
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+        if (!passwordEncoder.matches(request.getPassword(), user.getLoginPasswordHash())) {
             redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, 5, Duration.ofMinutes(10), Duration.ofMinutes(30));
             throw new InvalidCredentialsException("invalid login id or password");
         }
