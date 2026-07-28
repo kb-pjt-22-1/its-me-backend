@@ -11,7 +11,10 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import javax.sql.DataSource;
 
 @Configuration
-@MapperScan(basePackages = "site.benepay.domain.user.mapper")
+@MapperScan(basePackages = {
+        "site.benepay.domain.user.mapper",
+        "site.benepay.domain.recommendation.mapper"
+})
 public class MyBatisConfig {
 
     @Bean
@@ -20,7 +23,8 @@ public class MyBatisConfig {
         factoryBean.setDataSource(dataSource);
         factoryBean.setMapperLocations(
                 new PathMatchingResourcePatternResolver().getResources("classpath:mybatis/mapper/*.xml"));
-        factoryBean.setTypeAliasesPackage("site.benepay.domain.user.vo");
+        factoryBean.setTypeAliasesPackage(
+                "site.benepay.domain.user.vo,site.benepay.domain.recommendation.model");
         return factoryBean.getObject();
     }
 
