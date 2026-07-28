@@ -28,6 +28,7 @@ public final class DatabaseInitializer {
 				String script = Database.getUrl().startsWith("jdbc:mysql:") ? "schema-mysql.sql" : "schema-h2.sql";
 				executeScript(connection, script);
 				seedDemoData(connection);
+				ensureDemoPayments(connection);
 				ensureDemoPin(connection);
 				connection.commit();
 				System.out.println("[BenePay] Database initialized: " + Database.getUrl());
@@ -181,5 +182,63 @@ public final class DatabaseInitializer {
 				ps.setObject(i + 1, params[i]);
 			ps.executeUpdate();
 		}
+	}
+	/**
+	 * 사용자 데이터는 존재하지만 결제 목업 데이터가 없는 경우
+	 * 결제 내역만 별도로 생성한다.
+	 */
+	private static void ensureDemoPayments(
+		Connection connection
+	) throws Exception {
+
+		/*
+		 * 이미 결제 데이터가 있으면 중복 생성하지 않는다.
+		 */
+		if (count(connection, "payments") > 0) {
+			return;
+		}
+
+		insertHistory(
+			connection,
+			1,
+			1,
+			LocalDateTime.now().minusDays(2),
+			6000,
+			600,
+			0,
+			5400,
+			"APPROVED",
+			"카페 10% 할인"
+		);
+
+		insertHistory(
+			connection,
+			2,
+			2,
+			LocalDateTime.now().minusDays(3),
+			42800,
+			0,
+			2140,
+			42800,
+			"APPROVED",
+			"기본 포인트 적립"
+		);
+
+		insertHistory(
+			connection,
+			1,
+			3,
+			LocalDateTime.now().minusDays(8),
+			12000,
+			1200,
+			0,
+			10800,
+			"APPROVED",
+			"카페 10% 할인"
+		);
+
+		System.out.println(
+			"[BenePay] Demo payment history inserted."
+		);
 	}
 }
