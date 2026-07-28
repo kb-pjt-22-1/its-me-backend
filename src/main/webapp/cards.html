@@ -1,3 +1,38 @@
-<!doctype html><html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>BenePay 카드</title><link rel="stylesheet" href="assets/app.css"></head>
-<body><div class="app-shell"><header class="page-header"><div class="page-title">내 카드</div><div class="mini-grid">▦</div></header><main class="simple-page"><div class="section-title-row"><div class="section-title">등록 카드</div><span class="section-link">총 <b id="cardCount">0</b>장</span></div><div id="cardList"><div class="loading">카드를 불러오는 중...</div></div><div class="info-box">카드 추천 제외 여부와 대표 카드 설정은 추후 카드 관리 기능에서 변경할 수 있습니다.</div></main><nav id="bottomNav" class="bottom-nav"></nav></div>
-<script src="assets/common.js"></script><script>(async function(){try{const cards=await api('/api/v1/cards');document.getElementById('cardCount').textContent=cards.length;document.getElementById('cardList').innerHTML=cards.map((c,i)=>`<div class="surface registered-card"><div class="card-color ${i===1?'blue':i===2?'navy':''}"></div><div><h3>${escapeHtml(c.cardName)}</h3><p>${escapeHtml(c.cardCompanyName)} · •••• ${escapeHtml(c.cardLast4)}</p></div>${c.primary?'<span class="badge-primary">대표</span>':''}</div>`).join('')||'<div class="empty-state">등록된 카드가 없습니다.</div>';}catch(e){showToast(e.message,'error');}pageReady('cards');})();</script></body></html>
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+    <title>BenePay 카드</title>
+    <link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<div class="app-shell">
+    <header class="page-header">
+        <div class="page-title">내 카드</div>
+        <div class="mini-grid">▦</div>
+    </header>
+    <main class="simple-page">
+        <div class="section-title-row">
+            <div class="section-title">등록 카드</div>
+            <span class="section-link">총 <b id="cardCount">0</b>장</span></div>
+        <div id="cardList">
+            <div class="loading">카드를 불러오는 중...</div>
+        </div>
+        <div class="info-box">카드 추천 제외 여부와 대표 카드 설정은 추후 카드 관리 기능에서 변경할 수 있습니다.</div>
+    </main>
+    <nav id="bottomNav" class="bottom-nav"></nav>
+</div>
+<script src="assets/common.js"></script>
+<script>(async function () {
+    try {
+        const cards = await api('/api/v1/cards');
+        document.getElementById('cardCount').textContent = cards.length;
+        document.getElementById('cardList').innerHTML = cards.map((c, i) => `<div class="surface registered-card"><div class="card-color ${i === 1 ? 'blue' : i === 2 ? 'navy' : ''}"></div><div><h3>${escapeHtml(c.cardName)}</h3><p>${escapeHtml(c.cardCompanyName)} · •••• ${escapeHtml(c.cardLast4)}</p></div>${c.primary ? '<span class="badge-primary">대표</span>' : ''}</div>`).join('') || '<div class="empty-state">등록된 카드가 없습니다.</div>';
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+    pageReady('cards');
+})();</script>
+</body>
+</html>

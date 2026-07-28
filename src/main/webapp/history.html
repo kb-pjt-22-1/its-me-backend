@@ -11,6 +11,355 @@
     <title>BenePay 결제 내역</title>
 
     <link rel="stylesheet" href="assets/app.css">
+
+    <style>
+        .history-page {
+            padding: 20px 18px 110px;
+        }
+
+        .history-summary {
+            margin-bottom: 20px;
+            padding: 22px;
+            border-radius: 22px;
+            background: #ffffff;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+        }
+
+        .history-summary-title {
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: #7c8491;
+        }
+
+        .history-summary-value {
+            font-size: 25px;
+            font-weight: 800;
+            color: #20242a;
+        }
+
+        .history-summary-description {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #9299a5;
+        }
+
+        .history-filter-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .history-filter-row::-webkit-scrollbar {
+            display: none;
+        }
+
+        .history-filter-button {
+            flex: 0 0 auto;
+            padding: 10px 16px;
+            border: 1px solid #e6e8ec;
+            border-radius: 999px;
+            background: #ffffff;
+            color: #69717d;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .history-filter-button.active {
+            border-color: #1ab394;
+            background: #1ab394;
+            color: #ffffff;
+        }
+
+        .history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .history-item {
+            width: 100%;
+            padding: 19px;
+            border: 0;
+            border-radius: 20px;
+            background: #ffffff;
+            box-shadow: 0 5px 18px rgba(0, 0, 0, 0.045);
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .history-item:active {
+            transform: scale(0.99);
+        }
+
+        .history-item-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 15px;
+            align-items: flex-start;
+        }
+
+        .history-merchant {
+            min-width: 0;
+        }
+
+        .history-merchant-name {
+            overflow: hidden;
+            color: #20242a;
+            font-size: 16px;
+            font-weight: 800;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .history-date {
+            margin-top: 6px;
+            color: #9299a5;
+            font-size: 12px;
+        }
+
+        .history-amount-area {
+            flex: 0 0 auto;
+            text-align: right;
+        }
+
+        .history-amount {
+            color: #20242a;
+            font-size: 17px;
+            font-weight: 800;
+        }
+
+        .history-status {
+            display: inline-flex;
+            margin-top: 7px;
+            padding: 5px 9px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 800;
+        }
+
+        .history-status.approved {
+            background: #e8f8f3;
+            color: #0aa57a;
+        }
+
+        .history-status.failed {
+            background: #fff0f0;
+            color: #e44f4f;
+        }
+
+        .history-item-bottom {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 16px;
+            padding-top: 14px;
+            border-top: 1px solid #f0f1f3;
+            color: #737b87;
+            font-size: 13px;
+        }
+
+        .history-card-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .history-benefit {
+            flex: 0 0 auto;
+            color: #0aa57a;
+            font-weight: 700;
+        }
+
+        .history-benefit.none {
+            color: #a2a8b1;
+            font-weight: 500;
+        }
+
+        .history-failure-reason {
+            margin-top: 12px;
+            padding: 11px 13px;
+            border-radius: 12px;
+            background: #fff5f5;
+            color: #d95151;
+            font-size: 12px;
+        }
+
+        .history-empty,
+        .history-loading,
+        .history-error {
+            padding: 65px 20px;
+            border-radius: 20px;
+            background: #ffffff;
+            color: #9299a5;
+            text-align: center;
+        }
+
+        .history-empty-icon {
+            margin-bottom: 13px;
+            font-size: 36px;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 7px;
+            margin-top: 25px;
+        }
+
+        .pagination button {
+            min-width: 38px;
+            height: 38px;
+            padding: 0 10px;
+            border: 1px solid #e2e5e9;
+            border-radius: 11px;
+            background: #ffffff;
+            color: #5f6670;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .pagination button.active {
+            border-color: #1ab394;
+            background: #1ab394;
+            color: #ffffff;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.4;
+            cursor: default;
+        }
+
+        .payment-detail-modal {
+            width: calc(100% - 38px);
+            max-width: 430px;
+            padding: 25px;
+            border-radius: 24px;
+            background: #ffffff;
+        }
+
+        .payment-detail-header {
+            margin-bottom: 22px;
+            text-align: center;
+        }
+
+        .payment-detail-icon {
+            display: flex;
+            width: 54px;
+            height: 54px;
+            margin: 0 auto 14px;
+            border-radius: 50%;
+            background: #e8f8f3;
+            color: #0aa57a;
+            font-size: 25px;
+            font-weight: 900;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .payment-detail-icon.failed {
+            background: #fff0f0;
+            color: #e44f4f;
+        }
+
+        .payment-detail-title {
+            color: #20242a;
+            font-size: 20px;
+            font-weight: 800;
+        }
+
+        .payment-detail-date {
+            margin-top: 7px;
+            color: #939aa4;
+            font-size: 13px;
+        }
+
+        .payment-detail-store {
+            margin-bottom: 18px;
+            padding: 17px;
+            border-radius: 16px;
+            background: #f7f8fa;
+        }
+
+        .payment-detail-store-label {
+            margin-bottom: 6px;
+            color: #939aa4;
+            font-size: 12px;
+        }
+
+        .payment-detail-store-name {
+            color: #20242a;
+            font-size: 17px;
+            font-weight: 800;
+        }
+
+        .payment-detail-card {
+            margin-top: 6px;
+            color: #747c87;
+            font-size: 13px;
+        }
+
+        .payment-detail-lines {
+            border-top: 1px solid #eceef1;
+            border-bottom: 1px solid #eceef1;
+        }
+
+        .payment-detail-line {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            padding: 12px 0;
+            color: #6f7782;
+            font-size: 14px;
+        }
+
+        .payment-detail-line strong {
+            color: #2a2e34;
+            text-align: right;
+        }
+
+        .payment-detail-line.discount strong,
+        .payment-detail-line.reward strong {
+            color: #0aa57a;
+        }
+
+        .payment-detail-line.total {
+            padding: 17px 0;
+            font-size: 16px;
+        }
+
+        .payment-detail-line.total strong {
+            font-size: 19px;
+        }
+
+        .payment-detail-benefit {
+            margin-top: 17px;
+            padding: 14px;
+            border-radius: 14px;
+            background: #eefaf6;
+            color: #16866d;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .payment-detail-failure {
+            margin-top: 17px;
+            padding: 14px;
+            border-radius: 14px;
+            background: #fff3f3;
+            color: #d34e4e;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .payment-detail-close {
+            width: 100%;
+            margin-top: 21px;
+        }
+    </style>
 </head>
 
 <body>
@@ -28,27 +377,48 @@
     </header>
 
 
-    <main class="simple-page">
+    <main class="history-page">
 
-        <div class="filter-row">
+        <section class="history-summary">
+            <div class="history-summary-title">
+                조회된 결제 내역
+            </div>
+
+            <div
+                    id="totalPaymentCount"
+                    class="history-summary-value"
+            >
+                0건
+            </div>
+
+            <div class="history-summary-description">
+                최근 결제부터 순서대로 보여드려요.
+            </div>
+        </section>
+
+
+        <div class="history-filter-row">
 
             <button
-                    class="filter-chip active"
-                    data-filter="ALL"
+                    type="button"
+                    class="history-filter-button active"
+                    data-status="ALL"
             >
                 전체
             </button>
 
             <button
-                    class="filter-chip"
-                    data-filter="APPROVED"
+                    type="button"
+                    class="history-filter-button"
+                    data-status="APPROVED"
             >
                 결제 완료
             </button>
 
             <button
-                    class="filter-chip"
-                    data-filter="DECLINED"
+                    type="button"
+                    class="history-filter-button"
+                    data-status="FAILED"
             >
                 결제 실패
             </button>
@@ -56,14 +426,20 @@
         </div>
 
 
-        <div
+        <section
                 id="historyList"
-                class="history-card"
+                class="history-list"
         >
-            <div class="loading">
-                결제 내역을 불러오는 중...
+            <div class="history-loading">
+                결제 내역을 불러오는 중입니다.
             </div>
-        </div>
+        </section>
+
+
+        <div
+                id="pagination"
+                class="pagination"
+        ></div>
 
     </main>
 
@@ -76,44 +452,226 @@
 </div>
 
 
+<!-- 결제 상세 모달 -->
+<div
+        id="paymentDetailBackdrop"
+        class="modal-backdrop hidden"
+>
+
+    <div class="payment-detail-modal">
+
+        <div class="payment-detail-header">
+
+            <div
+                    id="detailStatusIcon"
+                    class="payment-detail-icon"
+            >
+                ✓
+            </div>
+
+            <div
+                    id="detailStatusTitle"
+                    class="payment-detail-title"
+            >
+                결제 완료
+            </div>
+
+            <div
+                    id="detailPaymentDate"
+                    class="payment-detail-date"
+            ></div>
+
+        </div>
+
+
+        <div class="payment-detail-store">
+
+            <div class="payment-detail-store-label">
+                결제 가맹점
+            </div>
+
+            <div
+                    id="detailMerchantName"
+                    class="payment-detail-store-name"
+            ></div>
+
+            <div
+                    id="detailCardName"
+                    class="payment-detail-card"
+            ></div>
+
+        </div>
+
+
+        <div class="payment-detail-lines">
+
+            <div class="payment-detail-line">
+                <span>승인 번호</span>
+                <strong id="detailApprovalCode">-</strong>
+            </div>
+
+            <div class="payment-detail-line">
+                <span>원 결제 금액</span>
+                <strong id="detailOriginalAmount">0원</strong>
+            </div>
+
+            <div class="payment-detail-line discount">
+                <span>할인 금액</span>
+                <strong id="detailDiscountAmount">0원</strong>
+            </div>
+
+            <div class="payment-detail-line reward">
+                <span>적립 예정</span>
+                <strong id="detailRewardAmount">0원</strong>
+            </div>
+
+            <div class="payment-detail-line total">
+                <span>최종 결제 금액</span>
+                <strong id="detailFinalAmount">0원</strong>
+            </div>
+
+        </div>
+
+
+        <div
+                id="detailBenefit"
+                class="payment-detail-benefit hidden"
+        ></div>
+
+
+        <div
+                id="detailFailure"
+                class="payment-detail-failure hidden"
+        ></div>
+
+
+        <button
+                id="detailCloseButton"
+                type="button"
+                class="primary-button payment-detail-close"
+        >
+            확인
+        </button>
+
+    </div>
+
+</div>
+
+
 <script src="assets/common.js"></script>
 
 <script>
+    const PAGE_SIZE = 10;
 
-    let allPayments = [];
-    let currentFilter = 'ALL';
+    const historyState = {
+        allPayments: [],
+        currentPayments: [],
+        currentPage: 0,
+        totalPages: 0,
+        totalElements: 0,
+        selectedStatus: 'ALL',
+        serverPagination: false
+    };
 
 
-    (async function initializePage() {
+    (async function initializeHistoryPage() {
+        bindHistoryEvents();
 
-        await loadPaymentHistory();
+        await loadPayments(0);
 
-        pageReady('home');
-
+        pageReady('history');
     })();
 
 
     /*
-     * DB에 저장된 결제 내역 조회
+     * 결제내역 조회
+     *
+     * 페이지 응답과 기존 배열 응답 모두 처리한다.
      */
-    async function loadPaymentHistory() {
+    async function loadPayments(page) {
+        const historyList =
+            document.getElementById('historyList');
+
+        historyList.innerHTML = `
+            <div class="history-loading">
+                결제 내역을 불러오는 중입니다.
+            </div>
+        `;
+
 
         try {
+            const response = await api(
+                `/api/v1/payments` +
+                `?page=${page}` +
+                `&size=${PAGE_SIZE}`
+            );
 
-            allPayments =
-                await api('/api/v1/payments');
 
-            renderPaymentHistory();
+            /*
+             * 서버 페이지 응답 예시:
+             *
+             * {
+             *   content: [],
+             *   page: 0,
+             *   totalPages: 3,
+             *   totalElements: 25
+             * }
+             */
+            if (
+                response &&
+                Array.isArray(response.content)
+            ) {
+                historyState.serverPagination = true;
+                historyState.currentPayments =
+                    response.content;
+
+                historyState.currentPage =
+                    Number(
+                        response.page ??
+                        response.number ??
+                        page
+                    );
+
+                historyState.totalPages =
+                    Number(response.totalPages || 0);
+
+                historyState.totalElements =
+                    Number(response.totalElements || 0);
+            }
+
+            /*
+             * 기존 API가 배열만 반환하는 경우
+             * 프론트에서 페이지를 나눠 처리한다.
+             */
+            else if (Array.isArray(response)) {
+                historyState.serverPagination = false;
+                historyState.allPayments = response;
+
+                applyClientPagination(page);
+            }
+
+            else {
+                historyState.currentPayments = [];
+                historyState.currentPage = 0;
+                historyState.totalPages = 0;
+                historyState.totalElements = 0;
+            }
+
+
+            renderPayments();
+            renderPagination();
+            renderTotalCount();
 
         } catch (error) {
-
-            document.getElementById(
-                'historyList'
-            ).innerHTML = `
-                <div class="empty-state">
+            historyList.innerHTML = `
+                <div class="history-error">
                     결제 내역을 불러오지 못했습니다.
                 </div>
             `;
+
+            document.getElementById(
+                'pagination'
+            ).innerHTML = '';
 
             showToast(
                 error.message ||
@@ -125,52 +683,121 @@
 
 
     /*
-     * 결제 상태 한글 변환
+     * 배열 응답일 경우 클라이언트 페이지네이션
      */
-    function statusText(status) {
+    function applyClientPagination(page) {
+        const filteredPayments =
+            filterPayments(
+                historyState.allPayments
+            );
 
-        if (status === 'APPROVED') {
-            return '결제 완료';
-        }
 
-        if (status === 'DECLINED') {
-            return '결제 실패';
-        }
+        historyState.totalElements =
+            filteredPayments.length;
 
-        return status || '-';
+        historyState.totalPages =
+            Math.ceil(
+                filteredPayments.length /
+                PAGE_SIZE
+            );
+
+
+        const lastPage =
+            Math.max(
+                historyState.totalPages - 1,
+                0
+            );
+
+
+        historyState.currentPage =
+            Math.min(
+                Math.max(page, 0),
+                lastPage
+            );
+
+
+        const startIndex =
+            historyState.currentPage *
+            PAGE_SIZE;
+
+
+        historyState.currentPayments =
+            filteredPayments.slice(
+                startIndex,
+                startIndex + PAGE_SIZE
+            );
     }
 
 
     /*
-     * 결제 내역 출력
+     * 상태 필터
      */
-    function renderPaymentHistory() {
-
-        const filteredPayments =
-            currentFilter === 'ALL'
-                ? allPayments.filter(
-                    payment =>
-                        payment.paymentStatus !==
-                        'CANCELED'
-                )
-                : allPayments.filter(
-                    payment =>
-                        payment.paymentStatus ===
-                        currentFilter
-                );
+    function filterPayments(payments) {
+        if (
+            historyState.selectedStatus ===
+            'ALL'
+        ) {
+            return payments;
+        }
 
 
+        if (
+            historyState.selectedStatus ===
+            'FAILED'
+        ) {
+            return payments.filter(
+                payment =>
+                    isFailedStatus(
+                        payment.paymentStatus
+                    )
+            );
+        }
+
+
+        return payments.filter(
+            payment =>
+                payment.paymentStatus ===
+                historyState.selectedStatus
+        );
+    }
+
+
+    /*
+     * 결제 목록 출력
+     */
+    function renderPayments() {
         const historyList =
             document.getElementById(
                 'historyList'
             );
 
 
-        if (!filteredPayments.length) {
+        let payments =
+            historyState.currentPayments;
 
+
+        /*
+         * 서버 페이지네이션 응답에서도
+         * 화면 상태 필터를 한 번 적용한다.
+         */
+        if (historyState.serverPagination) {
+            payments =
+                filterPayments(payments);
+        }
+
+
+        if (!payments.length) {
             historyList.innerHTML = `
-                <div class="empty-state">
-                    결제 내역이 없습니다.
+                <div class="history-empty">
+
+                    <div class="history-empty-icon">
+                        ▤
+                    </div>
+
+                    <div>
+                        표시할 결제 내역이 없습니다.
+                    </div>
+
                 </div>
             `;
 
@@ -179,121 +806,606 @@
 
 
         historyList.innerHTML =
-            filteredPayments.map(
-                payment => `
-                    <div class="history-item">
+            payments.map(
+                payment => {
 
-                        <div class="history-top">
-
-                            <span>
-                                ${escapeHtml(
-                    payment.merchantName ||
-                    '일반 결제'
-                )}
-                            </span>
-
-                            <span>
-                                ${won(
-                    payment.finalAmount
-                )}
-                            </span>
-
-                        </div>
+                    const approved =
+                        payment.paymentStatus ===
+                        'APPROVED';
 
 
-                        <div class="history-detail">
-
-                            ${formatDate(
-                    payment.paymentTime
-                )}
-
-                            |
-
-                            ${escapeHtml(
-                    payment.cardName
-                )}
-
-                            ••••
-
-                            ${escapeHtml(
-                    payment.cardLast4
-                )}
-
-                            |
-
-                            ${statusText(
-                    payment.paymentStatus
-                )}
-
-                        </div>
+                    const benefitText =
+                        createBenefitText(payment);
 
 
-                        <div class="history-benefit">
+                    return `
+                        <button
+                            type="button"
+                            class="history-item"
+                            data-payment-id="${
+                        payment.paymentId
+                    }"
+                        >
 
-                            ${benefitLabel(payment)}
+                            <div class="history-item-top">
+
+                                <div class="history-merchant">
+
+                                    <div class="history-merchant-name">
+                                        ${escapeHtml(
+                        payment.merchantName ||
+                        '일반 결제'
+                    )}
+                                    </div>
+
+                                    <div class="history-date">
+                                        ${formatDate(
+                        payment.paymentTime
+                    )}
+                                    </div>
+
+                                </div>
+
+
+                                <div class="history-amount-area">
+
+                                    <div class="history-amount">
+                                        ${won(
+                        payment.finalAmount
+                    )}
+                                    </div>
+
+                                    <span
+                                        class="
+                                            history-status
+                                            ${
+                        approved
+                            ? 'approved'
+                            : 'failed'
+                    }
+                                        "
+                                    >
+                                        ${
+                        approved
+                            ? '결제 완료'
+                            : '결제 실패'
+                    }
+                                    </span>
+
+                                </div>
+
+                            </div>
+
+
+                            <div class="history-item-bottom">
+
+                                <span class="history-card-name">
+                                    ${escapeHtml(
+                        payment.cardName ||
+                        '등록 카드'
+                    )}
+
+                                    ${
+                        payment.cardLast4
+                            ? `•••• ${escapeHtml(
+                                payment.cardLast4
+                            )}`
+                            : ''
+                    }
+                                </span>
+
+                                <span
+                                    class="
+                                        history-benefit
+                                        ${
+                        benefitText
+                            ? ''
+                            : 'none'
+                    }
+                                    "
+                                >
+                                    ${
+                        benefitText ||
+                        '적용 혜택 없음'
+                    }
+                                </span>
+
+                            </div>
+
 
                             ${
-                    payment.benefitDescription
-                        ? ` · ${escapeHtml(
-                            payment.benefitDescription
-                        )}`
-                        : ''
+                        isFailedStatus(
+                            payment.paymentStatus
+                        )
+                            ? `
+                                        <div class="history-failure-reason">
+                                            ${
+                                escapeHtml(
+                                    payment.failureReason ||
+                                    '결제가 승인되지 않았습니다.'
+                                )
+                            }
+                                        </div>
+                                    `
+                            : ''
+                    }
+
+                        </button>
+                    `;
                 }
-
-                        </div>
-
-
-                        ${
-                    payment.paymentStatus ===
-                    'DECLINED'
-                        ? `
-                                    <div class="failure-reason">
-                                        실패 사유:
-                                        ${escapeHtml(
-                            payment.failureReason ||
-                            '결제 승인 실패'
-                        )}
-                                    </div>
-                                `
-                        : ''
-                }
-
-                    </div>
-                `
             ).join('');
+
+
+        historyList
+            .querySelectorAll(
+                '[data-payment-id]'
+            )
+            .forEach(button => {
+
+                button.onclick = () => {
+                    const paymentId =
+                        Number(
+                            button.dataset.paymentId
+                        );
+
+
+                    const payment =
+                        findPayment(paymentId);
+
+
+                    if (payment) {
+                        openPaymentDetail(
+                            payment
+                        );
+                    }
+                };
+            });
     }
 
 
     /*
-     * 필터 버튼
+     * 페이지 버튼 출력
      */
-    document
-        .querySelectorAll('[data-filter]')
-        .forEach(button => {
-
-            button.onclick = () => {
-
-                currentFilter =
-                    button.dataset.filter;
+    function renderPagination() {
+        const pagination =
+            document.getElementById(
+                'pagination'
+            );
 
 
-                document
-                    .querySelectorAll(
-                        '[data-filter]'
-                    )
-                    .forEach(item => {
+        if (
+            historyState.totalPages <= 1
+        ) {
+            pagination.innerHTML = '';
+            return;
+        }
 
-                        item.classList.toggle(
-                            'active',
-                            item === button
+
+        const currentPage =
+            historyState.currentPage;
+
+        const totalPages =
+            historyState.totalPages;
+
+
+        let startPage =
+            Math.max(
+                currentPage - 2,
+                0
+            );
+
+        let endPage =
+            Math.min(
+                startPage + 4,
+                totalPages - 1
+            );
+
+
+        startPage =
+            Math.max(
+                endPage - 4,
+                0
+            );
+
+
+        let html = `
+            <button
+                type="button"
+                data-page="${currentPage - 1}"
+                ${currentPage === 0
+            ? 'disabled'
+            : ''}
+            >
+                ‹
+            </button>
+        `;
+
+
+        for (
+            let page = startPage;
+            page <= endPage;
+            page++
+        ) {
+            html += `
+                <button
+                    type="button"
+                    data-page="${page}"
+                    class="${
+                page === currentPage
+                    ? 'active'
+                    : ''
+            }"
+                >
+                    ${page + 1}
+                </button>
+            `;
+        }
+
+
+        html += `
+            <button
+                type="button"
+                data-page="${currentPage + 1}"
+                ${
+            currentPage >=
+            totalPages - 1
+                ? 'disabled'
+                : ''
+        }
+            >
+                ›
+            </button>
+        `;
+
+
+        pagination.innerHTML = html;
+
+
+        pagination
+            .querySelectorAll(
+                '[data-page]:not([disabled])'
+            )
+            .forEach(button => {
+
+                button.onclick = () => {
+                    const page =
+                        Number(
+                            button.dataset.page
                         );
-                    });
 
 
-                renderPaymentHistory();
-            };
-        });
+                    if (
+                        historyState.serverPagination
+                    ) {
+                        loadPayments(page);
+                    } else {
+                        applyClientPagination(page);
+                        renderPayments();
+                        renderPagination();
 
+                        window.scrollTo({
+                            top: 0,
+                            behavior: 'smooth'
+                        });
+                    }
+                };
+            });
+    }
+
+
+    /*
+     * 전체 조회 건수 출력
+     */
+    function renderTotalCount() {
+        document.getElementById(
+            'totalPaymentCount'
+        ).textContent =
+            `${historyState.totalElements}건`;
+    }
+
+
+    /*
+     * 상세 결제 찾기
+     */
+    function findPayment(paymentId) {
+        const current =
+            historyState.currentPayments.find(
+                payment =>
+                    Number(payment.paymentId) ===
+                    Number(paymentId)
+            );
+
+
+        if (current) {
+            return current;
+        }
+
+
+        return historyState.allPayments.find(
+            payment =>
+                Number(payment.paymentId) ===
+                Number(paymentId)
+        );
+    }
+
+
+    /*
+     * 상세 모달 열기
+     */
+    function openPaymentDetail(payment) {
+        const approved =
+            payment.paymentStatus ===
+            'APPROVED';
+
+
+        const icon =
+            document.getElementById(
+                'detailStatusIcon'
+            );
+
+
+        icon.textContent =
+            approved ? '✓' : '!';
+
+        icon.classList.toggle(
+            'failed',
+            !approved
+        );
+
+
+        document.getElementById(
+            'detailStatusTitle'
+        ).textContent =
+            approved
+                ? '결제 완료'
+                : '결제 실패';
+
+
+        document.getElementById(
+            'detailPaymentDate'
+        ).textContent =
+            formatDate(
+                payment.paymentTime
+            );
+
+
+        document.getElementById(
+            'detailMerchantName'
+        ).textContent =
+            payment.merchantName ||
+            '일반 결제';
+
+
+        document.getElementById(
+            'detailCardName'
+        ).textContent =
+            `${payment.cardName || '등록 카드'}` +
+            `${
+                payment.cardLast4
+                    ? ` · •••• ${payment.cardLast4}`
+                    : ''
+            }`;
+
+
+        document.getElementById(
+            'detailApprovalCode'
+        ).textContent =
+            payment.approvalCode || '-';
+
+
+        document.getElementById(
+            'detailOriginalAmount'
+        ).textContent =
+            won(
+                payment.originalAmount
+            );
+
+
+        document.getElementById(
+            'detailDiscountAmount'
+        ).textContent =
+            `-${won(
+                payment.discountAmount || 0
+            )}`;
+
+
+        document.getElementById(
+            'detailRewardAmount'
+        ).textContent =
+            won(
+                payment.rewardAmount || 0
+            );
+
+
+        document.getElementById(
+            'detailFinalAmount'
+        ).textContent =
+            won(
+                payment.finalAmount
+            );
+
+
+        const benefitBox =
+            document.getElementById(
+                'detailBenefit'
+            );
+
+
+        const benefitText =
+            createBenefitText(payment);
+
+
+        if (benefitText) {
+            benefitBox.textContent =
+                payment.benefitDescription
+                    ? `${benefitText} · ` +
+                    payment.benefitDescription
+                    : benefitText;
+
+            benefitBox.classList.remove(
+                'hidden'
+            );
+        } else {
+            benefitBox.classList.add(
+                'hidden'
+            );
+        }
+
+
+        const failureBox =
+            document.getElementById(
+                'detailFailure'
+            );
+
+
+        if (!approved) {
+            failureBox.textContent =
+                `실패 사유: ${
+                    payment.failureReason ||
+                    '결제가 승인되지 않았습니다.'
+                }`;
+
+            failureBox.classList.remove(
+                'hidden'
+            );
+        } else {
+            failureBox.classList.add(
+                'hidden'
+            );
+        }
+
+
+        document.getElementById(
+            'paymentDetailBackdrop'
+        ).classList.remove(
+            'hidden'
+        );
+    }
+
+
+    /*
+     * 결제 상세 닫기
+     */
+    function closePaymentDetail() {
+        document.getElementById(
+            'paymentDetailBackdrop'
+        ).classList.add(
+            'hidden'
+        );
+    }
+
+
+    /*
+     * 혜택 문구 생성
+     */
+    function createBenefitText(payment) {
+        const discountAmount =
+            Number(
+                payment.discountAmount || 0
+            );
+
+        const rewardAmount =
+            Number(
+                payment.rewardAmount || 0
+            );
+
+
+        const benefits = [];
+
+
+        if (discountAmount > 0) {
+            benefits.push(
+                `${won(discountAmount)} 할인`
+            );
+        }
+
+
+        if (rewardAmount > 0) {
+            benefits.push(
+                `${won(rewardAmount)} 적립`
+            );
+        }
+
+
+        return benefits.join(' · ');
+    }
+
+
+    /*
+     * 실패 상태 호환 처리
+     */
+    function isFailedStatus(status) {
+        return (
+            status === 'FAILED' ||
+            status === 'DECLINED'
+        );
+    }
+
+
+    /*
+     * 이벤트 등록
+     */
+    function bindHistoryEvents() {
+        document
+            .querySelectorAll(
+                '[data-status]'
+            )
+            .forEach(button => {
+
+                button.onclick = () => {
+                    historyState.selectedStatus =
+                        button.dataset.status;
+
+
+                    document
+                        .querySelectorAll(
+                            '[data-status]'
+                        )
+                        .forEach(item => {
+
+                            item.classList.toggle(
+                                'active',
+                                item === button
+                            );
+                        });
+
+
+                    if (
+                        historyState.serverPagination
+                    ) {
+                        /*
+                         * 현재 서버 API가 status 조건을
+                         * 지원하지 않아 현재 페이지에서 필터한다.
+                         */
+                        renderPayments();
+                    } else {
+                        applyClientPagination(0);
+                        renderPayments();
+                        renderPagination();
+                        renderTotalCount();
+                    }
+                };
+            });
+
+
+        document.getElementById(
+            'detailCloseButton'
+        ).onclick =
+            closePaymentDetail;
+
+
+        document.getElementById(
+            'paymentDetailBackdrop'
+        ).onclick = event => {
+
+            if (
+                event.target ===
+                event.currentTarget
+            ) {
+                closePaymentDetail();
+            }
+        };
+    }
 </script>
 
 </body>

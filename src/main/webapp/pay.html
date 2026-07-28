@@ -92,7 +92,7 @@
             </h2>
 
             <p>
-                간편 비밀번호 인증 후 바코드가 표시됩니다
+                PIN 인증 후 바코드가 표시됩니다
             </p>
 
         </section>
@@ -156,12 +156,6 @@
                         QR
                     </button>
 
-                    <button
-                            id="nfcTab"
-                            type="button"
-                    >
-                        NFC
-                    </button>
 
                 </div>
 
@@ -244,7 +238,7 @@
                 type="button"
                 disabled
         >
-            간편 비밀번호 인증 후 결제하기
+            PIN 인증 후 결제하기
         </button>
 
     </div>
@@ -271,11 +265,11 @@
         </div>
 
         <h2>
-            간편 비밀번호 인증
+            PIN 인증
         </h2>
 
         <p>
-            데모 PIN은 123456입니다.
+            데모 PIN은 123456입니다
         </p>
 
         <input
@@ -1001,7 +995,7 @@
 
 
         mainAction.textContent =
-            '간편 비밀번호 인증 후 결제하기';
+            'PIN 인증 후 결제하기';
     }
 
 
@@ -1743,14 +1737,6 @@
     };
 
 
-    document.getElementById(
-        'nfcTab'
-    ).onclick = () => {
-
-        showToast(
-            'NFC는 이번 MVP 범위에서 제외되었습니다.'
-        );
-    };
 
 
     /*
