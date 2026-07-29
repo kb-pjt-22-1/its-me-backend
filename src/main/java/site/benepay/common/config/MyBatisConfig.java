@@ -11,10 +11,8 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import javax.sql.DataSource;
 
 @Configuration
-@MapperScan(basePackages = {
-        "site.benepay.domain.user.mapper",
-        "site.benepay.domain.recommendation.mapper"
-})
+@MapperScan(basePackages = {"site.benepay.domain.user.mapper", "site.benepay.common.crypto.mapper", "site.benepay.domain.recommendation.mapper"})
+
 public class MyBatisConfig {
 
     @Bean

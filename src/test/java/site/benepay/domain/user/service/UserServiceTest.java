@@ -7,6 +7,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -65,7 +66,7 @@ class UserServiceTest {
         return User.builder()
                 .userId(USER_ID)
                 .loginId("tester01")
-                .passwordHash("hashed-password")
+                .loginPasswordHash("hashed-password")
                 .pinHash(pinHash)
                 .name("Tester")
                 .phoneNumber("010-9999-0001")
@@ -80,7 +81,8 @@ class UserServiceTest {
     @Test
     void signUpSucceedsWhenNothingIsDuplicate() {
         SignUpRequestDto request = new SignUpRequestDto(
-                "newuser", "Test1234!", "New User", "010-1111-2222", "ci-hash", "di-hash");
+                "newuser", "Test1234!", "New User", "010-1111-2222", "19900101",
+                "ci-encrypted", "di-hash", "fcm-token");
         when(userMapper.existsByLoginId("newuser")).thenReturn(false);
         when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
         when(passwordEncoder.encode("Test1234!")).thenReturn("encoded-password");
@@ -88,14 +90,45 @@ class UserServiceTest {
         UserResponseDto response = userService.signUp(request);
 
         assertThat(response.getLoginId()).isEqualTo("newuser");
+        assertThat(response.getBirthDate()).isEqualTo("19900101");
         assertThat(response.getRole()).isEqualTo(Role.USER);
         verify(userMapper).insert(any(User.class));
     }
 
     @Test
+    void signUpMapsEveryRequestFieldOntoTheInsertedUser() {
+        SignUpRequestDto request = new SignUpRequestDto(
+                "newuser", "Test1234!", "New User", "010-1111-2222", "19900101",
+                "ci-encrypted", "di-hash", "fcm-token");
+        when(userMapper.existsByLoginId("newuser")).thenReturn(false);
+        when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
+        when(passwordEncoder.encode("Test1234!")).thenReturn("encoded-password");
+
+        userService.signUp(request);
+
+        ArgumentCaptor<User> inserted = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).insert(inserted.capture());
+
+        User user = inserted.getValue();
+        assertThat(user.getLoginId()).isEqualTo("newuser");
+        assertThat(user.getLoginPasswordHash()).isEqualTo("encoded-password");
+        assertThat(user.getName()).isEqualTo("New User");
+        assertThat(user.getPhoneNumber()).isEqualTo("010-1111-2222");
+        assertThat(user.getBirthDate()).isEqualTo("19900101");
+        assertThat(user.getDi()).isEqualTo("di-hash");
+        assertThat(user.getCiEncrypted()).isEqualTo("ci-encrypted");
+        assertThat(user.getFcmToken()).isEqualTo("fcm-token");
+        assertThat(user.getRole()).isEqualTo(Role.USER);
+        assertThat(user.isDeleted()).isFalse();
+        // user_id는 AUTO_INCREMENT라 insert 시점에는 비어 있고 MyBatis가 채워 넣는다.
+        assertThat(user.getUserId()).isNull();
+    }
+
+    @Test
     void signUpWithDuplicateLoginIdThrowsAndNeverInserts() {
         SignUpRequestDto request = new SignUpRequestDto(
-                "existing", "Test1234!", "New User", "010-1111-2222", "ci-hash", "di-hash");
+                "existing", "Test1234!", "New User", "010-1111-2222", "19900101",
+                "ci-encrypted", "di-hash", "fcm-token");
         when(userMapper.existsByLoginId("existing")).thenReturn(true);
 
         assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
@@ -106,7 +139,8 @@ class UserServiceTest {
     @Test
     void signUpWithDuplicateDiHashThrows() {
         SignUpRequestDto request = new SignUpRequestDto(
-                "newuser", "Test1234!", "New User", "010-1111-2222", "ci-hash", "dup-di-hash");
+                "newuser", "Test1234!", "New User", "010-1111-2222", "19900101",
+                "ci-encrypted", "dup-di-hash", "fcm-token");
         when(userMapper.existsByLoginId("newuser")).thenReturn(false);
         when(userMapper.existsByDiHash("dup-di-hash")).thenReturn(true);
 

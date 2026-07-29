@@ -3,41 +3,48 @@ package site.benepay.domain.user.vo;
 import java.time.LocalDateTime;
 
 /**
- * Wraps a single row of the users table. Identity/audit columns are fixed at creation and
- * expose no setter; only columns the application actually updates after creation
- * (phoneNumber, pinHash, deleted - see UserMapper.xml) do.
+ * users 테이블의 한 행. 필드 순서는 스키마의 컬럼 순서를 따른다.
+ *
+ * <p>생성 시점에 확정되는 식별·감사 컬럼에는 setter를 두지 않는다. 생성 이후 애플리케이션이
+ * 실제로 갱신하는 컬럼(phoneNumber, pinHash, deleted - UserMapper.xml 참고)에만 setter가 있다.
  */
 public class User {
 
     private Long userId;
     private String loginId;
-    private String passwordHash;
+    private String loginPasswordHash;
     private String pinHash;
-    private String ciHash;
     private String name;
     private String phoneNumber;
+    // 컬럼이 CHAR(8) 'YYYYMMDD'이다. LocalDate로 받으면 TypeHandler를 따로 붙여야 하는데,
+    // 날짜 연산을 하는 곳이 없어 저장 형식 그대로 두는 편이 단순하다.
+    private String birthDate;
     private Role role;
     private String di;
+    private String ciEncrypted;
     private LocalDateTime createdAt;
     private Boolean deleted;
+    private String fcmToken;
 
     public User() {
     }
 
-    public User(Long userId, String loginId, String passwordHash, String pinHash,
-                 String ciHash, String name, String phoneNumber, Role role, String di,
-                 LocalDateTime createdAt, boolean deleted) {
+    public User(Long userId, String loginId, String loginPasswordHash, String pinHash,
+                 String name, String phoneNumber, String birthDate, Role role, String di,
+                 String ciEncrypted, LocalDateTime createdAt, boolean deleted, String fcmToken) {
         this.userId = userId;
         this.loginId = loginId;
-        this.passwordHash = passwordHash;
+        this.loginPasswordHash = loginPasswordHash;
         this.pinHash = pinHash;
-        this.ciHash = ciHash;
         this.name = name;
         this.phoneNumber = phoneNumber;
+        this.birthDate = birthDate;
         this.role = role;
         this.di = di;
+        this.ciEncrypted = ciEncrypted;
         this.createdAt = createdAt;
         this.deleted = deleted;
+        this.fcmToken = fcmToken;
     }
 
     public static Builder builder() {
@@ -52,16 +59,12 @@ public class User {
         return loginId;
     }
 
-    public String getPasswordHash() {
-        return passwordHash;
+    public String getLoginPasswordHash() {
+        return loginPasswordHash;
     }
 
     public String getPinHash() {
         return pinHash;
-    }
-
-    public String getCiHash() {
-        return ciHash;
     }
 
     public String getName() {
@@ -72,6 +75,10 @@ public class User {
         return phoneNumber;
     }
 
+    public String getBirthDate() {
+        return birthDate;
+    }
+
     public Role getRole() {
         return role;
     }
@@ -80,12 +87,20 @@ public class User {
         return di;
     }
 
+    public String getCiEncrypted() {
+        return ciEncrypted;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }
 
     public boolean isDeleted() {
         return deleted;
+    }
+
+    public String getFcmToken() {
+        return fcmToken;
     }
 
     public void setPhoneNumber(String phoneNumber) {
@@ -103,15 +118,17 @@ public class User {
     public static final class Builder {
         private Long userId;
         private String loginId;
-        private String passwordHash;
+        private String loginPasswordHash;
         private String pinHash;
-        private String ciHash;
         private String name;
         private String phoneNumber;
+        private String birthDate;
         private Role role;
         private String di;
+        private String ciEncrypted;
         private LocalDateTime createdAt;
         private boolean deleted;
+        private String fcmToken;
 
         private Builder() {
         }
@@ -126,18 +143,13 @@ public class User {
             return this;
         }
 
-        public Builder passwordHash(String passwordHash) {
-            this.passwordHash = passwordHash;
+        public Builder loginPasswordHash(String loginPasswordHash) {
+            this.loginPasswordHash = loginPasswordHash;
             return this;
         }
 
         public Builder pinHash(String pinHash) {
             this.pinHash = pinHash;
-            return this;
-        }
-
-        public Builder ciHash(String ciHash) {
-            this.ciHash = ciHash;
             return this;
         }
 
@@ -151,6 +163,11 @@ public class User {
             return this;
         }
 
+        public Builder birthDate(String birthDate) {
+            this.birthDate = birthDate;
+            return this;
+        }
+
         public Builder role(Role role) {
             this.role = role;
             return this;
@@ -158,6 +175,11 @@ public class User {
 
         public Builder di(String di) {
             this.di = di;
+            return this;
+        }
+
+        public Builder ciEncrypted(String ciEncrypted) {
+            this.ciEncrypted = ciEncrypted;
             return this;
         }
 
@@ -171,9 +193,14 @@ public class User {
             return this;
         }
 
+        public Builder fcmToken(String fcmToken) {
+            this.fcmToken = fcmToken;
+            return this;
+        }
+
         public User build() {
-            return new User(userId, loginId, passwordHash, pinHash, ciHash, name,
-                    phoneNumber, role, di, createdAt, deleted);
+            return new User(userId, loginId, loginPasswordHash, pinHash, name, phoneNumber,
+                    birthDate, role, di, ciEncrypted, createdAt, deleted, fcmToken);
         }
     }
 }
