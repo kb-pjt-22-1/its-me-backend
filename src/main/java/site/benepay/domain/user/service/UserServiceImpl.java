@@ -51,14 +51,18 @@ public class UserServiceImpl implements UserService {
 
         User user = User.builder()
                 .loginId(request.getLoginId())
-                .passwordHash(passwordEncoder.encode(request.getPassword()))
+                .loginPasswordHash(passwordEncoder.encode(request.getPassword()))
                 .name(request.getName())
                 .phoneNumber(request.getPhoneNumber())
+                .birthDate(request.getBirthDate())
                 .role(Role.USER)
-                .ciHash(request.getCiHash())
                 .di(request.getDiHash())
+                .ciEncrypted(request.getCiEncrypted())
+                // 컬럼에 DEFAULT CURRENT_TIMESTAMP가 붙었지만, insert 후 재조회하지 않고
+                // 이 객체를 그대로 응답으로 내보내므로 값을 직접 채워 둔다.
                 .createdAt(LocalDateTime.now())
                 .deleted(false)
+                .fcmToken(request.getFcmToken())
                 .build();
 
         userMapper.insert(user);
