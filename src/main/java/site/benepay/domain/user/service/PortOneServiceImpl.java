@@ -8,7 +8,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import site.benepay.common.crypto.Encryptor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -25,15 +25,15 @@ public class PortOneServiceImpl implements PortOneService {
 
     private final RestTemplate restTemplate;
     private final PortOneProperties portOneProperties;
-    private final PasswordEncoder passwordEncoder;
+    private final Encryptor encryptor;
     private final String diHashSalt;
 
     public PortOneServiceImpl(RestTemplate restTemplate, PortOneProperties portOneProperties,
-                               PasswordEncoder passwordEncoder,
+                               Encryptor encryptor,
                                @Value("${security.di-hash-salt}") String diHashSalt) {
         this.restTemplate = restTemplate;
         this.portOneProperties = portOneProperties;
-        this.passwordEncoder = passwordEncoder;
+        this.encryptor = encryptor;
         this.diHashSalt = diHashSalt;
     }
 
@@ -46,9 +46,12 @@ public class PortOneServiceImpl implements PortOneService {
             throw new PortOneVerificationException("identity verification result is missing required identifiers");
         }
 
-        String ciHash = passwordEncoder.encode(certification.uniqueKey);
+        // CI는 암호화한다. 나중에 본인 확인이나 기관 연동에서 원본이 필요할 수 있어 되돌릴 수
+        // 있어야 한다. 반대로 DI는 중복 가입 판별에만 쓰이고 같은 입력이 같은 값이어야 조회가
+        // 되므로, 복호화가 필요 없는 결정적 해시로 남긴다.
+        String ciEncrypted = encryptor.encrypt(certification.uniqueKey);
         String diHash = Sha256Util.hashWithSalt(certification.uniqueInSite, diHashSalt);
-        return new PortOneVerifyResponseDto(ciHash, diHash);
+        return new PortOneVerifyResponseDto(ciEncrypted, diHash);
     }
 
     private String requestAccessToken() {

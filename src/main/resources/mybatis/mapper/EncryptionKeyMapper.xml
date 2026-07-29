@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="site.benepay.common.crypto.mapper.EncryptionKeyMapper">
+
+    <resultMap id="encryptionKeyResultMap" type="site.benepay.common.crypto.EncryptionKey">
+        <id column="key_id" property="keyId"/>
+        <result column="key_alias" property="keyAlias"/>
+        <result column="key_value" property="keyValue"/>
+        <result column="algorithm" property="algorithm"/>
+        <result column="is_active" property="active"/>
+    </resultMap>
+
+    <select id="findActiveByAlias" resultMap="encryptionKeyResultMap">
+        SELECT key_id, key_alias, key_value, algorithm, is_active
+        FROM encryption_keys
+        WHERE key_alias = #{keyAlias}
+          AND is_active = TRUE
+    </select>
+
+</mapper>
