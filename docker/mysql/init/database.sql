@@ -4,8 +4,13 @@
 -- 시절에 컬럼명(password_hash/ci_hash)과 테이블 구성이 실제 DB와 어긋나 코드가 뜨지 않는 일이
 -- 있었다. 스키마를 바꿨으면 DB에 먼저 적용하고 다시 덤프하는 순서로 간다.
 --
--- encryption_keys에 들어 있는 키는 개발 전용이다. 이 파일이 저장소에 그대로 올라가므로
--- 운영 환경에서는 반드시 다른 키로 교체해야 한다.
+-- 이 디렉터리(docker/mysql/init)는 docker-compose.yml이 /docker-entrypoint-initdb.d로 통째로
+-- 마운트하므로, 여기 있는 .sql은 로컬이든 EC2 운영이든 컨테이너 최초 기동 시 자동 실행된다.
+-- dev-login용 계정(dev1~dev10)을 여기 두지 않는 이유가 그것이다 - 그 계정은 개발자가 명시적으로
+-- 적용할 때만 들어가야 한다. 필요하면 docker/mysql/dev-seed/dev-accounts.sql을 참고할 것.
+--
+-- encryption_keys의 키도 개발 전용이다. 이 파일이 저장소에 그대로 올라가므로 운영 환경에서는
+-- 반드시 다른 키로 교체해야 한다.
 
 -- MySQL dump 10.13  Distrib 8.0.33, for Win64 (x86_64)
 --
@@ -470,7 +475,7 @@ CREATE TABLE `users` (
   UNIQUE KEY `UQ_users_di` (`di`),
   KEY `FK_common_codes_TO_users_role` (`role`),
   CONSTRAINT `FK_common_codes_TO_users_role` FOREIGN KEY (`role`) REFERENCES `common_codes` (`code`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --

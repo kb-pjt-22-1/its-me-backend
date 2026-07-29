@@ -3,11 +3,11 @@
 <mapper namespace="site.benepay.common.crypto.mapper.EncryptionKeyMapper">
 
     <resultMap id="encryptionKeyResultMap" type="site.benepay.common.crypto.EncryptionKey">
-        <id column="key_id" property="keyId" />
-        <result column="key_alias" property="keyAlias" />
-        <result column="key_value" property="keyValue" />
-        <result column="algorithm" property="algorithm" />
-        <result column="is_active" property="active" />
+        <id column="key_id" property="keyId"/>
+        <result column="key_alias" property="keyAlias"/>
+        <result column="key_value" property="keyValue"/>
+        <result column="algorithm" property="algorithm"/>
+        <result column="is_active" property="active"/>
     </resultMap>
 
     <select id="findActiveByAlias" resultMap="encryptionKeyResultMap">
