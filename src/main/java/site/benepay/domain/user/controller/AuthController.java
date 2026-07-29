@@ -40,6 +40,16 @@ public class AuthController {
         return ResponseEntity.ok(authService.login(request));
     }
 
+    /**
+     * 개발용 자동 로그인. dev-login.enabled가 꺼져 있으면 404를 돌려준다.
+     * 프론트의 '개발자 로그인' 버튼이 컴퓨터별로 다른 slot을 보내야 한다.
+     */
+    @PostMapping("/dev-login")
+    public ResponseEntity<LoginResponseDto> devLogin(@RequestBody(required = false) DevLoginRequestDto request) {
+        return ResponseEntity.ok(authService.devLogin(
+                request == null ? new DevLoginRequestDto() : request));
+    }
+
     @PostMapping("/refresh")
     public ResponseEntity<RefreshResponseDto> refresh(@Valid @RequestBody RefreshRequestDto request) {
         return ResponseEntity.ok(authService.refresh(request));
