@@ -6,7 +6,9 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
+
 @Configuration
+@EnableAspectJAutoProxy
 @PropertySource("classpath:application.properties")
 @ComponentScan(
         basePackages = "site.benepay",
