@@ -2,6 +2,8 @@ package site.benepay.domain.merchant.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import lombok.RequiredArgsConstructor;
 import site.benepay.common.exception.DuplicateMerchantException;
 import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.domain.merchant.dto.MerchantRequestDto;
@@ -13,19 +15,16 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class MerchantServiceImpl implements MerchantService {
 
     private final MerchantMapper merchantMapper;
-
-    public MerchantServiceImpl(MerchantMapper merchantMapper) {
-        this.merchantMapper = merchantMapper;
-    }
 
     @Override
     @Transactional
     public MerchantResponseDto createMerchant(MerchantRequestDto request) {
         if (merchantMapper.existsByMerchantCode(request.getMerchantCode())) {
-            throw new DuplicateMerchantException("merchant code already in use: " + request.getMerchantCode());
+            throw new DuplicateMerchantException("이미 등록된 가맹점: " + request.getMerchantCode());
         }
 
         Merchant merchant = buildMerchant(null, request);
@@ -55,7 +54,7 @@ public class MerchantServiceImpl implements MerchantService {
 
         boolean merchantCodeChanged = !existing.getMerchantCode().equals(request.getMerchantCode());
         if (merchantCodeChanged && merchantMapper.existsByMerchantCode(request.getMerchantCode())) {
-            throw new DuplicateMerchantException("merchant code already in use: " + request.getMerchantCode());
+            throw new DuplicateMerchantException("이미 등록된 가맹점: " + request.getMerchantCode());
         }
 
         Merchant merchant = buildMerchant(merchantId, request);
@@ -73,7 +72,7 @@ public class MerchantServiceImpl implements MerchantService {
 
     private Merchant findActiveMerchant(Long merchantId) {
         return merchantMapper.findByMerchantId(merchantId)
-                .orElseThrow(() -> new MerchantNotFoundException("merchant not found: " + merchantId));
+                .orElseThrow(() -> new MerchantNotFoundException("가맹점을 찾을 수 없음: " + merchantId));
     }
 
     private Merchant buildMerchant(Long merchantId, MerchantRequestDto request) {

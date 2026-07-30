@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import lombok.RequiredArgsConstructor;
 import site.benepay.domain.merchant.dto.MerchantRequestDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantService;
@@ -19,13 +21,10 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/merchants")
+@RequiredArgsConstructor
 public class MerchantController {
 
     private final MerchantService merchantService;
-
-    public MerchantController(MerchantService merchantService) {
-        this.merchantService = merchantService;
-    }
 
     /**
      * 매장 조회

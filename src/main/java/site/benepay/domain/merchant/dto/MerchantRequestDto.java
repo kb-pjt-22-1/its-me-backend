@@ -14,31 +14,23 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class MerchantRequestDto {
-
     @NotNull
     private Long categoryId;
-
     @NotNull
     private Long brandId;
-
     @NotBlank
     @Size(max = 50)
     private String merchantCode;
-
     @NotBlank
     @Size(max = 100)
     private String merchantName;
-
     @NotBlank
     @Size(max = 255)
     private String address;
-
     @NotNull
     private BigDecimal latitude;
-
     @NotNull
     private BigDecimal longitude;
-
     @Pattern(regexp = "^0\\d{1,2}-?\\d{3,4}-?\\d{4}$", message = "잘못된 전화번호 형식입니다.")
     @Size(max = 20)
     private String phone;
