@@ -58,6 +58,16 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(MerchantNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMerchantNotFound(MerchantNotFoundException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DuplicateMerchantException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateMerchant(DuplicateMerchantException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(DevLoginDisabledException.class)
     public ResponseEntity<ErrorResponse> handleDevLoginDisabled(DevLoginDisabledException ex, HttpServletRequest request) {
         // 예외 메시지를 그대로 쓰지 않는다. 없는 경로를 쳤을 때와 응답이 같아야 감추는 의미가 있다.

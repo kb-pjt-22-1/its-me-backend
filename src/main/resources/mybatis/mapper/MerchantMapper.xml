@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="site.benepay.domain.merchant.mapper.MerchantMapper">
+
+    <sql id="merchantColumns">
+        merchant_id, brand_id, category_id, merchant_code, merchant_name, address, latitude, longitude, phone
+    </sql>
+
+    <insert id="insert" parameterType="site.benepay.domain.merchant.vo.Merchant"
+            useGeneratedKeys="true" keyProperty="merchantId" keyColumn="merchant_id">
+        INSERT INTO merchants (brand_id, category_id, merchant_code, merchant_name, address, latitude, longitude, phone)
+        VALUES (#{brandId}, #{categoryId}, #{merchantCode}, #{merchantName}, #{address}, #{latitude}, #{longitude}, #{phone})
+    </insert>
+
+    <select id="findByMerchantId" resultType="site.benepay.domain.merchant.vo.Merchant">
+        SELECT <include refid="merchantColumns" />
+        FROM merchants
+        WHERE merchant_id = #{merchantId}
+    </select>
+
+    <select id="findAll" resultType="site.benepay.domain.merchant.vo.Merchant">
+        SELECT <include refid="merchantColumns" />
+        FROM merchants
+        ORDER BY merchant_id DESC
+    </select>
+
+    <select id="existsByMerchantCode" resultType="boolean">
+        SELECT EXISTS (SELECT 1 FROM merchants WHERE merchant_code = #{merchantCode})
+    </select>
+
+    <update id="update" parameterType="site.benepay.domain.merchant.vo.Merchant">
+        UPDATE merchants
+        SET brand_id = #{brandId},
+            category_id = #{categoryId},
+            merchant_code = #{merchantCode},
+            merchant_name = #{merchantName},
+            address = #{address},
+            latitude = #{latitude},
+            longitude = #{longitude},
+            phone = #{phone}
+        WHERE merchant_id = #{merchantId}
+    </update>
+
+    <delete id="deleteByMerchantId">
+        DELETE FROM merchants WHERE merchant_id = #{merchantId}
+    </delete>
+
+</mapper>
