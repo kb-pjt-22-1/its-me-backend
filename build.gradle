@@ -47,15 +47,6 @@ dependencies {
   runtimeOnly "io.jsonwebtoken:jjwt-impl:${jjwtVersion}"
   runtimeOnly "io.jsonwebtoken:jjwt-jackson:${jjwtVersion}"
 
-  // Spring Security
-  implementation "org.springframework.security:spring-security-web:${springSecurityVersion}"
-  implementation "org.springframework.security:spring-security-config:${springSecurityVersion}"
-
-  // JWT
-  implementation "io.jsonwebtoken:jjwt-api:${jjwtVersion}"
-  runtimeOnly "io.jsonwebtoken:jjwt-impl:${jjwtVersion}"
-  runtimeOnly "io.jsonwebtoken:jjwt-jackson:${jjwtVersion}"
-
   // Servlet / JSP
   providedCompile 'javax.servlet:javax.servlet-api:4.0.1'
   implementation 'javax.servlet:jstl:1.2'
