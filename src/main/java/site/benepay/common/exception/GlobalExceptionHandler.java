@@ -1,6 +1,7 @@
 package site.benepay.common.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -19,7 +20,7 @@ public class GlobalExceptionHandler {
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .findFirst()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
-                .orElse("invalid request");
+                .orElse("잘못된 요청입니다.");
         return errorResponse(HttpStatus.BAD_REQUEST, message, request);
     }
 
@@ -58,10 +59,20 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(MerchantNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMerchantNotFound(MerchantNotFoundException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DuplicateMerchantException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateMerchant(DuplicateMerchantException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(DevLoginDisabledException.class)
     public ResponseEntity<ErrorResponse> handleDevLoginDisabled(DevLoginDisabledException ex, HttpServletRequest request) {
         // 예외 메시지를 그대로 쓰지 않는다. 없는 경로를 쳤을 때와 응답이 같아야 감추는 의미가 있다.
-        return errorResponse(HttpStatus.NOT_FOUND, "not found", request);
+        return errorResponse(HttpStatus.NOT_FOUND, "찾을 수 없습니다.", request);
     }
 
     @ExceptionHandler(WithdrawalNotConfirmedException.class)
@@ -74,10 +85,19 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
 
+    // MyBatis(SqlSessionTemplate)가 SQL 예외를 이 타입으로 변환해서 던진다.
+    // FK 제약 위반(존재하지 않는 categoryId/brandId 등), NOT NULL 위반 등이 여기로 들어온다.
+    // 안 잡으면 아래 500 핸들러로 떨어져 클라이언트가 서버 에러로 오인하게 된다.
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex, HttpServletRequest request) {
+        log.warn("데이터 무결성 제약 위반: {}", ex.getMessage());
+        return errorResponse(HttpStatus.BAD_REQUEST, "요청에 유효하지 않거나 존재하지 않는 참조 값이 있습니다.", request);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) {
-        log.error("Unexpected server error", ex);
-        return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "unexpected server error", request);
+        log.error("서버 오류", ex);
+        return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "예상치 못한 서버 오류가 발생했습니다.", request);
     }
 
     private static ResponseEntity<ErrorResponse> errorResponse(HttpStatus status, String message, HttpServletRequest request) {
