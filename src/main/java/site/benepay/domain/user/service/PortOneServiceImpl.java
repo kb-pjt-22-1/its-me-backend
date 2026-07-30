@@ -1,131 +1,63 @@
 package site.benepay.domain.user.service;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import site.benepay.common.crypto.Encryptor;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
-import site.benepay.common.config.PortOneProperties;
+import site.benepay.common.crypto.Encryptor;
+import site.benepay.common.exception.DuplicateUserException;
 import site.benepay.common.exception.PortOneVerificationException;
 import site.benepay.common.util.Sha256Util;
+import site.benepay.domain.user.dto.PortOneVerifyRequestDto;
 import site.benepay.domain.user.dto.PortOneVerifyResponseDto;
-
-import java.util.HashMap;
-import java.util.Map;
+import site.benepay.domain.user.mapper.UserMapper;
 
 @Service
 public class PortOneServiceImpl implements PortOneService {
 
-    private final RestTemplate restTemplate;
-    private final PortOneProperties portOneProperties;
+    private final UserMapper userMapper;
     private final Encryptor encryptor;
+    private final SignupVerificationStore signupVerificationStore;
     private final String diHashSalt;
 
-    public PortOneServiceImpl(RestTemplate restTemplate, PortOneProperties portOneProperties,
-                               Encryptor encryptor,
+    public PortOneServiceImpl(UserMapper userMapper, Encryptor encryptor,
+                               SignupVerificationStore signupVerificationStore,
                                @Value("${security.di-hash-salt}") String diHashSalt) {
-        this.restTemplate = restTemplate;
-        this.portOneProperties = portOneProperties;
+        this.userMapper = userMapper;
         this.encryptor = encryptor;
+        this.signupVerificationStore = signupVerificationStore;
         this.diHashSalt = diHashSalt;
     }
 
     @Override
-    public PortOneVerifyResponseDto verify(String impUid) {
-        String accessToken = requestAccessToken();
-        CertificationResponseBody certification = fetchCertification(impUid, accessToken);
-
-        if (certification.uniqueKey == null || certification.uniqueInSite == null) {
-            throw new PortOneVerificationException("identity verification result is missing required identifiers");
+    public PortOneVerifyResponseDto verify(PortOneVerifyRequestDto request) {
+        String impUid = request.getImpUid();
+        if (impUid == null || impUid.isBlank()) {
+            throw new PortOneVerificationException("impUid is required");
         }
 
-        // CI는 암호화한다. 나중에 본인 확인이나 기관 연동에서 원본이 필요할 수 있어 되돌릴 수
-        // 있어야 한다. 반대로 DI는 중복 가입 판별에만 쓰이고 같은 입력이 같은 값이어야 조회가
-        // 되므로, 복호화가 필요 없는 결정적 해시로 남긴다.
-        String ciEncrypted = encryptor.encrypt(certification.uniqueKey);
-        String diHash = Sha256Util.hashWithSalt(certification.uniqueInSite, diHashSalt);
-        return new PortOneVerifyResponseDto(ciEncrypted, diHash);
-    }
+        // PortOne 실계정(imp_key/imp_secret)이 아직 없어 서버-to-서버 조회를 할 수 없다.
+        // 실제 연동에서는 name/phone/birthday도 PortOne 응답으로 내려오지만(불러온 값이지
+        // 사용자가 직접 입력한 값이 아니다), 지금은 그 화면을 대신하는 프론트 모달에서 받은
+        // 값을 그대로 믿는다. CI/DI만 impUid를 시드로 결정적으로 만든다 - 같은 impUid로
+        // 두 번 호출하면 같은 CI/DI가 나와서, 아래 중복 가입 체크가 실제 연동 때와 동일한
+        // 모양으로 동작한다. 실제 키가 생기면 이 메서드 본문을 PortOne REST 호출로 바꾸고
+        // name/phone/birthday도 그 응답에서 채우면 된다.
+        String uniqueKey = "mock-ci-" + impUid;
+        String uniqueInSite = "mock-di-" + impUid;
 
-    private String requestAccessToken() {
-        Map<String, String> body = new HashMap<>();
-        body.put("imp_key", portOneProperties.getImpKey());
-        body.put("imp_secret", portOneProperties.getImpSecret());
+        String ciEncrypted = encryptor.encrypt(uniqueKey);
+        String diHash = Sha256Util.hashWithSalt(uniqueInSite, diHashSalt);
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
-        try {
-            ResponseEntity<TokenResponse> response = restTemplate.postForEntity(
-                    portOneProperties.getBaseUrl() + "/users/getToken",
-                    new HttpEntity<>(body, headers),
-                    TokenResponse.class);
-
-            TokenResponse tokenResponse = response.getBody();
-            if (tokenResponse == null || tokenResponse.response == null || tokenResponse.response.accessToken == null) {
-                throw new PortOneVerificationException("failed to obtain PortOne access token");
-            }
-            return tokenResponse.response.accessToken;
-        } catch (RestClientException e) {
-            throw new PortOneVerificationException("failed to reach PortOne API for token issuance");
+        // 회원가입까지 안 가고 인증 시점에 먼저 걸러야 "인증은 됐는데 이미 가입된 사람"이라고
+        // 바로 알려줄 수 있다. 다만 이게 최종 방어선은 아니다 - 진짜 유일성은 users.di UNIQUE가
+        // 지키고, signUp()에서 한 번 더 확인한다(인증 이후 다른 요청이 먼저 가입했을 수 있음).
+        if (userMapper.existsByDiHash(diHash)) {
+            throw new DuplicateUserException("identity already registered");
         }
-    }
 
-    private CertificationResponseBody fetchCertification(String impUid, String accessToken) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("Authorization", accessToken);
+        SignupVerificationStore.VerifiedIdentity identity = new SignupVerificationStore.VerifiedIdentity(
+                request.getName(), request.getPhoneNumber(), request.getBirthDate(), ciEncrypted, diHash);
+        String token = signupVerificationStore.issue(identity);
 
-        try {
-            ResponseEntity<CertificationResponse> response = restTemplate.exchange(
-                    portOneProperties.getBaseUrl() + "/certifications/" + impUid,
-                    HttpMethod.GET,
-                    new HttpEntity<>(headers),
-                    CertificationResponse.class);
-
-            CertificationResponse certificationResponse = response.getBody();
-            if (certificationResponse == null || certificationResponse.code != 0 || certificationResponse.response == null) {
-                throw new PortOneVerificationException("identity verification failed or was not found");
-            }
-            return certificationResponse.response;
-        } catch (RestClientException e) {
-            throw new PortOneVerificationException("failed to reach PortOne API for certification lookup");
-        }
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class TokenResponse {
-        public int code;
-        public String message;
-        public TokenResponseBody response;
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class TokenResponseBody {
-        @JsonProperty("access_token")
-        public String accessToken;
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class CertificationResponse {
-        public int code;
-        public String message;
-        public CertificationResponseBody response;
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private static class CertificationResponseBody {
-        // unique_key: CI-equivalent, stable across all merchants
-        @JsonProperty("unique_key")
-        public String uniqueKey;
-        // unique_in_site: DI-equivalent, scoped to this merchant
-        @JsonProperty("unique_in_site")
-        public String uniqueInSite;
+        return new PortOneVerifyResponseDto(token);
     }
 }

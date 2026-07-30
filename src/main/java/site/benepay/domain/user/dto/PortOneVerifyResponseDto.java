@@ -4,16 +4,15 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 /**
- * 원본 CI/DI는 PortOneService 밖으로 나가지 않고 가공된 형태만 실린다 (NFR-SEC-12).
+ * 검증된 신원 정보(이름·전화번호·생년월일·CI·DI)는 서버에만 남고, 프론트에는 그 값을 담고
+ * 있는 짧은 수명의 1회용 토큰만 나간다. /signup 호출 시 이 토큰을 그대로 다시 보내면 된다.
  *
- * <p>필드명 ciEncrypted는 저장 컬럼 users.ci_encrypted를 따른 것이다. 실제 담기는 값은 BCrypt
- * 해시라 복호화가 되지 않으니, 원본 CI를 되찾아야 하는 요구가 생기면 이름이 아니라
- * PortOneServiceImpl의 생성 방식부터 바꿔야 한다.
+ * <p>예전에는 ciEncrypted/diHash를 여기서 직접 돌려주고 /signup이 그걸 그대로 믿었는데,
+ * 그러면 이 값을 손에 넣은 누구든 본인 인증 없이 재사용해 가입할 수 있었다(NFR-SEC-12).
  */
 @Getter
 @AllArgsConstructor
 public class PortOneVerifyResponseDto {
 
-    private String ciEncrypted;
-    private String diHash;
+    private String verificationToken;
 }

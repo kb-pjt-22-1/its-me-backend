@@ -8,6 +8,12 @@ import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
 
+/**
+ * name/phoneNumber/birthDate/ciEncrypted/diHash를 여기서 직접 받지 않는다. 그 값들은
+ * POST /api/auth/portone/verify가 발급한 verificationToken 뒤에 서버(Redis)에만 있고,
+ * signUp()이 그 토큰으로 서버 쪽 값을 꺼내 쓴다 - 클라이언트가 개인정보를 다시 보내면서
+ * 위조하거나 다른 사람의 인증 결과를 재사용할 여지를 없애기 위함이다.
+ */
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
@@ -25,26 +31,7 @@ public class SignUpRequestDto {
     private String password;
 
     @NotBlank
-    @Size(max = 50)
-    private String name;
-
-    @Pattern(regexp = "^01[0-9]-?\\d{3,4}-?\\d{4}$", message = "invalid phone number format")
-    private String phoneNumber;
-
-    // 컬럼이 CHAR(8)이라 길이가 어긋난 값은 DB가 잘라 버린다. 형식을 여기서 걸러 실패 지점을
-    // 검증 단계로 앞당긴다. 컬럼이 NULL을 허용하므로 미입력은 통과시킨다.
-    @Pattern(regexp = "^\\d{8}$", message = "birthDate must be 8 digits in YYYYMMDD format")
-    private String birthDate;
-
-    // ci_encrypted, di 모두 NOT NULL로 바뀌어 빈 값이면 insert 단계에서 터진다.
-    // @Size는 각 컬럼 길이(200/100)와 맞춰 둔 것이다.
-    @NotBlank
-    @Size(max = 200)
-    private String ciEncrypted;
-
-    @NotBlank
-    @Size(max = 100)
-    private String diHash;
+    private String verificationToken;
 
     @Size(max = 255)
     private String fcmToken;
