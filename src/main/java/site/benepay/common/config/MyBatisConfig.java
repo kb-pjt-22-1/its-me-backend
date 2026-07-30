@@ -14,6 +14,7 @@ import javax.sql.DataSource;
 @MapperScan(basePackages = {
         "site.benepay.domain.user.mapper",
         "site.benepay.domain.card.mapper",
+        "site.benepay.domain.merchant.mapper",
         "site.benepay.common.crypto.mapper"
 })
 public class MyBatisConfig {
