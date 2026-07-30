@@ -65,6 +65,6 @@ public class AuthController {
 
     @PostMapping("/portone/verify")
     public ResponseEntity<PortOneVerifyResponseDto> verifyIdentity(@Valid @RequestBody PortOneVerifyRequestDto request) {
-        return ResponseEntity.ok(portOneService.verify(request.getImpUid()));
+        return ResponseEntity.ok(portOneService.verify(request));
     }
 }
