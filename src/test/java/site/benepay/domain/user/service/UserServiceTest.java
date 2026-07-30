@@ -16,6 +16,7 @@ import site.benepay.common.exception.AccountLockedException;
 import site.benepay.common.exception.DuplicateUserException;
 import site.benepay.common.exception.InvalidCredentialsException;
 import site.benepay.common.exception.InvalidPinFormatException;
+import site.benepay.common.exception.InvalidTokenException;
 import site.benepay.common.exception.PinAlreadyRegisteredException;
 import site.benepay.common.exception.UserNotFoundException;
 import site.benepay.common.exception.WithdrawalNotConfirmedException;
@@ -55,11 +56,20 @@ class UserServiceTest {
     @Mock
     private TokenService tokenService;
 
+    @Mock
+    private SignupVerificationStore signupVerificationStore;
+
     private UserService userService;
 
     @BeforeEach
     void setUp() {
-        userService = new UserServiceImpl(userMapper, passwordEncoder, redisLockoutService, tokenService);
+        userService = new UserServiceImpl(userMapper, passwordEncoder, redisLockoutService, tokenService,
+                signupVerificationStore);
+    }
+
+    private SignupVerificationStore.VerifiedIdentity verifiedIdentity() {
+        return new SignupVerificationStore.VerifiedIdentity(
+                "New User", "010-1111-2222", "19900101", "ci-encrypted", "di-hash");
     }
 
     private User activeUser(String pinHash) {
@@ -80,10 +90,9 @@ class UserServiceTest {
 
     @Test
     void signUpSucceedsWhenNothingIsDuplicate() {
-        SignUpRequestDto request = new SignUpRequestDto(
-                "newuser", "Test1234!", "New User", "010-1111-2222", "19900101",
-                "ci-encrypted", "di-hash", "fcm-token");
+        SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
         when(userMapper.existsByLoginId("newuser")).thenReturn(false);
+        when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
         when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
         when(passwordEncoder.encode("Test1234!")).thenReturn("encoded-password");
 
@@ -96,11 +105,10 @@ class UserServiceTest {
     }
 
     @Test
-    void signUpMapsEveryRequestFieldOntoTheInsertedUser() {
-        SignUpRequestDto request = new SignUpRequestDto(
-                "newuser", "Test1234!", "New User", "010-1111-2222", "19900101",
-                "ci-encrypted", "di-hash", "fcm-token");
+    void signUpMapsVerifiedIdentityAndRequestFieldsOntoTheInsertedUser() {
+        SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
         when(userMapper.existsByLoginId("newuser")).thenReturn(false);
+        when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
         when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
         when(passwordEncoder.encode("Test1234!")).thenReturn("encoded-password");
 
@@ -110,14 +118,16 @@ class UserServiceTest {
         verify(userMapper).insert(inserted.capture());
 
         User user = inserted.getValue();
+        // loginId/password/fcmToken은 요청에서, name/phoneNumber/birthDate/di/ciEncrypted는
+        // 토큰으로 복원한 검증 결과에서 온다 - 클라이언트가 개인정보를 직접 못 정하는 게 핵심이다.
         assertThat(user.getLoginId()).isEqualTo("newuser");
         assertThat(user.getLoginPasswordHash()).isEqualTo("encoded-password");
+        assertThat(user.getFcmToken()).isEqualTo("fcm-token");
         assertThat(user.getName()).isEqualTo("New User");
         assertThat(user.getPhoneNumber()).isEqualTo("010-1111-2222");
         assertThat(user.getBirthDate()).isEqualTo("19900101");
         assertThat(user.getDi()).isEqualTo("di-hash");
         assertThat(user.getCiEncrypted()).isEqualTo("ci-encrypted");
-        assertThat(user.getFcmToken()).isEqualTo("fcm-token");
         assertThat(user.getRole()).isEqualTo(Role.USER);
         assertThat(user.isDeleted()).isFalse();
         // user_id는 AUTO_INCREMENT라 insert 시점에는 비어 있고 MyBatis가 채워 넣는다.
@@ -125,24 +135,35 @@ class UserServiceTest {
     }
 
     @Test
-    void signUpWithDuplicateLoginIdThrowsAndNeverInserts() {
-        SignUpRequestDto request = new SignUpRequestDto(
-                "existing", "Test1234!", "New User", "010-1111-2222", "19900101",
-                "ci-encrypted", "di-hash", "fcm-token");
+    void signUpWithDuplicateLoginIdThrowsAndNeverTouchesTheVerificationToken() {
+        SignUpRequestDto request = new SignUpRequestDto("existing", "Test1234!", "valid-token", "fcm-token");
         when(userMapper.existsByLoginId("existing")).thenReturn(true);
 
         assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
+
+        // 아이디 중복은 토큰이 유효한지와 무관한 실패라, 토큰을 소모(redeem)하기 전에 끝나야
+        // 한다 - 그래야 아이디만 다시 골라 같은 토큰으로 재시도할 수 있다.
+        verify(signupVerificationStore, never()).redeem(any());
+        verify(userMapper, never()).insert(any());
+    }
+
+    @Test
+    void signUpWithInvalidOrExpiredTokenThrowsAndNeverInserts() {
+        SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "stale-token", "fcm-token");
+        when(userMapper.existsByLoginId("newuser")).thenReturn(false);
+        when(signupVerificationStore.redeem("stale-token")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(InvalidTokenException.class);
 
         verify(userMapper, never()).insert(any());
     }
 
     @Test
-    void signUpWithDuplicateDiHashThrows() {
-        SignUpRequestDto request = new SignUpRequestDto(
-                "newuser", "Test1234!", "New User", "010-1111-2222", "19900101",
-                "ci-encrypted", "dup-di-hash", "fcm-token");
+    void signUpWithDuplicateDiHashThrowsAfterRedeemingTheToken() {
+        SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
         when(userMapper.existsByLoginId("newuser")).thenReturn(false);
-        when(userMapper.existsByDiHash("dup-di-hash")).thenReturn(true);
+        when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
+        when(userMapper.existsByDiHash("di-hash")).thenReturn(true);
 
         assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
 
