@@ -1,18 +1,17 @@
 package site.benepay.domain.card.vo;
 
+import java.time.LocalDateTime;
+
 import lombok.Getter;
 import lombok.Setter;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 @Getter
 @Setter
 public class CardMonthlyStatusVO {
 
-    private Long cardMonthlyStatusId;
-    private Long userCardId;
-    private String targetYearMonth;
-    private BigDecimal totalSpendingAmount;
-    private LocalDateTime updatedAt;
+	private Long cardMonthlyStatusId;
+	private Long userCardId;
+	private String targetYearMonth;
+	private Long totalSpendingAmount;
+	private LocalDateTime updatedAt;
 }
