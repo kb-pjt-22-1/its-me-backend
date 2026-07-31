@@ -20,10 +20,7 @@ public interface RecommendationMapper {
     List<StoreBenefitCardCandidate> getBenefitStoreCardCandidates(
             @Param("userId") Long userId,
             @Param("merchantId") Long merchantId,
-<<<<<<< Updated upstream
-=======
             @Param("performanceMonth") String performanceMonth,
->>>>>>> Stashed changes
             @Param("latitude") Double latitude,
             @Param("longitude") Double longitude
     );

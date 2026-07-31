@@ -9,12 +9,6 @@ import site.benepay.domain.recommendation.model.RecommendedBenefitStore;
 import site.benepay.domain.recommendation.model.StoreBenefitCardCandidate;
 
 import java.math.BigDecimal;
-<<<<<<< Updated upstream
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-=======
 import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -22,7 +16,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
->>>>>>> Stashed changes
 import java.util.stream.Collectors;
 
 @Component
@@ -61,16 +54,6 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
 
     @Override
     public List<RecommendedBenefitCard> getRecommendedCards(List<StoreBenefitCardCandidate> candidates) {
-<<<<<<< Updated upstream
-        Map<Long, RecommendedBenefitCard> bestByUserCard = new LinkedHashMap<>();
-
-        for (StoreBenefitCardCandidate candidate : candidates) {
-            BenefitScore score = score(candidate);
-            RecommendedBenefitCard recommendedCard = new RecommendedBenefitCard(
-                    candidate,
-                    score.benefitLabel,
-                    score.estimatedBenefitScore,
-=======
         return getRecommendedCards(candidates, null);
     }
 
@@ -92,33 +75,20 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
                     score.benefitLabel,
                     score.estimatedBenefitScore,
                     score.expectedBenefitAmount,
->>>>>>> Stashed changes
                     score.recommendationScore
             );
 
             bestByUserCard.merge(
                     candidate.getUserCardId(),
                     recommendedCard,
-<<<<<<< Updated upstream
-                    (current, next) -> current.getRecommendationScore() >= next.getRecommendationScore()
-=======
                     (current, next) -> compareCards(current, next, estimatedPaymentAmount) >= 0
->>>>>>> Stashed changes
                             ? current
                             : next
             );
         }
 
         return bestByUserCard.values().stream()
-<<<<<<< Updated upstream
-                .sorted(Comparator
-                        .comparing(RecommendedBenefitCard::isRecommended).reversed()
-                        .thenComparing(
-                                Comparator.comparingDouble(RecommendedBenefitCard::getRecommendationScore).reversed()
-                        ))
-=======
                 .sorted(cardComparator(estimatedPaymentAmount))
->>>>>>> Stashed changes
                 .collect(Collectors.toList());
     }
 
@@ -131,11 +101,6 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
         );
     }
 
-<<<<<<< Updated upstream
-    private BenefitScore score(StoreBenefitCardCandidate candidate) {
-        if (candidate.getBenefitId() == null) {
-            return new BenefitScore("혜택 없음", 0, 0.0);
-=======
     private BenefitScore score(StoreBenefitCardCandidate candidate, BigDecimal estimatedPaymentAmount) {
         if (candidate.getBenefitId() == null) {
             BenefitScore structuredScore = scoreStructuredBenefit(candidate, estimatedPaymentAmount);
@@ -143,7 +108,6 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
                 return structuredScore;
             }
             return new BenefitScore("혜택 없음", 0, null, 0.0);
->>>>>>> Stashed changes
         }
         return score(candidate.getBenefitsInfo(), candidate.getBenefitName(), BigDecimal.ZERO, false);
     }
@@ -174,9 +138,6 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
         double distancePenalty = distanceMeters.doubleValue() / 100.0;
         double bookmarkBoost = bookmarked ? 5.0 : 0.0;
         double recommendationScore = benefitScore + bookmarkBoost - distancePenalty;
-<<<<<<< Updated upstream
-        return new BenefitScore(label, benefitScore, recommendationScore);
-=======
         return new BenefitScore(label, benefitScore, null, recommendationScore);
     }
 
@@ -395,7 +356,6 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
 
     private BigDecimal nullToZero(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
->>>>>>> Stashed changes
     }
 
     private JsonNode parseBenefitsInfo(String benefitsInfo) {
@@ -416,14 +376,6 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
         return null;
     }
 
-<<<<<<< Updated upstream
-    private BigDecimal decimalValue(JsonNode node, String name) {
-        JsonNode value = node.get(name);
-        if (value == null || !value.isNumber()) {
-            return null;
-        }
-        return value.decimalValue();
-=======
     private String firstText(JsonNode node, String... names) {
         for (String name : names) {
             String value = textValue(node, name);
@@ -473,7 +425,6 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
             }
         }
         return null;
->>>>>>> Stashed changes
     }
 
     private String stripZeros(BigDecimal value) {
@@ -483,14 +434,6 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
     private static class BenefitScore {
         private final String benefitLabel;
         private final Integer estimatedBenefitScore;
-<<<<<<< Updated upstream
-        private final double recommendationScore;
-
-        private BenefitScore(String benefitLabel, Integer estimatedBenefitScore, double recommendationScore) {
-            this.benefitLabel = benefitLabel;
-            this.estimatedBenefitScore = estimatedBenefitScore;
-            this.recommendationScore = recommendationScore;
-=======
         private final BigDecimal expectedBenefitAmount;
         private final double recommendationScore;
         private final Long benefitId;
@@ -526,7 +469,6 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
             this.benefitType = benefitType;
             this.benefitName = benefitName;
             this.benefitDescription = benefitDescription;
->>>>>>> Stashed changes
         }
     }
 }

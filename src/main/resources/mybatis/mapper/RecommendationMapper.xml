@@ -29,10 +29,7 @@
                type="site.benepay.domain.recommendation.model.StoreBenefitCardCandidate">
         <id column="merchant_id" property="merchantId" />
         <result column="merchant_name" property="merchantName" />
-<<<<<<< Updated upstream
-=======
         <result column="brand_code" property="brandCode" />
->>>>>>> Stashed changes
         <result column="brand_name" property="brandName" />
         <result column="category_code" property="categoryCode" />
         <result column="category_name" property="categoryName" />
@@ -53,21 +50,14 @@
         <result column="benefit_name" property="benefitName" />
         <result column="benefit_description" property="benefitDescription" />
         <result column="benefits_info" property="benefitsInfo" />
-<<<<<<< Updated upstream
-=======
         <result column="total_spending_amount" property="totalSpendingAmount" />
->>>>>>> Stashed changes
     </resultMap>
 
     <select id="getNearbyBenefitStoreCandidates" resultMap="benefitStoreCandidateResultMap">
         SELECT
             m.merchant_id,
             m.merchant_name,
-<<<<<<< Updated upstream
-            m.brand_name,
-=======
             mb.brand_name,
->>>>>>> Stashed changes
             mc.category_code,
             mc.category_name,
             m.address,
@@ -93,30 +83,6 @@
             c.card_id,
             c.card_name,
             c.card_image_url,
-<<<<<<< Updated upstream
-            cb.benefit_id,
-            cb.benefit_type,
-            cb.benefit_name,
-            cb.description AS benefit_description,
-            cb.benefits_info
-        FROM merchants m
-        JOIN merchant_categories mc ON mc.category_id = m.category_id
-        JOIN user_cards uc ON uc.user_id = #{userId}
-        JOIN card_variants cv ON cv.card_variant_id = uc.card_variant_id
-        JOIN cards c ON c.card_id = cv.card_id
-        JOIN card_benefits cb ON cb.card_id = c.card_id
-        WHERE uc.card_status = 'ACTIVE'
-          AND uc.recommendation_enabled = TRUE
-          AND c.is_supported = TRUE
-          AND (
-              JSON_UNQUOTE(JSON_EXTRACT(cb.benefits_info, '$.category')) = 'ALL'
-              OR JSON_UNQUOTE(JSON_EXTRACT(cb.benefits_info, '$.category')) = mc.category_code
-              OR (
-                  mc.category_code = 'FOOD'
-                  AND JSON_UNQUOTE(JSON_EXTRACT(cb.benefits_info, '$.category')) IN ('FOOD', 'CAFE')
-              )
-          )
-=======
             NULL AS benefit_id,
             COALESCE(
                 JSON_UNQUOTE(JSON_EXTRACT(c.benefits_info, '$.discountMethod')),
@@ -140,7 +106,6 @@
           AND uc.recommendation_enabled = TRUE
           AND c.is_supported = TRUE
           AND c.benefits_info IS NOT NULL
->>>>>>> Stashed changes
         <if test="categoryCode != null">
           AND mc.category_code = #{categoryCode}
         </if>
@@ -153,12 +118,8 @@
         SELECT
             m.merchant_id,
             m.merchant_name,
-<<<<<<< Updated upstream
-            m.brand_name,
-=======
             mb.brand_code,
             mb.brand_name,
->>>>>>> Stashed changes
             mc.category_code,
             mc.category_name,
             m.address,
@@ -191,35 +152,6 @@
             c.card_id,
             c.card_name,
             c.card_image_url,
-<<<<<<< Updated upstream
-            uc.card_last4,
-            uc.is_primary,
-            cb.benefit_id,
-            cb.benefit_type,
-            cb.benefit_name,
-            cb.description AS benefit_description,
-            cb.benefits_info
-        FROM merchants m
-        JOIN merchant_categories mc ON mc.category_id = m.category_id
-        JOIN user_cards uc ON uc.user_id = #{userId}
-        JOIN card_variants cv ON cv.card_variant_id = uc.card_variant_id
-        JOIN cards c ON c.card_id = cv.card_id
-        LEFT JOIN card_benefits cb
-               ON cb.card_id = c.card_id
-              AND (
-                  JSON_UNQUOTE(JSON_EXTRACT(cb.benefits_info, '$.category')) = 'ALL'
-                  OR JSON_UNQUOTE(JSON_EXTRACT(cb.benefits_info, '$.category')) = mc.category_code
-                  OR (
-                      mc.category_code = 'FOOD'
-                      AND JSON_UNQUOTE(JSON_EXTRACT(cb.benefits_info, '$.category')) IN ('FOOD', 'CAFE')
-                  )
-              )
-        WHERE m.merchant_id = #{merchantId}
-          AND uc.card_status = 'ACTIVE'
-          AND uc.recommendation_enabled = TRUE
-          AND c.is_supported = TRUE
-        ORDER BY uc.is_primary DESC, c.card_id ASC, cb.benefit_id ASC
-=======
             uc.pan_last4 AS card_last4,
             uc.is_primary,
             NULL AS benefit_id,
@@ -250,6 +182,5 @@
           AND uc.recommendation_enabled = TRUE
           AND c.is_supported = TRUE
         ORDER BY uc.is_primary DESC, c.card_id ASC
->>>>>>> Stashed changes
     </select>
 </mapper>

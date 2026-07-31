@@ -1,10 +1,7 @@
 package site.benepay.domain.recommendation.model;
 
-<<<<<<< Updated upstream
-=======
 import java.math.BigDecimal;
 
->>>>>>> Stashed changes
 public class RecommendedBenefitCard {
 
     private final Long userCardId;
@@ -19,18 +16,13 @@ public class RecommendedBenefitCard {
     private final String benefitDescription;
     private final String benefitLabel;
     private final Integer estimatedBenefitScore;
-<<<<<<< Updated upstream
-=======
     private final BigDecimal expectedBenefitAmount;
->>>>>>> Stashed changes
     private final double recommendationScore;
 
     public RecommendedBenefitCard(
             StoreBenefitCardCandidate candidate,
             String benefitLabel,
             Integer estimatedBenefitScore,
-<<<<<<< Updated upstream
-=======
             BigDecimal expectedBenefitAmount,
             double recommendationScore
     ) {
@@ -48,7 +40,6 @@ public class RecommendedBenefitCard {
             String benefitLabel,
             Integer estimatedBenefitScore,
             BigDecimal expectedBenefitAmount,
->>>>>>> Stashed changes
             double recommendationScore
     ) {
         this.userCardId = candidate.getUserCardId();
@@ -57,14 +48,6 @@ public class RecommendedBenefitCard {
         this.cardImageUrl = candidate.getCardImageUrl();
         this.cardLast4 = candidate.getCardLast4();
         this.primary = candidate.isPrimary();
-<<<<<<< Updated upstream
-        this.benefitId = candidate.getBenefitId();
-        this.benefitType = candidate.getBenefitType();
-        this.benefitName = candidate.getBenefitName();
-        this.benefitDescription = candidate.getBenefitDescription();
-        this.benefitLabel = benefitLabel;
-        this.estimatedBenefitScore = estimatedBenefitScore;
-=======
         this.benefitId = benefitId;
         this.benefitType = benefitType;
         this.benefitName = benefitName;
@@ -72,7 +55,6 @@ public class RecommendedBenefitCard {
         this.benefitLabel = benefitLabel;
         this.estimatedBenefitScore = estimatedBenefitScore;
         this.expectedBenefitAmount = expectedBenefitAmount;
->>>>>>> Stashed changes
         this.recommendationScore = recommendationScore;
     }
 
@@ -124,13 +106,10 @@ public class RecommendedBenefitCard {
         return estimatedBenefitScore;
     }
 
-<<<<<<< Updated upstream
-=======
     public BigDecimal getExpectedBenefitAmount() {
         return expectedBenefitAmount;
     }
 
->>>>>>> Stashed changes
     public double getRecommendationScore() {
         return recommendationScore;
     }

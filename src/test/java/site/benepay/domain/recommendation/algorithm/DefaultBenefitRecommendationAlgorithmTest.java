@@ -40,8 +40,6 @@ class DefaultBenefitRecommendationAlgorithmTest {
         assertThat(result.get(1).getBenefitLabel()).isEqualTo("혜택 없음");
     }
 
-<<<<<<< Updated upstream
-=======
     @Test
     void getRecommendedCardsPrioritizesExpectedBenefitAmountForStoreDetail() {
         StoreBenefitCardCandidate goodDay = cardCandidate(4L, "Good Day Card", null, """
@@ -102,7 +100,6 @@ class DefaultBenefitRecommendationAlgorithmTest {
         assertThat(result.get(1).getExpectedBenefitAmount()).isEqualByComparingTo("1000");
     }
 
->>>>>>> Stashed changes
     private BenefitStoreCandidate candidate(Long merchantId, Long cardId, String cardName,
                                              String benefitsInfo, int distanceMeters) {
         BenefitStoreCandidate candidate = new BenefitStoreCandidate();

@@ -7,10 +7,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-<<<<<<< Updated upstream
-=======
 import site.benepay.domain.recommendation.dto.request.BenefitStoreDetailRequestDto;
->>>>>>> Stashed changes
 import site.benepay.domain.recommendation.dto.request.NearbyBenefitStoreRequestDto;
 import site.benepay.domain.recommendation.dto.response.BenefitStoreDetailResponseDto;
 import site.benepay.domain.recommendation.dto.response.NearbyBenefitStoreResponseDto;
@@ -35,11 +32,7 @@ public class RecommendationController {
     @GetMapping("/benefit-stores/{merchantId}")
     public ResponseEntity<BenefitStoreDetailResponseDto> getBenefitStoreDetail(
             @PathVariable Long merchantId,
-<<<<<<< Updated upstream
-            @ModelAttribute NearbyBenefitStoreRequestDto request
-=======
             @ModelAttribute BenefitStoreDetailRequestDto request
->>>>>>> Stashed changes
     ) {
         return ResponseEntity.ok(recommendationService.getBenefitStoreDetail(currentUserId(), merchantId, request));
     }
