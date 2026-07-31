@@ -40,6 +40,69 @@ class DefaultBenefitRecommendationAlgorithmTest {
         assertThat(result.get(1).getBenefitLabel()).isEqualTo("혜택 없음");
     }
 
+<<<<<<< Updated upstream
+=======
+    @Test
+    void getRecommendedCardsPrioritizesExpectedBenefitAmountForStoreDetail() {
+        StoreBenefitCardCandidate goodDay = cardCandidate(4L, "Good Day Card", null, """
+                {
+                  "performanceTiers": [
+                    {
+                      "minimumSpending": 600000,
+                      "maximumSpending": 1200000,
+                      "benefits": [
+                        {
+                          "merchantType": "CATEGORY",
+                          "categoryCode": "CAFE",
+                          "discountRate": 10,
+                          "description": "Cafe discount"
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """);
+        goodDay.setCardId(6L);
+        goodDay.setCategoryCode("CAFE");
+        goodDay.setBrandName("Starbucks");
+        goodDay.setTotalSpendingAmount(BigDecimal.valueOf(650000));
+
+        StoreBenefitCardCandidate myFit = cardCandidate(5L, "My Fit Card", null, """
+                {
+                  "performanceTiers": [
+                    {
+                      "minimumSpending": 500000,
+                      "maximumSpending": 1000000,
+                      "benefits": [
+                        {
+                          "merchantType": "BRAND",
+                          "categoryCodes": ["RESTAURANT", "CAFE", "CVS"],
+                          "merchants": ["Starbucks"],
+                          "discountRate": 5,
+                          "description": "Starbucks discount"
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """);
+        myFit.setCardId(7L);
+        myFit.setCategoryCode("CAFE");
+        myFit.setBrandName("Starbucks");
+        myFit.setTotalSpendingAmount(BigDecimal.valueOf(650000));
+
+        List<RecommendedBenefitCard> result = algorithm.getRecommendedCards(
+                List.of(myFit, goodDay),
+                BigDecimal.valueOf(20000)
+        );
+
+        assertThat(result.get(0).getUserCardId()).isEqualTo(4L);
+        assertThat(result.get(0).getExpectedBenefitAmount()).isEqualByComparingTo("2000");
+        assertThat(result.get(1).getUserCardId()).isEqualTo(5L);
+        assertThat(result.get(1).getExpectedBenefitAmount()).isEqualByComparingTo("1000");
+    }
+
+>>>>>>> Stashed changes
     private BenefitStoreCandidate candidate(Long merchantId, Long cardId, String cardName,
                                              String benefitsInfo, int distanceMeters) {
         BenefitStoreCandidate candidate = new BenefitStoreCandidate();

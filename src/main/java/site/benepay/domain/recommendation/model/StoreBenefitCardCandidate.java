@@ -6,6 +6,10 @@ public class StoreBenefitCardCandidate {
 
     private Long merchantId;
     private String merchantName;
+<<<<<<< Updated upstream
+=======
+    private String brandCode;
+>>>>>>> Stashed changes
     private String brandName;
     private String categoryCode;
     private String categoryName;
@@ -26,6 +30,10 @@ public class StoreBenefitCardCandidate {
     private String benefitName;
     private String benefitDescription;
     private String benefitsInfo;
+<<<<<<< Updated upstream
+=======
+    private BigDecimal totalSpendingAmount;
+>>>>>>> Stashed changes
 
     public Long getMerchantId() {
         return merchantId;
@@ -43,6 +51,17 @@ public class StoreBenefitCardCandidate {
         this.merchantName = merchantName;
     }
 
+<<<<<<< Updated upstream
+=======
+    public String getBrandCode() {
+        return brandCode;
+    }
+
+    public void setBrandCode(String brandCode) {
+        this.brandCode = brandCode;
+    }
+
+>>>>>>> Stashed changes
     public String getBrandName() {
         return brandName;
     }
@@ -202,4 +221,15 @@ public class StoreBenefitCardCandidate {
     public void setBenefitsInfo(String benefitsInfo) {
         this.benefitsInfo = benefitsInfo;
     }
+<<<<<<< Updated upstream
+=======
+
+    public BigDecimal getTotalSpendingAmount() {
+        return totalSpendingAmount;
+    }
+
+    public void setTotalSpendingAmount(BigDecimal totalSpendingAmount) {
+        this.totalSpendingAmount = totalSpendingAmount;
+    }
+>>>>>>> Stashed changes
 }

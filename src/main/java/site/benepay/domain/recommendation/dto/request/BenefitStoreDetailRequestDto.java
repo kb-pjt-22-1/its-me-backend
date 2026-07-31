@@ -4,7 +4,11 @@ import java.math.BigDecimal;
 
 public class BenefitStoreDetailRequestDto {
 
+<<<<<<< Updated upstream
     private BigDecimal estimatedPaymentAmount = BigDecimal.valueOf(10000);
+=======
+    private BigDecimal estimatedPaymentAmount;
+>>>>>>> Stashed changes
     private Double latitude;
     private Double longitude;
 

@@ -9,10 +9,20 @@ import site.benepay.domain.recommendation.model.RecommendedBenefitStore;
 import site.benepay.domain.recommendation.model.StoreBenefitCardCandidate;
 
 import java.math.BigDecimal;
+<<<<<<< Updated upstream
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+=======
+import java.math.RoundingMode;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+>>>>>>> Stashed changes
 import java.util.stream.Collectors;
 
 @Component
@@ -51,6 +61,7 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
 
     @Override
     public List<RecommendedBenefitCard> getRecommendedCards(List<StoreBenefitCardCandidate> candidates) {
+<<<<<<< Updated upstream
         Map<Long, RecommendedBenefitCard> bestByUserCard = new LinkedHashMap<>();
 
         for (StoreBenefitCardCandidate candidate : candidates) {
@@ -59,24 +70,55 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
                     candidate,
                     score.benefitLabel,
                     score.estimatedBenefitScore,
+=======
+        return getRecommendedCards(candidates, null);
+    }
+
+    @Override
+    public List<RecommendedBenefitCard> getRecommendedCards(
+            List<StoreBenefitCardCandidate> candidates,
+            BigDecimal estimatedPaymentAmount
+    ) {
+        Map<Long, RecommendedBenefitCard> bestByUserCard = new LinkedHashMap<>();
+
+        for (StoreBenefitCardCandidate candidate : candidates) {
+            BenefitScore score = score(candidate, estimatedPaymentAmount);
+            RecommendedBenefitCard recommendedCard = new RecommendedBenefitCard(
+                    candidate,
+                    score.benefitId,
+                    score.benefitType,
+                    score.benefitName,
+                    score.benefitDescription,
+                    score.benefitLabel,
+                    score.estimatedBenefitScore,
+                    score.expectedBenefitAmount,
+>>>>>>> Stashed changes
                     score.recommendationScore
             );
 
             bestByUserCard.merge(
                     candidate.getUserCardId(),
                     recommendedCard,
+<<<<<<< Updated upstream
                     (current, next) -> current.getRecommendationScore() >= next.getRecommendationScore()
+=======
+                    (current, next) -> compareCards(current, next, estimatedPaymentAmount) >= 0
+>>>>>>> Stashed changes
                             ? current
                             : next
             );
         }
 
         return bestByUserCard.values().stream()
+<<<<<<< Updated upstream
                 .sorted(Comparator
                         .comparing(RecommendedBenefitCard::isRecommended).reversed()
                         .thenComparing(
                                 Comparator.comparingDouble(RecommendedBenefitCard::getRecommendationScore).reversed()
                         ))
+=======
+                .sorted(cardComparator(estimatedPaymentAmount))
+>>>>>>> Stashed changes
                 .collect(Collectors.toList());
     }
 
@@ -89,9 +131,19 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
         );
     }
 
+<<<<<<< Updated upstream
     private BenefitScore score(StoreBenefitCardCandidate candidate) {
         if (candidate.getBenefitId() == null) {
             return new BenefitScore("혜택 없음", 0, 0.0);
+=======
+    private BenefitScore score(StoreBenefitCardCandidate candidate, BigDecimal estimatedPaymentAmount) {
+        if (candidate.getBenefitId() == null) {
+            BenefitScore structuredScore = scoreStructuredBenefit(candidate, estimatedPaymentAmount);
+            if (structuredScore != null) {
+                return structuredScore;
+            }
+            return new BenefitScore("혜택 없음", 0, null, 0.0);
+>>>>>>> Stashed changes
         }
         return score(candidate.getBenefitsInfo(), candidate.getBenefitName(), BigDecimal.ZERO, false);
     }
@@ -122,7 +174,228 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
         double distancePenalty = distanceMeters.doubleValue() / 100.0;
         double bookmarkBoost = bookmarked ? 5.0 : 0.0;
         double recommendationScore = benefitScore + bookmarkBoost - distancePenalty;
+<<<<<<< Updated upstream
         return new BenefitScore(label, benefitScore, recommendationScore);
+=======
+        return new BenefitScore(label, benefitScore, null, recommendationScore);
+    }
+
+    private BenefitScore scoreStructuredBenefit(
+            StoreBenefitCardCandidate candidate,
+            BigDecimal estimatedPaymentAmount
+    ) {
+        JsonNode root = parseBenefitsInfo(candidate.getBenefitsInfo());
+        JsonNode tier = selectPerformanceTier(root, candidate.getTotalSpendingAmount());
+        if (tier == null) {
+            return null;
+        }
+
+        BenefitScore bestScore = null;
+        for (JsonNode benefit : benefitNodes(tier)) {
+            if (!matchesBenefit(benefit, candidate)) {
+                continue;
+            }
+
+            BenefitScore score = scoreMatchedBenefit(benefit, estimatedPaymentAmount);
+            if (score == null) {
+                continue;
+            }
+            if (bestScore == null || compareScores(score, bestScore, estimatedPaymentAmount) > 0) {
+                bestScore = score;
+            }
+        }
+        return bestScore;
+    }
+
+    private JsonNode selectPerformanceTier(JsonNode root, BigDecimal totalSpendingAmount) {
+        JsonNode tiers = root.get("performanceTiers");
+        if (tiers == null || !tiers.isArray()) {
+            return null;
+        }
+
+        BigDecimal spendingAmount = totalSpendingAmount == null ? BigDecimal.ZERO : totalSpendingAmount;
+        for (JsonNode tier : tiers) {
+            BigDecimal minimumSpending = decimalValue(tier, "minimumSpending");
+            BigDecimal maximumSpending = decimalValue(tier, "maximumSpending");
+            boolean satisfiesMinimum = minimumSpending == null || spendingAmount.compareTo(minimumSpending) >= 0;
+            boolean satisfiesMaximum = maximumSpending == null || spendingAmount.compareTo(maximumSpending) < 0;
+            if (satisfiesMinimum && satisfiesMaximum) {
+                return tier;
+            }
+        }
+        return null;
+    }
+
+    private List<JsonNode> benefitNodes(JsonNode tier) {
+        JsonNode benefits = tier.get("benefits");
+        if (benefits != null && benefits.isArray()) {
+            return iterableToList(benefits);
+        }
+        return List.of(tier);
+    }
+
+    private List<JsonNode> iterableToList(JsonNode nodes) {
+        return java.util.stream.StreamSupport.stream(nodes.spliterator(), false)
+                .collect(Collectors.toList());
+    }
+
+    private boolean matchesBenefit(JsonNode benefit, StoreBenefitCardCandidate candidate) {
+        String merchantType = textValue(benefit, "merchantType");
+        boolean categoryMatches = matchesCategory(benefit, candidate.getCategoryCode());
+
+        if ("BRAND".equalsIgnoreCase(merchantType)) {
+            if (hasCategoryCondition(benefit) && !categoryMatches) {
+                return false;
+            }
+            boolean hasBrandCondition = hasNonEmptyArray(benefit, "brandCodes") || hasNonEmptyArray(benefit, "merchants");
+            if (!hasBrandCondition) {
+                return categoryMatches || !hasCategoryCondition(benefit);
+            }
+            return containsText(benefit.get("brandCodes"), candidate.getBrandCode())
+                    || containsText(benefit.get("merchants"), candidate.getBrandName());
+        }
+
+        return !hasCategoryCondition(benefit) || categoryMatches;
+    }
+
+    private boolean matchesCategory(JsonNode benefit, String categoryCode) {
+        return equalsText(textValue(benefit, "categoryCode"), categoryCode)
+                || containsText(benefit.get("categoryCodes"), categoryCode);
+    }
+
+    private boolean hasCategoryCondition(JsonNode benefit) {
+        return textValue(benefit, "categoryCode") != null || hasNonEmptyArray(benefit, "categoryCodes");
+    }
+
+    private boolean hasNonEmptyArray(JsonNode node, String name) {
+        JsonNode array = node.get(name);
+        return array != null && array.isArray() && !array.isEmpty();
+    }
+
+    private boolean containsText(JsonNode array, String expected) {
+        if (array == null || !array.isArray() || expected == null) {
+            return false;
+        }
+        Set<String> values = new HashSet<>();
+        for (JsonNode value : array) {
+            if (value.isTextual()) {
+                values.add(value.asText().trim().toUpperCase());
+            }
+        }
+        return values.contains(expected.trim().toUpperCase());
+    }
+
+    private boolean equalsText(String actual, String expected) {
+        if (actual == null || expected == null) {
+            return false;
+        }
+        return actual.trim().equalsIgnoreCase(expected.trim());
+    }
+
+    private BenefitScore scoreMatchedBenefit(JsonNode benefit, BigDecimal estimatedPaymentAmount) {
+        BigDecimal discountRate = firstDecimal(benefit, "discountRate", "discount_rate");
+        BigDecimal expectedBenefitAmount = calculateExpectedBenefitAmount(
+                benefit,
+                estimatedPaymentAmount,
+                discountRate
+        );
+
+        if (estimatedPaymentAmount != null && expectedBenefitAmount == null) {
+            return null;
+        }
+
+        int benefitScore;
+        String label;
+        if (expectedBenefitAmount != null) {
+            benefitScore = expectedBenefitAmount.intValue();
+            label = String.format("%,d원 혜택", benefitScore);
+        } else if (discountRate != null) {
+            benefitScore = discountRate.multiply(BigDecimal.valueOf(100)).intValue();
+            label = stripZeros(discountRate) + "% 혜택";
+        } else {
+            benefitScore = 10;
+            label = fallbackLabel(benefit);
+        }
+
+        String benefitName = firstText(benefit, "categoryName", "benefitName", "name");
+        String benefitType = firstText(benefit, "discountMethod", "benefitType");
+        String benefitDescription = firstText(benefit, "description");
+
+        return new BenefitScore(
+                label,
+                benefitScore,
+                expectedBenefitAmount,
+                benefitScore,
+                longValue(benefit, "benefitId"),
+                benefitType,
+                benefitName,
+                benefitDescription
+        );
+    }
+
+    private BigDecimal calculateExpectedBenefitAmount(
+            JsonNode benefit,
+            BigDecimal estimatedPaymentAmount,
+            BigDecimal discountRate
+    ) {
+        if (estimatedPaymentAmount == null || discountRate == null) {
+            return null;
+        }
+
+        BigDecimal applicableAmountMin = decimalValue(benefit, "applicableAmountMin");
+        if (applicableAmountMin != null && estimatedPaymentAmount.compareTo(applicableAmountMin) < 0) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal amount = estimatedPaymentAmount
+                .multiply(discountRate)
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.DOWN);
+        BigDecimal monthlyBenefitLimit = decimalValue(benefit, "monthlyBenefitLimit");
+        if (monthlyBenefitLimit != null && amount.compareTo(monthlyBenefitLimit) > 0) {
+            return monthlyBenefitLimit.setScale(0, RoundingMode.DOWN);
+        }
+        return amount;
+    }
+
+    private String fallbackLabel(JsonNode benefit) {
+        String name = firstText(benefit, "categoryName", "benefitName", "name", "description");
+        return name == null ? "카드 혜택" : name;
+    }
+
+    private Comparator<RecommendedBenefitCard> cardComparator(BigDecimal estimatedPaymentAmount) {
+        if (estimatedPaymentAmount != null) {
+            return Comparator
+                    .comparing(RecommendedBenefitCard::isRecommended).reversed()
+                    .thenComparing(RecommendedBenefitCard::getExpectedBenefitAmount, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(Comparator.comparingDouble(RecommendedBenefitCard::getRecommendationScore).reversed());
+        }
+        return Comparator
+                .comparing(RecommendedBenefitCard::isRecommended).reversed()
+                .thenComparing(Comparator.comparingDouble(RecommendedBenefitCard::getRecommendationScore).reversed());
+    }
+
+    private int compareCards(
+            RecommendedBenefitCard current,
+            RecommendedBenefitCard next,
+            BigDecimal estimatedPaymentAmount
+    ) {
+        return cardComparator(estimatedPaymentAmount).compare(current, next) * -1;
+    }
+
+    private int compareScores(BenefitScore current, BenefitScore next, BigDecimal estimatedPaymentAmount) {
+        if (estimatedPaymentAmount != null) {
+            int amountCompare = nullToZero(current.expectedBenefitAmount)
+                    .compareTo(nullToZero(next.expectedBenefitAmount));
+            if (amountCompare != 0) {
+                return amountCompare;
+            }
+        }
+        return Double.compare(current.recommendationScore, next.recommendationScore);
+    }
+
+    private BigDecimal nullToZero(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+>>>>>>> Stashed changes
     }
 
     private JsonNode parseBenefitsInfo(String benefitsInfo) {
@@ -143,12 +416,64 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
         return null;
     }
 
+<<<<<<< Updated upstream
     private BigDecimal decimalValue(JsonNode node, String name) {
         JsonNode value = node.get(name);
         if (value == null || !value.isNumber()) {
             return null;
         }
         return value.decimalValue();
+=======
+    private String firstText(JsonNode node, String... names) {
+        for (String name : names) {
+            String value = textValue(node, name);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String textValue(JsonNode node, String name) {
+        JsonNode value = node.get(name);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        return value.asText();
+    }
+
+    private Long longValue(JsonNode node, String name) {
+        JsonNode value = node.get(name);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (value.canConvertToLong()) {
+            return value.asLong();
+        }
+        try {
+            return Long.valueOf(value.asText());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private BigDecimal decimalValue(JsonNode node, String name) {
+        JsonNode value = node.get(name);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (value.isNumber()) {
+            return value.decimalValue();
+        }
+        if (value.isTextual()) {
+            try {
+                return new BigDecimal(value.asText());
+            } catch (NumberFormatException ex) {
+                return null;
+            }
+        }
+        return null;
+>>>>>>> Stashed changes
     }
 
     private String stripZeros(BigDecimal value) {
@@ -158,12 +483,50 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
     private static class BenefitScore {
         private final String benefitLabel;
         private final Integer estimatedBenefitScore;
+<<<<<<< Updated upstream
         private final double recommendationScore;
 
         private BenefitScore(String benefitLabel, Integer estimatedBenefitScore, double recommendationScore) {
             this.benefitLabel = benefitLabel;
             this.estimatedBenefitScore = estimatedBenefitScore;
             this.recommendationScore = recommendationScore;
+=======
+        private final BigDecimal expectedBenefitAmount;
+        private final double recommendationScore;
+        private final Long benefitId;
+        private final String benefitType;
+        private final String benefitName;
+        private final String benefitDescription;
+
+        private BenefitScore(
+                String benefitLabel,
+                Integer estimatedBenefitScore,
+                BigDecimal expectedBenefitAmount,
+                double recommendationScore
+        ) {
+            this(benefitLabel, estimatedBenefitScore, expectedBenefitAmount, recommendationScore,
+                    null, null, null, null);
+        }
+
+        private BenefitScore(
+                String benefitLabel,
+                Integer estimatedBenefitScore,
+                BigDecimal expectedBenefitAmount,
+                double recommendationScore,
+                Long benefitId,
+                String benefitType,
+                String benefitName,
+                String benefitDescription
+        ) {
+            this.benefitLabel = benefitLabel;
+            this.estimatedBenefitScore = estimatedBenefitScore;
+            this.expectedBenefitAmount = expectedBenefitAmount;
+            this.recommendationScore = recommendationScore;
+            this.benefitId = benefitId;
+            this.benefitType = benefitType;
+            this.benefitName = benefitName;
+            this.benefitDescription = benefitDescription;
+>>>>>>> Stashed changes
         }
     }
 }

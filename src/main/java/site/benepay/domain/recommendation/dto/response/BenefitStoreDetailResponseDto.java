@@ -59,6 +59,10 @@ public class BenefitStoreDetailResponseDto {
     public static class StoreDto {
         private final Long merchantId;
         private final String merchantName;
+<<<<<<< Updated upstream
+=======
+        private final String brandCode;
+>>>>>>> Stashed changes
         private final String brandName;
         private final String categoryCode;
         private final String categoryName;
@@ -72,6 +76,10 @@ public class BenefitStoreDetailResponseDto {
         private StoreDto(StoreBenefitCardCandidate store) {
             this.merchantId = store.getMerchantId();
             this.merchantName = store.getMerchantName();
+<<<<<<< Updated upstream
+=======
+            this.brandCode = store.getBrandCode();
+>>>>>>> Stashed changes
             this.brandName = store.getBrandName();
             this.categoryCode = store.getCategoryCode();
             this.categoryName = store.getCategoryName();
@@ -102,6 +110,13 @@ public class BenefitStoreDetailResponseDto {
             return merchantName;
         }
 
+<<<<<<< Updated upstream
+=======
+        public String getBrandCode() {
+            return brandCode;
+        }
+
+>>>>>>> Stashed changes
         public String getBrandName() {
             return brandName;
         }
@@ -153,6 +168,10 @@ public class BenefitStoreDetailResponseDto {
         private final String benefitDescription;
         private final String benefitLabel;
         private final Integer estimatedBenefitScore;
+<<<<<<< Updated upstream
+=======
+        private final BigDecimal expectedBenefitAmount;
+>>>>>>> Stashed changes
 
         private CardBenefitDto(RecommendedBenefitCard card) {
             this.userCardId = card.getUserCardId();
@@ -168,6 +187,10 @@ public class BenefitStoreDetailResponseDto {
             this.benefitDescription = card.getBenefitDescription();
             this.benefitLabel = card.getBenefitLabel();
             this.estimatedBenefitScore = card.getEstimatedBenefitScore();
+<<<<<<< Updated upstream
+=======
+            this.expectedBenefitAmount = card.getExpectedBenefitAmount();
+>>>>>>> Stashed changes
         }
 
         private static CardBenefitDto from(RecommendedBenefitCard card) {
@@ -225,6 +248,13 @@ public class BenefitStoreDetailResponseDto {
         public Integer getEstimatedBenefitScore() {
             return estimatedBenefitScore;
         }
+<<<<<<< Updated upstream
+=======
+
+        public BigDecimal getExpectedBenefitAmount() {
+            return expectedBenefitAmount;
+        }
+>>>>>>> Stashed changes
     }
 
     public static class PaymentEntryDto {

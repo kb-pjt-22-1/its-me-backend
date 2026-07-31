@@ -3,6 +3,10 @@ package site.benepay.domain.recommendation.service;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import site.benepay.domain.recommendation.algorithm.BenefitRecommendationAlgorithm;
+<<<<<<< Updated upstream
+=======
+import site.benepay.domain.recommendation.dto.request.BenefitStoreDetailRequestDto;
+>>>>>>> Stashed changes
 import site.benepay.domain.recommendation.dto.request.NearbyBenefitStoreRequestDto;
 import site.benepay.domain.recommendation.dto.request.RecommendationSort;
 import site.benepay.domain.recommendation.dto.response.BenefitStoreDetailResponseDto;
@@ -24,6 +28,10 @@ public class RecommendationServiceImpl implements RecommendationService {
     private static final int MAX_RADIUS_METERS = 5000;
     private static final int DEFAULT_LIMIT = 20;
     private static final int MAX_LIMIT = 50;
+<<<<<<< Updated upstream
+=======
+    private static final String DEFAULT_PERFORMANCE_MONTH = "202606";
+>>>>>>> Stashed changes
 
     private final RecommendationMapper recommendationMapper;
     private final BenefitRecommendationAlgorithm recommendationAlgorithm;
@@ -66,7 +74,11 @@ public class RecommendationServiceImpl implements RecommendationService {
     public BenefitStoreDetailResponseDto getBenefitStoreDetail(
             Long userId,
             Long merchantId,
+<<<<<<< Updated upstream
             NearbyBenefitStoreRequestDto request
+=======
+            BenefitStoreDetailRequestDto request
+>>>>>>> Stashed changes
     ) {
         if (merchantId == null) {
             throw new IllegalArgumentException("merchantId is required");
@@ -76,6 +88,10 @@ public class RecommendationServiceImpl implements RecommendationService {
         List<StoreBenefitCardCandidate> candidates = recommendationMapper.getBenefitStoreCardCandidates(
                 userId,
                 merchantId,
+<<<<<<< Updated upstream
+=======
+                resolvePerformanceMonth(),
+>>>>>>> Stashed changes
                 request.getLatitude(),
                 request.getLongitude()
         );
@@ -85,10 +101,21 @@ public class RecommendationServiceImpl implements RecommendationService {
 
         return BenefitStoreDetailResponseDto.from(
                 candidates.get(0),
+<<<<<<< Updated upstream
                 recommendationAlgorithm.getRecommendedCards(candidates)
         );
     }
 
+=======
+                recommendationAlgorithm.getRecommendedCards(candidates, request.getEstimatedPaymentAmount())
+        );
+    }
+
+    private String resolvePerformanceMonth() {
+        return DEFAULT_PERFORMANCE_MONTH;
+    }
+
+>>>>>>> Stashed changes
     private void validateLocation(Double latitude, Double longitude) {
         if (latitude == null || longitude == null) {
             throw new IllegalArgumentException("latitude and longitude are required");
