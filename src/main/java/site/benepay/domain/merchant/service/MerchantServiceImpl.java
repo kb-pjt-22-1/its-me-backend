@@ -78,7 +78,7 @@ public class MerchantServiceImpl implements MerchantService {
     private Merchant buildMerchant(Long merchantId, MerchantRequestDto request) {
         return Merchant.builder()
                 .merchantId(merchantId)
-                .categoryId(request.getCategoryId())
+                .categoryCode(request.getCategoryCode())
                 .brandId(request.getBrandId())
                 .merchantCode(request.getMerchantCode())
                 .merchantName(request.getMerchantName())

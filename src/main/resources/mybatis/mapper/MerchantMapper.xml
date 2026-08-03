@@ -3,13 +3,13 @@
 <mapper namespace="site.benepay.domain.merchant.mapper.MerchantMapper">
 
     <sql id="merchantColumns">
-        merchant_id, brand_id, category_id, merchant_code, merchant_name, address, latitude, longitude, phone
+        merchant_id, brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude, phone
     </sql>
 
     <insert id="insert" parameterType="site.benepay.domain.merchant.vo.Merchant"
             useGeneratedKeys="true" keyProperty="merchantId" keyColumn="merchant_id">
-        INSERT INTO merchants (brand_id, category_id, merchant_code, merchant_name, address, latitude, longitude, phone)
-        VALUES (#{brandId}, #{categoryId}, #{merchantCode}, #{merchantName}, #{address}, #{latitude}, #{longitude}, #{phone})
+        INSERT INTO merchants (brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude, phone)
+        VALUES (#{brandId}, #{categoryCode}, #{merchantCode}, #{merchantName}, #{address}, #{latitude}, #{longitude}, #{phone})
     </insert>
 
     <select id="findByMerchantId" resultType="site.benepay.domain.merchant.vo.Merchant">
@@ -31,7 +31,7 @@
     <update id="update" parameterType="site.benepay.domain.merchant.vo.Merchant">
         UPDATE merchants
         SET brand_id = #{brandId},
-            category_id = #{categoryId},
+            category_code = #{categoryCode},
             merchant_code = #{merchantCode},
             merchant_name = #{merchantName},
             address = #{address},

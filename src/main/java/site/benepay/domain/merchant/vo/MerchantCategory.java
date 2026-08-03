@@ -12,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 @NoArgsConstructor
 @RequiredArgsConstructor
 public class MerchantCategory {
-	private Long categoryId;
 	@NonNull
 	@Pattern(regexp = "^\\d{4}$")
 	private String categoryCode;
