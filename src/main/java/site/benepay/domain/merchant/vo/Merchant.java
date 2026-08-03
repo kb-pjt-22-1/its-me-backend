@@ -18,7 +18,7 @@ import java.math.BigDecimal;
 public class Merchant {
     private Long merchantId;
     @NonNull
-    private Long categoryId;
+    private String categoryCode;
     @NonNull
     private Long brandId;
     @NonNull

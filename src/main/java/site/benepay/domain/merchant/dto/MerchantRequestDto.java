@@ -14,8 +14,9 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class MerchantRequestDto {
-    @NotNull
-    private Long categoryId;
+    @NotBlank
+    @Pattern(regexp = "^\\d{4}$")
+    private String categoryCode;
     @NotNull
     private Long brandId;
     @NotBlank

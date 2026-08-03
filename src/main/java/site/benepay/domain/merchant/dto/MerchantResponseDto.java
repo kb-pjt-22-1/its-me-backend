@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 public class MerchantResponseDto {
 
     private Long merchantId;
-    private Long categoryId;
+    private String categoryCode;
     private Long brandId;
     private String merchantCode;
     private String merchantName;
@@ -23,7 +23,7 @@ public class MerchantResponseDto {
     public static MerchantResponseDto from(Merchant merchant) {
         return MerchantResponseDto.builder()
                 .merchantId(merchant.getMerchantId())
-                .categoryId(merchant.getCategoryId())
+                .categoryCode(merchant.getCategoryCode())
                 .brandId(merchant.getBrandId())
                 .merchantCode(merchant.getMerchantCode())
                 .merchantName(merchant.getMerchantName())
