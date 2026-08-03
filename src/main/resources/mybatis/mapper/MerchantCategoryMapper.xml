@@ -3,9 +3,9 @@
 <mapper namespace="site.benepay.domain.merchant.mapper.MerchantCategoryMapper">
 
     <select id="findAll" resultType="site.benepay.domain.merchant.vo.MerchantCategory">
-        SELECT category_id, category_code, category_name, category_icon
+        SELECT category_code, category_name, category_icon
         FROM merchant_categories
-        ORDER BY category_id
+        ORDER BY category_code
     </select>
 
 </mapper>

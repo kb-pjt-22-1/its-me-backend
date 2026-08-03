@@ -86,7 +86,7 @@ public class GlobalExceptionHandler {
     }
 
     // MyBatis(SqlSessionTemplate)가 SQL 예외를 이 타입으로 변환해서 던진다.
-    // FK 제약 위반(존재하지 않는 categoryId/brandId 등), NOT NULL 위반 등이 여기로 들어온다.
+    // FK 제약 위반(존재하지 않는 categoryCode/brandId 등), NOT NULL 위반 등이 여기로 들어온다.
     // 안 잡으면 아래 500 핸들러로 떨어져 클라이언트가 서버 에러로 오인하게 된다.
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex, HttpServletRequest request) {
