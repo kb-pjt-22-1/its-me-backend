@@ -21,6 +21,8 @@ import site.benepay.common.exception.PinAlreadyRegisteredException;
 import site.benepay.common.exception.UserNotFoundException;
 import site.benepay.common.exception.WithdrawalNotConfirmedException;
 import site.benepay.common.util.RedisKeys;
+import site.benepay.domain.user.dto.ChangePasswordRequestDto;
+import site.benepay.domain.user.dto.VerifyPasswordRequestDto;
 import site.benepay.domain.user.dto.RegisterPinRequestDto;
 import site.benepay.domain.user.dto.SignUpRequestDto;
 import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
@@ -168,6 +170,103 @@ class UserServiceTest {
         assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
 
         verify(userMapper, never()).insert(any());
+    }
+
+    // ---- password verification (재인증 게이트) ----
+
+    @Test
+    void verifyPasswordSucceedsAndClearsFailuresWhenCorrect() {
+        when(redisLockoutService.isLocked(RedisKeys.passwordLock(USER_ID))).thenReturn(false);
+        when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser(null)));
+        when(passwordEncoder.matches("Test1234!", "hashed-password")).thenReturn(true);
+
+        userService.verifyPassword(USER_ID, new VerifyPasswordRequestDto("Test1234!"));
+
+        verify(redisLockoutService).clearFailuresAndLock(RedisKeys.passwordFailure(USER_ID), RedisKeys.passwordLock(USER_ID));
+    }
+
+    @Test
+    void verifyPasswordWithWrongPasswordRecordsFailure() {
+        when(redisLockoutService.isLocked(RedisKeys.passwordLock(USER_ID))).thenReturn(false);
+        when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser(null)));
+        when(passwordEncoder.matches("wrong-password", "hashed-password")).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.verifyPassword(USER_ID, new VerifyPasswordRequestDto("wrong-password")))
+                .isInstanceOf(InvalidCredentialsException.class);
+
+        verify(redisLockoutService).recordFailureAndMaybeLock(
+                RedisKeys.passwordFailure(USER_ID), RedisKeys.passwordLock(USER_ID), 5, Duration.ofMinutes(10), Duration.ofMinutes(30));
+    }
+
+    @Test
+    void verifyPasswordFailsFastWhenLockedWithoutTouchingTheDatabase() {
+        when(redisLockoutService.isLocked(RedisKeys.passwordLock(USER_ID))).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.verifyPassword(USER_ID, new VerifyPasswordRequestDto("Test1234!")))
+                .isInstanceOf(AccountLockedException.class);
+
+        verify(userMapper, never()).findByUserId(any());
+    }
+
+    // password change와 verifyPassword가 같은 잠금 카운터를 공유하므로, 검증에서 쌓인 실패가
+    // 변경 시도에도 그대로 이어지는지 확인한다.
+    @Test
+    void verifyPasswordAndChangePasswordShareTheSameLockoutCounter() {
+        when(redisLockoutService.isLocked(RedisKeys.passwordLock(USER_ID))).thenReturn(false);
+        when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser(null)));
+        when(passwordEncoder.matches("wrong-password", "hashed-password")).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.verifyPassword(USER_ID, new VerifyPasswordRequestDto("wrong-password")))
+                .isInstanceOf(InvalidCredentialsException.class);
+        assertThatThrownBy(() -> userService.changePassword(USER_ID,
+                new ChangePasswordRequestDto("wrong-password", "NewPass1!")))
+                .isInstanceOf(InvalidCredentialsException.class);
+
+        verify(redisLockoutService, org.mockito.Mockito.times(2)).recordFailureAndMaybeLock(
+                RedisKeys.passwordFailure(USER_ID), RedisKeys.passwordLock(USER_ID), 5, Duration.ofMinutes(10), Duration.ofMinutes(30));
+    }
+
+    // ---- password change ----
+
+    @Test
+    void changePasswordFailsFastWhenLockedWithoutTouchingTheDatabase() {
+        when(redisLockoutService.isLocked(RedisKeys.passwordLock(USER_ID))).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.changePassword(USER_ID,
+                new ChangePasswordRequestDto("Test1234!", "NewPass1!")))
+                .isInstanceOf(AccountLockedException.class);
+
+        verify(userMapper, never()).findByUserId(any());
+    }
+
+    @Test
+    void changePasswordWithWrongCurrentPasswordRecordsFailure() {
+        when(redisLockoutService.isLocked(RedisKeys.passwordLock(USER_ID))).thenReturn(false);
+        when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser(null)));
+        when(passwordEncoder.matches("wrong-password", "hashed-password")).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.changePassword(USER_ID,
+                new ChangePasswordRequestDto("wrong-password", "NewPass1!")))
+                .isInstanceOf(InvalidCredentialsException.class);
+
+        verify(redisLockoutService).recordFailureAndMaybeLock(
+                RedisKeys.passwordFailure(USER_ID), RedisKeys.passwordLock(USER_ID), 5, Duration.ofMinutes(10), Duration.ofMinutes(30));
+        verify(userMapper, never()).updatePasswordHash(any(), any());
+    }
+
+    @Test
+    void changePasswordWithCorrectCurrentPasswordUpdatesAndRevokesSessions() {
+        when(redisLockoutService.isLocked(RedisKeys.passwordLock(USER_ID))).thenReturn(false);
+        when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser(null)));
+        when(passwordEncoder.matches("Test1234!", "hashed-password")).thenReturn(true);
+        when(passwordEncoder.encode("NewPass1!")).thenReturn("new-encoded-password");
+
+        userService.changePassword(USER_ID, new ChangePasswordRequestDto("Test1234!", "NewPass1!"));
+
+        verify(redisLockoutService).clearFailuresAndLock(RedisKeys.passwordFailure(USER_ID), RedisKeys.passwordLock(USER_ID));
+        verify(userMapper).updatePasswordHash(USER_ID, "new-encoded-password");
+        // 비밀번호가 바뀌면 예전 비밀번호로 떠 있던 세션은 무효화돼야 한다.
+        verify(tokenService).revokeRefreshToken(USER_ID);
     }
 
     // ---- profile ----

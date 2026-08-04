@@ -4,10 +4,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import site.benepay.domain.user.dto.ChangePasswordRequestDto;
 import site.benepay.domain.user.dto.RegisterPinRequestDto;
 import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
 import site.benepay.domain.user.dto.UpdateProfileRequestDto;
 import site.benepay.domain.user.dto.UserResponseDto;
+import site.benepay.domain.user.dto.VerifyPasswordRequestDto;
 import site.benepay.domain.user.service.UserService;
 
 import javax.validation.Valid;
@@ -30,6 +32,18 @@ public class MemberController {
     @PutMapping
     public ResponseEntity<UserResponseDto> updateMyProfile(@Valid @RequestBody UpdateProfileRequestDto request) {
         return ResponseEntity.ok(userService.updateProfile(currentUserId(), request));
+    }
+
+    @PostMapping("/verify-password")
+    public ResponseEntity<Void> verifyPassword(@Valid @RequestBody VerifyPasswordRequestDto request) {
+        userService.verifyPassword(currentUserId(), request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/password")
+    public ResponseEntity<Void> changePassword(@Valid @RequestBody ChangePasswordRequestDto request) {
+        userService.changePassword(currentUserId(), request);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/pin")
