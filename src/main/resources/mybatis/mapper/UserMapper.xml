@@ -74,6 +74,13 @@
           AND is_deleted = FALSE
     </update>
 
+    <update id="updatePasswordHash">
+        UPDATE users
+        SET login_password_hash = #{loginPasswordHash}
+        WHERE user_id = #{userId}
+          AND is_deleted = FALSE
+    </update>
+
     <!--
         login_id·di·ci_encrypted가 NOT NULL이 되어 예전처럼 NULL로 비울 수 없다. 그중 login_id와
         di는 UNIQUE라 고정 문자열을 넣으면 두 번째 탈퇴자부터 충돌하므로, user_id를 섞어 유일성을

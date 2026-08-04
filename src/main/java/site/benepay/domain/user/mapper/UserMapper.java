@@ -21,5 +21,7 @@ public interface UserMapper {
 
     void updatePinHash(@Param("userId") Long userId, @Param("pinHash") String pinHash);
 
+    void updatePasswordHash(@Param("userId") Long userId, @Param("loginPasswordHash") String loginPasswordHash);
+
     void softDeleteAndAnonymize(Long userId);
 }
