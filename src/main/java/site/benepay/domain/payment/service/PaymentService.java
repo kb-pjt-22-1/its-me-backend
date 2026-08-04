@@ -1,12 +1,13 @@
 package site.benepay.domain.payment.service;
 
-import java.util.List;
-
-import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
+import site.benepay.domain.payment.dto.PaymentCreateRequestDto;
+import site.benepay.domain.payment.dto.PaymentResponseDto;
 
 public interface PaymentService {
 
-	PaymentHistoryResponseDto getPayment(Long paymentId);
+	PaymentResponseDto createPayment(PaymentCreateRequestDto request);
 
-	List<PaymentHistoryResponseDto> getPaymentHistory(Long userId);
+	PaymentResponseDto getPayment(Long paymentId);
+
+	PaymentResponseDto updatePaymentStatus(Long paymentId, String paymentStatus);
 }

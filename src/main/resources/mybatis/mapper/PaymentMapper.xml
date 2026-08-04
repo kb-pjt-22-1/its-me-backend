@@ -2,11 +2,10 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="site.benepay.domain.payment.mapper.PaymentMapper">
 
-    <resultMap id="paymentHistoryResultMap" type="site.benepay.domain.payment.vo.PaymentHistoryVO">
+    <resultMap id="paymentResultMap" type="site.benepay.domain.payment.vo.PaymentVO">
         <id column="payment_id" property="paymentId" />
-        <result column="merchant_name" property="merchantName" />
-        <result column="card_name" property="cardName" />
-        <result column="pan_last4" property="panLast4" />
+        <result column="merchant_id" property="merchantId" />
+        <result column="user_card_id" property="userCardId" />
         <result column="payment_time" property="paymentTime" />
         <result column="original_amount" property="originalAmount" />
         <result column="discount_amount" property="discountAmount" />
@@ -15,30 +14,32 @@
         <result column="payment_method" property="paymentMethod" />
     </resultMap>
 
-    <sql id="paymentHistoryColumns">
-        p.payment_id, m.merchant_name, c.card_name, uc.pan_last4,
-        p.payment_time, p.original_amount, p.discount_amount, p.final_amount,
-        p.payment_status, p.payment_method
+    <sql id="paymentColumns">
+        payment_id, merchant_id, user_card_id, payment_time,
+        original_amount, discount_amount, final_amount, payment_status, payment_method
     </sql>
 
-    <sql id="paymentHistoryJoins">
-        FROM payments p
-                 JOIN merchants m ON m.merchant_id = p.merchant_id
-                 JOIN user_cards uc ON uc.user_card_id = p.user_card_id
-                 JOIN cards c ON c.card_id = uc.card_id
-    </sql>
+    <insert id="insertPayment" parameterType="site.benepay.domain.payment.vo.PaymentVO"
+            useGeneratedKeys="true" keyProperty="paymentId" keyColumn="payment_id">
+        INSERT INTO payments (
+            merchant_id, user_card_id, payment_time,
+            original_amount, discount_amount, final_amount, payment_status, payment_method
+        ) VALUES (
+                     #{merchantId}, #{userCardId}, #{paymentTime},
+                     #{originalAmount}, #{discountAmount}, #{finalAmount}, #{paymentStatus}, #{paymentMethod}
+                 )
+    </insert>
 
-    <select id="findByPaymentId" resultMap="paymentHistoryResultMap">
-        SELECT <include refid="paymentHistoryColumns" />
-        <include refid="paymentHistoryJoins" />
-        WHERE p.payment_id = #{paymentId}
+    <select id="findByPaymentId" resultMap="paymentResultMap">
+        SELECT <include refid="paymentColumns" />
+        FROM payments
+        WHERE payment_id = #{paymentId}
     </select>
 
-    <select id="findPaymentHistoryByUserId" resultMap="paymentHistoryResultMap">
-        SELECT <include refid="paymentHistoryColumns" />
-        <include refid="paymentHistoryJoins" />
-        WHERE uc.user_id = #{userId}
-        ORDER BY p.payment_time DESC
-    </select>
+    <update id="updatePaymentStatus">
+        UPDATE payments
+        SET payment_status = #{paymentStatus}
+        WHERE payment_id = #{paymentId}
+    </update>
 
 </mapper>

@@ -65,18 +65,31 @@ public class GlobalExceptionHandler {
 		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
 	}
 
-	@ExceptionHandler(PaymentNotFoundException.class)
-	public ResponseEntity<ErrorResponse> handlePaymentNotFound(PaymentNotFoundException ex,
-		HttpServletRequest request) {
-		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
-	}
+    @ExceptionHandler(PaymentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentNotFound(PaymentNotFoundException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
 
-	@ExceptionHandler(DevLoginDisabledException.class)
-	public ResponseEntity<ErrorResponse> handleDevLoginDisabled(DevLoginDisabledException ex,
-		HttpServletRequest request) {
-		// 예외 메시지를 그대로 쓰지 않는다. 없는 경로를 쳤을 때와 응답이 같아야 감추는 의미가 있다.
-		return errorResponse(HttpStatus.NOT_FOUND, "찾을 수 없습니다.", request);
-	}
+    @ExceptionHandler(InvalidPaymentAmountException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidPaymentAmount(InvalidPaymentAmountException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(PaymentTokenNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentTokenNotFound(PaymentTokenNotFoundException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DuplicateMerchantException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateMerchant(DuplicateMerchantException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DevLoginDisabledException.class)
+    public ResponseEntity<ErrorResponse> handleDevLoginDisabled(DevLoginDisabledException ex, HttpServletRequest request) {
+        // 예외 메시지를 그대로 쓰지 않는다. 없는 경로를 쳤을 때와 응답이 같아야 감추는 의미가 있다.
+        return errorResponse(HttpStatus.NOT_FOUND, "찾을 수 없습니다.", request);
+    }
 
 	@ExceptionHandler(WithdrawalNotConfirmedException.class)
 	public ResponseEntity<ErrorResponse> handleWithdrawalNotConfirmed(WithdrawalNotConfirmedException ex,
