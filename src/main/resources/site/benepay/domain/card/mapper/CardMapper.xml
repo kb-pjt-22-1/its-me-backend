@@ -25,6 +25,44 @@
         ORDER BY uc.is_primary DESC, uc.created_at DESC
     </select>
 
+    <select id="findRecommendationEnabledCards"
+            resultType="site.benepay.domain.card.vo.RecommendationUserCardCandidate">
+        SELECT
+            uc.user_card_id AS userCardId,
+            c.card_id AS cardId,
+            c.card_name AS cardName,
+            c.card_image_url AS cardImageUrl,
+            uc.pan_last4 AS cardLast4,
+            uc.is_primary AS primary,
+            COALESCE(
+                JSON_UNQUOTE(JSON_EXTRACT(c.benefits_info, '$.discountMethod')),
+                JSON_UNQUOTE(JSON_EXTRACT(c.benefits_info, '$.benefitType'))
+            ) AS benefitType,
+            COALESCE(
+                JSON_UNQUOTE(JSON_EXTRACT(c.benefits_info, '$.categoryName')),
+                c.card_name
+            ) AS benefitName,
+            COALESCE(
+                JSON_UNQUOTE(JSON_EXTRACT(c.benefits_info, '$.description')),
+                c.description
+            ) AS benefitDescription,
+            c.benefits_info AS benefitsInfo,
+            COALESCE(cms.total_spending_amount, 0) AS totalSpendingAmount
+        FROM user_cards uc
+        INNER JOIN cards c
+                ON uc.card_id = c.card_id
+        LEFT JOIN card_monthly_status cms
+               ON cms.user_card_id = uc.user_card_id
+              AND cms.target_year_month = #{performanceMonth}
+        WHERE uc.user_id = #{userId}
+          AND uc.status = 'ACTIVE'
+          AND uc.recommendation_enabled = TRUE
+          AND uc.deleted_at IS NULL
+          AND c.is_supported = TRUE
+          AND c.benefits_info IS NOT NULL
+        ORDER BY uc.is_primary DESC, c.card_id ASC
+    </select>
+
     <select id="findDetailByUserCardId" resultType="site.benepay.domain.card.vo.UserCardDetailVO">
         SELECT uc.user_card_id           AS userCardId,
                c.card_id                 AS cardId,

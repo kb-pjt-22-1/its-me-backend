@@ -6,6 +6,7 @@ public class BenefitStoreCandidate {
 
     private Long merchantId;
     private String merchantName;
+    private String brandCode;
     private String brandName;
     private String categoryCode;
     private String categoryName;
@@ -24,6 +25,7 @@ public class BenefitStoreCandidate {
     private String benefitName;
     private String benefitDescription;
     private String benefitsInfo;
+    private BigDecimal totalSpendingAmount;
 
     public Long getMerchantId() {
         return merchantId;
@@ -39,6 +41,14 @@ public class BenefitStoreCandidate {
 
     public void setMerchantName(String merchantName) {
         this.merchantName = merchantName;
+    }
+
+    public String getBrandCode() {
+        return brandCode;
+    }
+
+    public void setBrandCode(String brandCode) {
+        this.brandCode = brandCode;
     }
 
     public String getBrandName() {
@@ -183,5 +193,13 @@ public class BenefitStoreCandidate {
 
     public void setBenefitsInfo(String benefitsInfo) {
         this.benefitsInfo = benefitsInfo;
+    }
+
+    public BigDecimal getTotalSpendingAmount() {
+        return totalSpendingAmount;
+    }
+
+    public void setTotalSpendingAmount(BigDecimal totalSpendingAmount) {
+        this.totalSpendingAmount = totalSpendingAmount;
     }
 }

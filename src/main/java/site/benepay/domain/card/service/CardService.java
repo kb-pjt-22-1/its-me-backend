@@ -25,6 +25,7 @@ import site.benepay.domain.card.vo.UserCardBenefitVO;
 import site.benepay.domain.card.vo.UserCardDetailVO;
 import site.benepay.domain.card.vo.UserCardListVO;
 import site.benepay.domain.card.vo.UserCardPerformanceVO;
+import site.benepay.domain.card.vo.RecommendationUserCardCandidate;
 
 @Service
 @RequiredArgsConstructor
@@ -155,6 +156,10 @@ public class CardService {
 		return cardList.stream()
 			.map(this::toCardListResponseDto)
 			.collect(Collectors.toList());
+	}
+
+	public List<RecommendationUserCardCandidate> getRecommendationEnabledCards(Long userId, String performanceMonth) {
+		return cardMapper.findRecommendationEnabledCards(userId, performanceMonth);
 	}
 
 	private CardListResponseDto toCardListResponseDto(UserCardListVO userCard) {

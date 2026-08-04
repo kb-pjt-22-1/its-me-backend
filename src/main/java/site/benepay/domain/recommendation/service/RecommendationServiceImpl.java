@@ -2,13 +2,16 @@ package site.benepay.domain.recommendation.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import site.benepay.domain.card.service.CardService;
+import site.benepay.domain.card.vo.RecommendationUserCardCandidate;
+import site.benepay.domain.merchant.service.MerchantService;
+import site.benepay.domain.merchant.vo.RecommendationMerchantCandidate;
 import site.benepay.domain.recommendation.algorithm.BenefitRecommendationAlgorithm;
 import site.benepay.domain.recommendation.dto.request.BenefitStoreDetailRequestDto;
 import site.benepay.domain.recommendation.dto.request.NearbyBenefitStoreRequestDto;
 import site.benepay.domain.recommendation.dto.request.RecommendationSort;
 import site.benepay.domain.recommendation.dto.response.BenefitStoreDetailResponseDto;
 import site.benepay.domain.recommendation.dto.response.NearbyBenefitStoreResponseDto;
-import site.benepay.domain.recommendation.mapper.RecommendationMapper;
 import site.benepay.domain.recommendation.model.BenefitStoreCandidate;
 import site.benepay.domain.recommendation.model.RecommendedBenefitStore;
 import site.benepay.domain.recommendation.model.StoreBenefitCardCandidate;
@@ -27,12 +30,15 @@ public class RecommendationServiceImpl implements RecommendationService {
     private static final int MAX_LIMIT = 50;
     private static final String DEFAULT_PERFORMANCE_MONTH = "202606";
 
-    private final RecommendationMapper recommendationMapper;
+    private final MerchantService merchantService;
+    private final CardService cardService;
     private final BenefitRecommendationAlgorithm recommendationAlgorithm;
 
-    public RecommendationServiceImpl(RecommendationMapper recommendationMapper,
+    public RecommendationServiceImpl(MerchantService merchantService,
+                                      CardService cardService,
                                       BenefitRecommendationAlgorithm recommendationAlgorithm) {
-        this.recommendationMapper = recommendationMapper;
+        this.merchantService = merchantService;
+        this.cardService = cardService;
         this.recommendationAlgorithm = recommendationAlgorithm;
     }
 
@@ -46,7 +52,7 @@ public class RecommendationServiceImpl implements RecommendationService {
         String categoryCode = normalizeCategoryCode(request.getCategoryCode());
         RecommendationSort sort = request.getSort() == null ? RecommendationSort.DISTANCE : request.getSort();
 
-        List<BenefitStoreCandidate> candidates = recommendationMapper.getNearbyBenefitStoreCandidates(
+        List<RecommendationMerchantCandidate> merchants = merchantService.getNearbyRecommendationCandidates(
                 userId,
                 request.getLatitude(),
                 request.getLongitude(),
@@ -54,6 +60,11 @@ public class RecommendationServiceImpl implements RecommendationService {
                 categoryCode,
                 limit * 5
         );
+        List<RecommendationUserCardCandidate> cards = cardService.getRecommendationEnabledCards(
+                userId,
+                resolvePerformanceMonth()
+        );
+        List<BenefitStoreCandidate> candidates = buildBenefitStoreCandidates(merchants, cards);
 
         List<RecommendedBenefitStore> stores = recommendationAlgorithm.getRecommendedStores(candidates).stream()
                 .sorted(comparator(sort))
@@ -75,13 +86,17 @@ public class RecommendationServiceImpl implements RecommendationService {
         }
         validateNullableLocation(request.getLatitude(), request.getLongitude());
 
-        List<StoreBenefitCardCandidate> candidates = recommendationMapper.getBenefitStoreCardCandidates(
+        RecommendationMerchantCandidate merchant = merchantService.getRecommendationCandidate(
                 userId,
                 merchantId,
-                resolvePerformanceMonth(),
                 request.getLatitude(),
                 request.getLongitude()
         );
+        List<RecommendationUserCardCandidate> cards = cardService.getRecommendationEnabledCards(
+                userId,
+                resolvePerformanceMonth()
+        );
+        List<StoreBenefitCardCandidate> candidates = buildStoreBenefitCardCandidates(merchant, cards);
         if (candidates.isEmpty()) {
             throw new IllegalArgumentException("benefit store not found");
         }
@@ -94,6 +109,88 @@ public class RecommendationServiceImpl implements RecommendationService {
 
     private String resolvePerformanceMonth() {
         return DEFAULT_PERFORMANCE_MONTH;
+    }
+
+    private List<BenefitStoreCandidate> buildBenefitStoreCandidates(
+            List<RecommendationMerchantCandidate> merchants,
+            List<RecommendationUserCardCandidate> cards
+    ) {
+        return merchants.stream()
+                .flatMap(merchant -> cards.stream().map(card -> toBenefitStoreCandidate(merchant, card)))
+                .collect(Collectors.toList());
+    }
+
+    private List<StoreBenefitCardCandidate> buildStoreBenefitCardCandidates(
+            RecommendationMerchantCandidate merchant,
+            List<RecommendationUserCardCandidate> cards
+    ) {
+        return cards.stream()
+                .map(card -> toStoreBenefitCardCandidate(merchant, card))
+                .collect(Collectors.toList());
+    }
+
+    private BenefitStoreCandidate toBenefitStoreCandidate(
+            RecommendationMerchantCandidate merchant,
+            RecommendationUserCardCandidate card
+    ) {
+        BenefitStoreCandidate candidate = new BenefitStoreCandidate();
+        applyMerchant(candidate, merchant);
+        candidate.setUserCardId(card.getUserCardId());
+        candidate.setCardId(card.getCardId());
+        candidate.setCardName(card.getCardName());
+        candidate.setCardImageUrl(card.getCardImageUrl());
+        candidate.setBenefitType(card.getBenefitType());
+        candidate.setBenefitName(card.getBenefitName());
+        candidate.setBenefitDescription(card.getBenefitDescription());
+        candidate.setBenefitsInfo(card.getBenefitsInfo());
+        candidate.setTotalSpendingAmount(card.getTotalSpendingAmount());
+        return candidate;
+    }
+
+    private StoreBenefitCardCandidate toStoreBenefitCardCandidate(
+            RecommendationMerchantCandidate merchant,
+            RecommendationUserCardCandidate card
+    ) {
+        StoreBenefitCardCandidate candidate = new StoreBenefitCardCandidate();
+        candidate.setMerchantId(merchant.getMerchantId());
+        candidate.setMerchantName(merchant.getMerchantName());
+        candidate.setBrandCode(merchant.getBrandCode());
+        candidate.setBrandName(merchant.getBrandName());
+        candidate.setCategoryCode(merchant.getCategoryCode());
+        candidate.setCategoryName(merchant.getCategoryName());
+        candidate.setAddress(merchant.getAddress());
+        candidate.setLatitude(merchant.getLatitude());
+        candidate.setLongitude(merchant.getLongitude());
+        candidate.setDistanceMeters(merchant.getDistanceMeters());
+        candidate.setRating(merchant.getRating());
+        candidate.setBookmarked(merchant.isBookmarked());
+        candidate.setUserCardId(card.getUserCardId());
+        candidate.setCardId(card.getCardId());
+        candidate.setCardName(card.getCardName());
+        candidate.setCardImageUrl(card.getCardImageUrl());
+        candidate.setCardLast4(card.getCardLast4());
+        candidate.setPrimary(card.isPrimary());
+        candidate.setBenefitType(card.getBenefitType());
+        candidate.setBenefitName(card.getBenefitName());
+        candidate.setBenefitDescription(card.getBenefitDescription());
+        candidate.setBenefitsInfo(card.getBenefitsInfo());
+        candidate.setTotalSpendingAmount(card.getTotalSpendingAmount());
+        return candidate;
+    }
+
+    private void applyMerchant(BenefitStoreCandidate candidate, RecommendationMerchantCandidate merchant) {
+        candidate.setMerchantId(merchant.getMerchantId());
+        candidate.setMerchantName(merchant.getMerchantName());
+        candidate.setBrandCode(merchant.getBrandCode());
+        candidate.setBrandName(merchant.getBrandName());
+        candidate.setCategoryCode(merchant.getCategoryCode());
+        candidate.setCategoryName(merchant.getCategoryName());
+        candidate.setAddress(merchant.getAddress());
+        candidate.setLatitude(merchant.getLatitude());
+        candidate.setLongitude(merchant.getLongitude());
+        candidate.setDistanceMeters(merchant.getDistanceMeters());
+        candidate.setRating(merchant.getRating());
+        candidate.setBookmarked(merchant.isBookmarked());
     }
 
     private void validateLocation(Double latitude, Double longitude) {

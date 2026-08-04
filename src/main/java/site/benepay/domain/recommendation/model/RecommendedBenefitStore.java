@@ -28,6 +28,17 @@ public class RecommendedBenefitStore {
 
     public RecommendedBenefitStore(BenefitStoreCandidate candidate, String benefitLabel,
                                     Integer estimatedBenefitScore, double recommendationScore) {
+        this(candidate, candidate.getBenefitId(), candidate.getBenefitType(), candidate.getBenefitName(),
+                benefitLabel, estimatedBenefitScore, recommendationScore);
+    }
+
+    public RecommendedBenefitStore(BenefitStoreCandidate candidate,
+                                    Long benefitId,
+                                    String benefitType,
+                                    String benefitName,
+                                    String benefitLabel,
+                                    Integer estimatedBenefitScore,
+                                    double recommendationScore) {
         this.merchantId = candidate.getMerchantId();
         this.merchantName = candidate.getMerchantName();
         this.brandName = candidate.getBrandName();
@@ -43,9 +54,9 @@ public class RecommendedBenefitStore {
         this.cardId = candidate.getCardId();
         this.cardName = candidate.getCardName();
         this.cardImageUrl = candidate.getCardImageUrl();
-        this.benefitId = candidate.getBenefitId();
-        this.benefitType = candidate.getBenefitType();
-        this.benefitName = candidate.getBenefitName();
+        this.benefitId = benefitId;
+        this.benefitType = benefitType;
+        this.benefitName = benefitName;
         this.benefitLabel = benefitLabel;
         this.estimatedBenefitScore = estimatedBenefitScore;
         this.recommendationScore = recommendationScore;

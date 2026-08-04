@@ -24,6 +24,86 @@
         ORDER BY merchant_id DESC
     </select>
 
+    <select id="findNearbyRecommendationCandidates"
+            resultType="site.benepay.domain.merchant.vo.RecommendationMerchantCandidate">
+        SELECT
+            m.merchant_id AS merchantId,
+            m.merchant_name AS merchantName,
+            mb.brand_code AS brandCode,
+            mb.brand_name AS brandName,
+            mc.category_code AS categoryCode,
+            mc.category_name AS categoryName,
+            m.address AS address,
+            m.latitude AS latitude,
+            m.longitude AS longitude,
+            ROUND(
+                6371000 * 2 * ASIN(SQRT(
+                    POWER(SIN(RADIANS(m.latitude - #{latitude}) / 2), 2)
+                    + COS(RADIANS(#{latitude})) * COS(RADIANS(m.latitude))
+                    * POWER(SIN(RADIANS(m.longitude - #{longitude}) / 2), 2)
+                )),
+                0
+            ) AS distanceMeters,
+            CAST(4.6 AS DECIMAL(2,1)) AS rating,
+            EXISTS (
+                SELECT 1
+                FROM bookmarked_stores bs
+                WHERE bs.user_id = #{userId}
+                  AND bs.merchant_id = m.merchant_id
+                  AND bs.is_deleted = FALSE
+            ) AS bookmarked
+        FROM merchants m
+        JOIN merchant_categories mc ON mc.category_id = m.category_id
+        LEFT JOIN merchant_brands mb ON mb.brand_id = m.brand_id
+        <if test="categoryCode != null">
+        WHERE mc.category_code = #{categoryCode}
+        </if>
+        HAVING distanceMeters &lt;= #{radiusMeters}
+        ORDER BY distanceMeters ASC
+        LIMIT #{candidateLimit}
+    </select>
+
+    <select id="findRecommendationCandidateByMerchantId"
+            resultType="site.benepay.domain.merchant.vo.RecommendationMerchantCandidate">
+        SELECT
+            m.merchant_id AS merchantId,
+            m.merchant_name AS merchantName,
+            mb.brand_code AS brandCode,
+            mb.brand_name AS brandName,
+            mc.category_code AS categoryCode,
+            mc.category_name AS categoryName,
+            m.address AS address,
+            m.latitude AS latitude,
+            m.longitude AS longitude,
+            <choose>
+                <when test="latitude != null and longitude != null">
+                    ROUND(
+                        6371000 * 2 * ASIN(SQRT(
+                            POWER(SIN(RADIANS(m.latitude - #{latitude}) / 2), 2)
+                            + COS(RADIANS(#{latitude})) * COS(RADIANS(m.latitude))
+                            * POWER(SIN(RADIANS(m.longitude - #{longitude}) / 2), 2)
+                        )),
+                        0
+                    )
+                </when>
+                <otherwise>
+                    NULL
+                </otherwise>
+            </choose> AS distanceMeters,
+            CAST(4.6 AS DECIMAL(2,1)) AS rating,
+            EXISTS (
+                SELECT 1
+                FROM bookmarked_stores bs
+                WHERE bs.user_id = #{userId}
+                  AND bs.merchant_id = m.merchant_id
+                  AND bs.is_deleted = FALSE
+            ) AS bookmarked
+        FROM merchants m
+        JOIN merchant_categories mc ON mc.category_id = m.category_id
+        LEFT JOIN merchant_brands mb ON mb.brand_id = m.brand_id
+        WHERE m.merchant_id = #{merchantId}
+    </select>
+
     <select id="existsByMerchantCode" resultType="boolean">
         SELECT EXISTS (SELECT 1 FROM merchants WHERE merchant_code = #{merchantCode})
     </select>

@@ -9,10 +9,16 @@ import site.benepay.domain.card.vo.UserCardBenefitVO;
 import site.benepay.domain.card.vo.UserCardDetailVO;
 import site.benepay.domain.card.vo.UserCardListVO;
 import site.benepay.domain.card.vo.UserCardPerformanceVO;
+import site.benepay.domain.card.vo.RecommendationUserCardCandidate;
 
 public interface CardMapper {
 
 	List<UserCardListVO> findAllByUserId(@Param("userId") Long userId);
+
+	List<RecommendationUserCardCandidate> findRecommendationEnabledCards(
+		@Param("userId") Long userId,
+		@Param("performanceMonth") String performanceMonth
+	);
 
 	Optional<UserCardDetailVO> findDetailByUserCardId(@Param("userId") Long userId,
 		@Param("userCardId") Long userCardId);

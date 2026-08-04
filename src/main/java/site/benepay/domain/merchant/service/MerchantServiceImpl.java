@@ -10,6 +10,7 @@ import site.benepay.domain.merchant.dto.MerchantRequestDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.mapper.MerchantMapper;
 import site.benepay.domain.merchant.vo.Merchant;
+import site.benepay.domain.merchant.vo.RecommendationMerchantCandidate;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -45,6 +46,38 @@ public class MerchantServiceImpl implements MerchantService {
         return merchantMapper.findAll().stream()
                 .map(MerchantResponseDto::from)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<RecommendationMerchantCandidate> getNearbyRecommendationCandidates(
+            Long userId,
+            Double latitude,
+            Double longitude,
+            Integer radiusMeters,
+            String categoryCode,
+            Integer candidateLimit
+    ) {
+        return merchantMapper.findNearbyRecommendationCandidates(
+                userId,
+                latitude,
+                longitude,
+                radiusMeters,
+                categoryCode,
+                candidateLimit
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public RecommendationMerchantCandidate getRecommendationCandidate(
+            Long userId,
+            Long merchantId,
+            Double latitude,
+            Double longitude
+    ) {
+        return merchantMapper.findRecommendationCandidateByMerchantId(userId, merchantId, latitude, longitude)
+                .orElseThrow(() -> new MerchantNotFoundException("가맹점을 찾을 수 없음: " + merchantId));
     }
 
     @Override

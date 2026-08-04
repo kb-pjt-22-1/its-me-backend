@@ -29,8 +29,14 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
 
         for (BenefitStoreCandidate candidate : candidates) {
             BenefitScore score = score(candidate);
+            if (score.recommendationScore <= 0) {
+                continue;
+            }
             RecommendedBenefitStore recommendedStore = new RecommendedBenefitStore(
                     candidate,
+                    score.benefitId,
+                    score.benefitType,
+                    score.benefitName,
                     score.benefitLabel,
                     score.estimatedBenefitScore,
                     score.recommendationScore
@@ -93,12 +99,47 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
     }
 
     private BenefitScore score(BenefitStoreCandidate candidate) {
+        BenefitScore structuredScore = scoreStructuredBenefit(toStoreBenefitCardCandidate(candidate), null);
+        if (structuredScore != null) {
+            double distancePenalty = candidate.getDistanceMeters().doubleValue() / 100.0;
+            double bookmarkBoost = candidate.isBookmarked() ? 5.0 : 0.0;
+            return structuredScore.withRecommendationScore(
+                    structuredScore.recommendationScore + bookmarkBoost - distancePenalty
+            );
+        }
         return score(
                 candidate.getBenefitsInfo(),
                 candidate.getBenefitName(),
                 candidate.getDistanceMeters(),
                 candidate.isBookmarked()
         );
+    }
+
+    private StoreBenefitCardCandidate toStoreBenefitCardCandidate(BenefitStoreCandidate candidate) {
+        StoreBenefitCardCandidate cardCandidate = new StoreBenefitCardCandidate();
+        cardCandidate.setMerchantId(candidate.getMerchantId());
+        cardCandidate.setMerchantName(candidate.getMerchantName());
+        cardCandidate.setBrandCode(candidate.getBrandCode());
+        cardCandidate.setBrandName(candidate.getBrandName());
+        cardCandidate.setCategoryCode(candidate.getCategoryCode());
+        cardCandidate.setCategoryName(candidate.getCategoryName());
+        cardCandidate.setAddress(candidate.getAddress());
+        cardCandidate.setLatitude(candidate.getLatitude());
+        cardCandidate.setLongitude(candidate.getLongitude());
+        cardCandidate.setDistanceMeters(candidate.getDistanceMeters());
+        cardCandidate.setRating(candidate.getRating());
+        cardCandidate.setBookmarked(candidate.isBookmarked());
+        cardCandidate.setUserCardId(candidate.getUserCardId());
+        cardCandidate.setCardId(candidate.getCardId());
+        cardCandidate.setCardName(candidate.getCardName());
+        cardCandidate.setCardImageUrl(candidate.getCardImageUrl());
+        cardCandidate.setBenefitId(candidate.getBenefitId());
+        cardCandidate.setBenefitType(candidate.getBenefitType());
+        cardCandidate.setBenefitName(candidate.getBenefitName());
+        cardCandidate.setBenefitDescription(candidate.getBenefitDescription());
+        cardCandidate.setBenefitsInfo(candidate.getBenefitsInfo());
+        cardCandidate.setTotalSpendingAmount(candidate.getTotalSpendingAmount());
+        return cardCandidate;
     }
 
     private BenefitScore score(StoreBenefitCardCandidate candidate, BigDecimal estimatedPaymentAmount) {
@@ -469,6 +510,19 @@ public class DefaultBenefitRecommendationAlgorithm implements BenefitRecommendat
             this.benefitType = benefitType;
             this.benefitName = benefitName;
             this.benefitDescription = benefitDescription;
+        }
+
+        private BenefitScore withRecommendationScore(double recommendationScore) {
+            return new BenefitScore(
+                    benefitLabel,
+                    estimatedBenefitScore,
+                    expectedBenefitAmount,
+                    recommendationScore,
+                    benefitId,
+                    benefitType,
+                    benefitName,
+                    benefitDescription
+            );
         }
     }
 }
