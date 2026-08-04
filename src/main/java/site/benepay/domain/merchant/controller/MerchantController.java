@@ -9,11 +9,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import site.benepay.domain.merchant.dto.MerchantRequestDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
+import site.benepay.domain.merchant.dto.NearbyMerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantService;
 
 import javax.validation.Valid;
@@ -34,6 +36,24 @@ public class MerchantController {
     @GetMapping
     public ResponseEntity<List<MerchantResponseDto>> getMerchantList() {
         return ResponseEntity.ok(merchantService.getMerchantList());
+    }
+
+    /**
+     * 주변 매장 후보군 조회
+     * 위치(위도/경도)와 반경(m)을 받아 그 안에 있는 모든 매장을 가까운 순으로 반환.
+     * 추천 로직이 이 후보군을 받아 카드 혜택 기준으로 다시 추려내는 걸 전제로 한다.
+     * @param lat 기준 위도
+     * @param lng 기준 경도
+     * @param radiusMeters 반경(m), 기본 1000m
+     * @return
+     */
+    @GetMapping("/nearby")
+    public ResponseEntity<List<NearbyMerchantResponseDto>> getNearbyMerchants(
+            @RequestParam double lat,
+            @RequestParam double lng,
+            @RequestParam(defaultValue = "1000") double radiusMeters
+    ) {
+        return ResponseEntity.ok(merchantService.getNearbyMerchants(lat, lng, radiusMeters));
     }
 
     /**
