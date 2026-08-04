@@ -64,6 +64,21 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(PaymentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentNotFound(PaymentNotFoundException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidPaymentAmountException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidPaymentAmount(InvalidPaymentAmountException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(PaymentTokenNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentTokenNotFound(PaymentTokenNotFoundException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(DuplicateMerchantException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateMerchant(DuplicateMerchantException ex, HttpServletRequest request) {
         return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);

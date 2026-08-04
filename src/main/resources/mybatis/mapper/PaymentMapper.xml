@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="site.benepay.domain.payment.mapper.PaymentMapper">
+
+    <resultMap id="paymentResultMap" type="site.benepay.domain.payment.vo.PaymentVO">
+        <id column="payment_id" property="paymentId" />
+        <result column="merchant_id" property="merchantId" />
+        <result column="user_card_id" property="userCardId" />
+        <result column="payment_time" property="paymentTime" />
+        <result column="original_amount" property="originalAmount" />
+        <result column="discount_amount" property="discountAmount" />
+        <result column="final_amount" property="finalAmount" />
+        <result column="payment_status" property="paymentStatus" />
+        <result column="payment_method" property="paymentMethod" />
+    </resultMap>
+
+    <sql id="paymentColumns">
+        payment_id, merchant_id, user_card_id, payment_time,
+        original_amount, discount_amount, final_amount, payment_status, payment_method
+    </sql>
+
+    <insert id="insertPayment" parameterType="site.benepay.domain.payment.vo.PaymentVO"
+            useGeneratedKeys="true" keyProperty="paymentId" keyColumn="payment_id">
+        INSERT INTO payments (
+            merchant_id, user_card_id, payment_time,
+            original_amount, discount_amount, final_amount, payment_status, payment_method
+        ) VALUES (
+                     #{merchantId}, #{userCardId}, #{paymentTime},
+                     #{originalAmount}, #{discountAmount}, #{finalAmount}, #{paymentStatus}, #{paymentMethod}
+                 )
+    </insert>
+
+    <select id="findByPaymentId" resultMap="paymentResultMap">
+        SELECT <include refid="paymentColumns" />
+        FROM payments
+        WHERE payment_id = #{paymentId}
+    </select>
+
+    <update id="updatePaymentStatus">
+        UPDATE payments
+        SET payment_status = #{paymentStatus}
+        WHERE payment_id = #{paymentId}
+    </update>
+
+</mapper>
