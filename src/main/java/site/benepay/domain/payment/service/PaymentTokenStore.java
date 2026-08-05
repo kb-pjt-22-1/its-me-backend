@@ -3,6 +3,7 @@ package site.benepay.domain.payment.service;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -31,6 +32,8 @@ public class PaymentTokenStore {
 	public static final String STATUS_ISSUED = "ISSUED";
 	public static final String STATUS_USED = "USED";
 
+	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+
 	private final StringRedisTemplate redisTemplate;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -49,7 +52,7 @@ public class PaymentTokenStore {
 			originalAmount,
 			discountAmount,
 			STATUS_ISSUED,
-			LocalDateTime.now().toString()
+			LocalDateTime.now(ZONE).toString()
 		);
 
 		save(token, TTL);

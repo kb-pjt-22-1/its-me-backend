@@ -2,8 +2,8 @@ package site.benepay.domain.payment.service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +22,7 @@ import site.benepay.domain.payment.vo.PaymentVO;
 public class PaymentServiceImpl implements PaymentService {
 
 	private static final String STATUS_PENDING = "PENDING";
+	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
 	private final PaymentMapper paymentMapper;
 
@@ -41,7 +42,7 @@ public class PaymentServiceImpl implements PaymentService {
 		PaymentVO payment = new PaymentVO();
 		payment.setMerchantId(request.getMerchantId());
 		payment.setUserCardId(request.getUserCardId());
-		payment.setPaymentTime(LocalDateTime.now());
+		payment.setPaymentTime(LocalDateTime.now(ZONE));
 		payment.setOriginalAmount(originalAmount);
 		payment.setDiscountAmount(discountAmount);
 		payment.setFinalAmount(finalAmount);
@@ -79,6 +80,6 @@ public class PaymentServiceImpl implements PaymentService {
 	public List<PaymentResponseDto> getPaymentHistory(Long userId) {
 		return paymentMapper.findPaymentsByUserId(userId).stream()
 			.map(PaymentResponseDto::from)
-			.collect(Collectors.toList());
+			.toList();
 	}
 }
