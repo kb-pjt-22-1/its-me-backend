@@ -19,7 +19,7 @@ sonar {
 java {
   toolchain {
     languageVersion = JavaLanguageVersion.of(17)
-    }
+  }
 }
 
 repositories {
@@ -76,7 +76,7 @@ dependencies {
 
   // MyBatis
   implementation 'org.mybatis:mybatis:3.5.19'
-  implementation 'org.mybagit tis:mybatis-spring:2.1.2'
+  implementation 'org.mybatis:mybatis-spring:2.1.2'
 
   // Database
   implementation 'com.zaxxer:HikariCP:5.1.0'
