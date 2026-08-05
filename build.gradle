@@ -92,6 +92,8 @@ dependencies {
   testImplementation 'org.mockito:mockito-junit-jupiter:5.15.2'
   testImplementation 'org.assertj:assertj-core:3.27.3'
   testImplementation "org.springframework:spring-test:${springVersion}"
+  testImplementation 'org.hamcrest:hamcrest:2.2'
+  testImplementation 'com.jayway.jsonpath:json-path:2.9.0'
 
   // Redis
   implementation "org.springframework.data:spring-data-redis:${springDataRedisVersion}"
