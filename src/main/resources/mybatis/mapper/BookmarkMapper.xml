@@ -3,17 +3,17 @@
 <mapper namespace="site.benepay.domain.bookmark.mapper.BookmarkMapper">
 
     <sql id="bookmarkColumns">
-        bookmark_id, user_id, merchant_id, created_at
+        bookmark_id, user_id, merchant_id, created_at, is_deleted
     </sql>
 
     <insert id="upsertBookmark">
-        INSERT INTO bookmarked_stores (user_id, merchant_id)
+        INSERT INTO bookmarked_merchants (user_id, merchant_id)
         VALUES (#{userId}, #{merchantId})
         ON DUPLICATE KEY UPDATE is_deleted = FALSE
     </insert>
 
     <update id="softDeleteBookmark">
-        UPDATE bookmarked_stores
+        UPDATE bookmarked_merchants
         SET is_deleted = TRUE
         WHERE user_id = #{userId}
           AND merchant_id = #{merchantId}
@@ -22,7 +22,7 @@
 
     <select id="findActiveByUserId" resultType="site.benepay.domain.bookmark.vo.Bookmark">
         SELECT <include refid="bookmarkColumns" />
-        FROM bookmarked_stores
+        FROM bookmarked_merchants
         WHERE user_id = #{userId}
           AND is_deleted = FALSE
         ORDER BY created_at DESC
@@ -30,7 +30,7 @@
 
     <select id="findByUserIdAndMerchantId" resultType="site.benepay.domain.bookmark.vo.Bookmark">
         SELECT <include refid="bookmarkColumns" />
-        FROM bookmarked_stores
+        FROM bookmarked_merchants
         WHERE user_id = #{userId}
           AND merchant_id = #{merchantId}
           AND is_deleted = FALSE
