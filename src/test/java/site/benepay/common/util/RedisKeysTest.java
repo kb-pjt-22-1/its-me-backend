@@ -15,5 +15,6 @@ class RedisKeysTest {
         assertThat(RedisKeys.pinLock(42L)).isEqualTo("pin:lock:42");
         assertThat(RedisKeys.blacklist("some-jti")).isEqualTo("blacklist:some-jti");
         assertThat(RedisKeys.alert(42L)).isEqualTo("alert:42");
+        assertThat(RedisKeys.paymentToken("abc-123")).isEqualTo("payment:token:abc-123");
     }
 }
