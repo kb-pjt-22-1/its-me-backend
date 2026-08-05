@@ -5,11 +5,13 @@ import java.math.BigDecimal;
 import javax.validation.constraints.DecimalMin;
 import javax.validation.constraints.NotNull;
 
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 @Getter
 @NoArgsConstructor
+@AllArgsConstructor
 public class PaymentTokenCreateRequestDto {
 
 	@NotNull(message = "결제에 사용할 카드는 필수입니다.")
