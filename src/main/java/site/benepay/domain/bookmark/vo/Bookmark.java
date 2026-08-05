@@ -11,4 +11,5 @@ public class Bookmark {
 	private Long userId;
 	private Long merchantId;
 	private LocalDateTime createdAt;
+	private Boolean isDeleted;
 }
