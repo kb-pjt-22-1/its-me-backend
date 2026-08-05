@@ -38,7 +38,7 @@ public class PaymentController {
 	@PostMapping
 	public ResponseEntity<PaymentResponseDto> createPayment(@AuthenticationPrincipal Long userId,
 		@Valid @RequestBody PaymentCreateRequestDto request) {
-		// TODO: userCardId가 userId 소유의 카드인지 검증하는 로직이 아직 없음 (card 도메인 연동 필요)
+
 		PaymentResponseDto response = paymentService.createPayment(request);
 
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
