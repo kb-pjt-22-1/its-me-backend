@@ -1,10 +1,20 @@
 plugins {
   id 'java'
   id 'war'
+  id 'jacoco'
+  id "org.sonarqube" version "7.3.1.8318"
 }
 
 group 'site.benepay'
 version '1.0-SNAPSHOT'
+
+sonar {
+  properties {
+    property "sonar.projectKey", "kb-pjt-22-1_its-me-backend"
+    property "sonar.organization", "kb-pjt-22-1"
+    property "sonar.coverage.jacoco.xmlReportPaths", "${buildDir}/reports/jacoco/test/jacocoTestReport.xml"
+  }
+}
 
 java {
   toolchain {
@@ -66,7 +76,7 @@ dependencies {
 
   // MyBatis
   implementation 'org.mybatis:mybatis:3.5.19'
-  implementation 'org.mybatis:mybatis-spring:2.1.2'
+  implementation 'org.mybagit tis:mybatis-spring:2.1.2'
 
   // Database
   implementation 'com.zaxxer:HikariCP:5.1.0'
@@ -89,4 +99,14 @@ dependencies {
 }
 
 test {
-useJUnitPlatform()}
+  useJUnitPlatform()
+  finalizedBy jacocoTestReport
+}
+
+jacocoTestReport {
+  dependsOn test
+  reports {
+    xml.required = true
+    html.required = true
+  }
+}
