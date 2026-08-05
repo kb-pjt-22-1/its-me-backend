@@ -23,6 +23,7 @@ import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
 import site.benepay.domain.user.dto.UpdateProfileRequestDto;
 import site.benepay.domain.user.dto.UserResponseDto;
 import site.benepay.domain.user.dto.VerifyPasswordRequestDto;
+import site.benepay.domain.user.dto.VerifyPinRequestDto;
 import site.benepay.domain.user.mapper.UserMapper;
 import site.benepay.domain.user.validator.PinValidator;
 import site.benepay.domain.user.vo.Role;
@@ -167,6 +168,28 @@ public class UserServiceImpl implements UserService {
 	@Override
 	@Transactional
 	public void updateOrDeletePin(Long userId, UpdateDeletePinRequestDto request) {
+		verifyCurrentPinOrThrow(userId, request.getCurrentPin());
+
+		if (request.getNewPin() == null) {
+			userMapper.updatePinHash(userId, null);
+		} else {
+			PinValidator.validate(request.getNewPin());
+			userMapper.updatePinHash(userId, passwordEncoder.encode(request.getNewPin()));
+		}
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public void verifyPin(Long userId, VerifyPinRequestDto request) {
+		// 결제 화면에서 결제 수단을 노출하기 전에 거치는 게이트. 성공은 반환값 자체가
+		// 증거라(예외 없이 끝남) 여기서 더 할 일이 없다 - verifyPassword와 동일한 패턴.
+		verifyCurrentPinOrThrow(userId, request.getPin());
+	}
+
+	// updateOrDeletePin(PIN 변경 전 현재 PIN 확인)과 verifyPin(결제 전 PIN 확인)이 "PIN이
+	// 맞는지" 확인하는 로직과 잠금 카운터를 그대로 공유한다 - 둘 다 막으려는 위협이 같다
+	// (PIN 무차별 대입). verifyPassword/changePassword가 같은 이유로 카운터를 공유하는 것과 동일하다.
+	private void verifyCurrentPinOrThrow(Long userId, String currentPin) {
 		String failureKey = RedisKeys.pinFailure(userId);
 		String lockKey = RedisKeys.pinLock(userId);
 
@@ -175,19 +198,12 @@ public class UserServiceImpl implements UserService {
 		}
 
 		User user = findActiveUser(userId);
-		if (user.getPinHash() == null || !passwordEncoder.matches(request.getCurrentPin(), user.getPinHash())) {
+		if (user.getPinHash() == null || !passwordEncoder.matches(currentPin, user.getPinHash())) {
 			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, 5, Duration.ofMinutes(10),
 				Duration.ofSeconds(30));
-			throw new InvalidCredentialsException("current PIN is incorrect");
+			throw new InvalidCredentialsException("PIN is incorrect");
 		}
 		redisLockoutService.clearFailuresAndLock(failureKey, lockKey);
-
-		if (request.getNewPin() == null) {
-			userMapper.updatePinHash(userId, null);
-		} else {
-			PinValidator.validate(request.getNewPin());
-			userMapper.updatePinHash(userId, passwordEncoder.encode(request.getNewPin()));
-		}
 	}
 
 	@Override

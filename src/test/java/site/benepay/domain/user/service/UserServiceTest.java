@@ -32,6 +32,7 @@ import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
 import site.benepay.domain.user.dto.UpdateProfileRequestDto;
 import site.benepay.domain.user.dto.UserResponseDto;
 import site.benepay.domain.user.dto.VerifyPasswordRequestDto;
+import site.benepay.domain.user.dto.VerifyPinRequestDto;
 import site.benepay.domain.user.mapper.UserMapper;
 import site.benepay.domain.user.vo.Role;
 import site.benepay.domain.user.vo.User;
@@ -294,6 +295,17 @@ class UserServiceTest {
 		assertThat(response.getUserId()).isEqualTo(USER_ID);
 	}
 
+	// pinHash 자체는 응답에 안 담기지만(민감 정보), 프론트가 PIN 초기 설정 화면과 변경 화면 중
+	// 뭘 보여줄지 판단할 근거가 필요해 존재 여부만 boolean으로 노출한다.
+	@Test
+	void getMyProfileExposesWhetherAPinIsRegisteredWithoutLeakingTheHash() {
+		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser(null)));
+		assertThat(userService.getMyProfile(USER_ID).isPinRegistered()).isFalse();
+
+		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser("existing-pin-hash")));
+		assertThat(userService.getMyProfile(USER_ID).isPinRegistered()).isTrue();
+	}
+
 	@Test
 	void getMyProfileThrowsWhenUserDoesNotExist() {
 		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.empty());
@@ -393,6 +405,70 @@ class UserServiceTest {
 
 		verify(redisLockoutService).clearFailuresAndLock(RedisKeys.pinFailure(USER_ID), RedisKeys.pinLock(USER_ID));
 		verify(userMapper).updatePinHash(USER_ID, "new-encoded-pin");
+	}
+
+	// ---- PIN verification (결제 화면 재인증 게이트) ----
+	// updateOrDeletePin과 같은 잠금 카운터를 공유하는지도 함께 확인한다 - PIN 무차별 대입
+	// 방어가 "변경 전 확인"과 "결제 전 확인" 양쪽에 걸쳐 누적돼야 의미가 있다.
+
+	@Test
+	void verifyPinSucceedsAndClearsFailuresWhenCorrect() {
+		when(redisLockoutService.isLocked(RedisKeys.pinLock(USER_ID))).thenReturn(false);
+		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser("existing-pin-hash")));
+		when(passwordEncoder.matches("481027", "existing-pin-hash")).thenReturn(true);
+
+		userService.verifyPin(USER_ID, new VerifyPinRequestDto("481027"));
+
+		verify(redisLockoutService).clearFailuresAndLock(RedisKeys.pinFailure(USER_ID), RedisKeys.pinLock(USER_ID));
+	}
+
+	@Test
+	void verifyPinWithWrongPinRecordsFailure() {
+		when(redisLockoutService.isLocked(RedisKeys.pinLock(USER_ID))).thenReturn(false);
+		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser("existing-pin-hash")));
+		when(passwordEncoder.matches("000000", "existing-pin-hash")).thenReturn(false);
+
+		assertThatThrownBy(() -> userService.verifyPin(USER_ID, new VerifyPinRequestDto("000000")))
+			.isInstanceOf(InvalidCredentialsException.class);
+
+		verify(redisLockoutService).recordFailureAndMaybeLock(
+			RedisKeys.pinFailure(USER_ID), RedisKeys.pinLock(USER_ID), 5, Duration.ofMinutes(10),
+			Duration.ofSeconds(30));
+	}
+
+	@Test
+	void verifyPinFailsFastWhenLockedWithoutTouchingTheDatabase() {
+		when(redisLockoutService.isLocked(RedisKeys.pinLock(USER_ID))).thenReturn(true);
+
+		assertThatThrownBy(() -> userService.verifyPin(USER_ID, new VerifyPinRequestDto("481027")))
+			.isInstanceOf(AccountLockedException.class);
+
+		verify(userMapper, never()).findByUserId(any());
+	}
+
+	@Test
+	void verifyPinWhenNoPinIsRegisteredThrowsWithoutNullPointer() {
+		when(redisLockoutService.isLocked(RedisKeys.pinLock(USER_ID))).thenReturn(false);
+		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser(null)));
+
+		assertThatThrownBy(() -> userService.verifyPin(USER_ID, new VerifyPinRequestDto("481027")))
+			.isInstanceOf(InvalidCredentialsException.class);
+	}
+
+	@Test
+	void verifyPinAndUpdatePinShareTheSameLockoutCounter() {
+		when(redisLockoutService.isLocked(RedisKeys.pinLock(USER_ID))).thenReturn(false);
+		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser("existing-pin-hash")));
+		when(passwordEncoder.matches("000000", "existing-pin-hash")).thenReturn(false);
+
+		assertThatThrownBy(() -> userService.verifyPin(USER_ID, new VerifyPinRequestDto("000000")))
+			.isInstanceOf(InvalidCredentialsException.class);
+		assertThatThrownBy(() -> userService.updateOrDeletePin(USER_ID, new UpdateDeletePinRequestDto("000000", "592841")))
+			.isInstanceOf(InvalidCredentialsException.class);
+
+		verify(redisLockoutService, times(2)).recordFailureAndMaybeLock(
+			RedisKeys.pinFailure(USER_ID), RedisKeys.pinLock(USER_ID), 5, Duration.ofMinutes(10),
+			Duration.ofSeconds(30));
 	}
 
 	@Test
