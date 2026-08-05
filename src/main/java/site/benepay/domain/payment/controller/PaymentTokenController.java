@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
+import site.benepay.domain.payment.dto.PaymentResponseDto;
 import site.benepay.domain.payment.dto.PaymentTokenCreateRequestDto;
 import site.benepay.domain.payment.dto.PaymentTokenResponseDto;
 import site.benepay.domain.payment.service.PaymentTokenService;
@@ -27,7 +28,13 @@ public class PaymentTokenController {
 	@PostMapping
 	public ResponseEntity<PaymentTokenResponseDto> issueToken(@AuthenticationPrincipal Long userId,
 		@Valid @RequestBody PaymentTokenCreateRequestDto request) {
-		PaymentTokenResponseDto response = paymentTokenService.issueToken(userId, request.getUserCardId());
+		PaymentTokenResponseDto response = paymentTokenService.issueToken(
+			userId,
+			request.getUserCardId(),
+			request.getMerchantId(),
+			request.getOriginalAmount(),
+			request.getDiscountAmount()
+		);
 
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
@@ -36,6 +43,15 @@ public class PaymentTokenController {
 	public ResponseEntity<PaymentTokenResponseDto> getTokenStatus(@AuthenticationPrincipal Long userId,
 		@PathVariable String paymentTokenId) {
 		PaymentTokenResponseDto response = paymentTokenService.getTokenStatus(paymentTokenId);
+
+		return ResponseEntity.ok(response);
+	}
+
+	// 명세서엔 없는 엔드포인트: 실제 매장 스캔 대신 프론트의 "결제완료하기" 버튼이 호출한다.
+	@PostMapping("/{paymentTokenId}/complete")
+	public ResponseEntity<PaymentResponseDto> completeToken(@AuthenticationPrincipal Long userId,
+		@PathVariable String paymentTokenId) {
+		PaymentResponseDto response = paymentTokenService.completeToken(paymentTokenId);
 
 		return ResponseEntity.ok(response);
 	}

@@ -42,4 +42,13 @@
         WHERE payment_id = #{paymentId}
     </update>
 
+    <select id="findPaymentsByUserId" resultMap="paymentResultMap">
+        SELECT p.payment_id, p.merchant_id, p.user_card_id, p.payment_time,
+               p.original_amount, p.discount_amount, p.final_amount, p.payment_status, p.payment_method
+        FROM payments p
+                 JOIN user_cards uc ON uc.user_card_id = p.user_card_id
+        WHERE uc.user_id = #{userId}
+        ORDER BY p.payment_time DESC
+    </select>
+
 </mapper>

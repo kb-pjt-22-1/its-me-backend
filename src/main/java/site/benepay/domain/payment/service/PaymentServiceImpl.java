@@ -2,6 +2,8 @@ package site.benepay.domain.payment.service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -71,5 +73,12 @@ public class PaymentServiceImpl implements PaymentService {
 	private PaymentVO findPaymentOrThrow(Long paymentId) {
 		return paymentMapper.findByPaymentId(paymentId)
 			.orElseThrow(() -> new PaymentNotFoundException("결제 내역을 찾을 수 없습니다."));
+	}
+
+	@Override
+	public List<PaymentResponseDto> getPaymentHistory(Long userId) {
+		return paymentMapper.findPaymentsByUserId(userId).stream()
+			.map(PaymentResponseDto::from)
+			.collect(Collectors.toList());
 	}
 }
