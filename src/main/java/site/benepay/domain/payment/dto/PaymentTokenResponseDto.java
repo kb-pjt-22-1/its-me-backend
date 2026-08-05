@@ -1,5 +1,6 @@
 package site.benepay.domain.payment.dto;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import lombok.Builder;
@@ -15,6 +16,9 @@ public class PaymentTokenResponseDto {
 	// 바코드/QR에 실릴 값. 지금은 paymentTokenId를 그대로 쓴다 (실 카드 토큰은 서버 밖으로 안 나감).
 	private String tokenValue;
 	private Long userCardId;
+	private Long merchantId;
+	private BigDecimal originalAmount;
+	private BigDecimal discountAmount;
 	private String status;
 	private LocalDateTime issuedAt;
 	private LocalDateTime expiresAt;
@@ -26,6 +30,9 @@ public class PaymentTokenResponseDto {
 			.paymentTokenId(token.getPaymentTokenId())
 			.tokenValue(token.getPaymentTokenId())
 			.userCardId(token.getUserCardId())
+			.merchantId(token.getMerchantId())
+			.originalAmount(token.getOriginalAmount())
+			.discountAmount(token.getDiscountAmount())
 			.status(token.getStatus())
 			.issuedAt(issuedAt)
 			.expiresAt(issuedAt.plus(PaymentTokenStore.TTL))

@@ -1,5 +1,6 @@
 package site.benepay.domain.payment.service;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -24,7 +25,11 @@ public class PaymentTokenStore {
 	// dto 패키지(PaymentTokenResponseDto)에서 expiresAt 계산에 참조하므로 public.
 	public static final Duration TTL = Duration.ofMinutes(3);
 
-	private static final String STATUS_ISSUED = "ISSUED";
+	// 결제완료 처리 직후 상태 조회(폴링 중이던 클라이언트)가 USED를 볼 수 있게 짧게만 더 살려둔다.
+	private static final Duration USED_TTL = Duration.ofSeconds(30);
+
+	public static final String STATUS_ISSUED = "ISSUED";
+	public static final String STATUS_USED = "USED";
 
 	private final StringRedisTemplate redisTemplate;
 	private final ObjectMapper objectMapper = new ObjectMapper();
@@ -33,22 +38,26 @@ public class PaymentTokenStore {
 		this.redisTemplate = redisTemplate;
 	}
 
-	public PaymentTokenVO issue(Long userId, Long userCardId) {
+	public PaymentTokenVO issue(Long userId, Long userCardId, Long merchantId,
+		BigDecimal originalAmount, BigDecimal discountAmount) {
 		String paymentTokenId = UUID.randomUUID().toString();
 		PaymentTokenVO token = new PaymentTokenVO(
 			paymentTokenId,
 			userId,
 			userCardId,
+			merchantId,
+			originalAmount,
+			discountAmount,
 			STATUS_ISSUED,
 			LocalDateTime.now().toString()
 		);
 
-		save(token);
+		save(token, TTL);
 
 		return token;
 	}
 
-	// 상태 조회(폴링)에 쓰인다. redeem과 달리 조회 후 삭제하지 않는다.
+	// 상태 조회(폴링)에 쓰인다. 조회 후 삭제하지 않는다.
 	public Optional<PaymentTokenVO> find(String paymentTokenId) {
 		String raw = redisTemplate.opsForValue().get(RedisKeys.paymentToken(paymentTokenId));
 		if (raw == null) {
@@ -57,9 +66,24 @@ public class PaymentTokenStore {
 		return Optional.of(deserialize(raw));
 	}
 
-	private void save(PaymentTokenVO token) {
+	// ISSUED 상태인 토큰만 USED로 바꾼다. 이미 USED거나 존재하지 않으면(만료 포함) 아무것도 안 하고 빈 값을 돌려준다 -
+	// 상태 판단(이미 사용됨/만료됨을 구분해서 예외를 던질지)은 Service의 책임으로 남겨둔다.
+	public Optional<PaymentTokenVO> markUsedIfIssued(String paymentTokenId) {
+		Optional<PaymentTokenVO> current = find(paymentTokenId);
+		if (current.isEmpty() || !STATUS_ISSUED.equals(current.get().getStatus())) {
+			return Optional.empty();
+		}
+
+		PaymentTokenVO token = current.get();
+		token.setStatus(STATUS_USED);
+		save(token, USED_TTL);
+
+		return Optional.of(token);
+	}
+
+	private void save(PaymentTokenVO token, Duration ttl) {
 		String json = serialize(token);
-		redisTemplate.opsForValue().set(RedisKeys.paymentToken(token.getPaymentTokenId()), json, TTL);
+		redisTemplate.opsForValue().set(RedisKeys.paymentToken(token.getPaymentTokenId()), json, ttl);
 	}
 
 	private String serialize(PaymentTokenVO token) {

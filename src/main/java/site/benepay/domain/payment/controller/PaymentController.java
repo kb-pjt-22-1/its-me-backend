@@ -1,5 +1,7 @@
 package site.benepay.domain.payment.controller;
 
+import java.util.List;
+
 import javax.validation.Valid;
 
 import org.springframework.http.HttpStatus;
@@ -25,6 +27,13 @@ import site.benepay.domain.payment.service.PaymentService;
 public class PaymentController {
 
 	private final PaymentService paymentService;
+
+	@GetMapping
+	public ResponseEntity<List<PaymentResponseDto>> getPaymentHistory(@AuthenticationPrincipal Long userId) {
+		List<PaymentResponseDto> response = paymentService.getPaymentHistory(userId);
+
+		return ResponseEntity.ok(response);
+	}
 
 	@PostMapping
 	public ResponseEntity<PaymentResponseDto> createPayment(@AuthenticationPrincipal Long userId,
