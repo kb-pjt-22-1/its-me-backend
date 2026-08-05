@@ -27,7 +27,6 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 	@Override
 	public PaymentTokenResponseDto issueToken(Long userId, Long userCardId, Long merchantId,
 		BigDecimal originalAmount, BigDecimal discountAmount) {
-		// TODO: userCardId가 userId 소유의 활성 카드인지 검증하는 로직이 아직 없음
 		// (card 도메인 CardMapper.existsActiveUserCard와 동일한 검증 필요, 연동 방식은 논의 필요)
 		PaymentTokenVO token = paymentTokenStore.issue(userId, userCardId, merchantId, originalAmount, discountAmount);
 
