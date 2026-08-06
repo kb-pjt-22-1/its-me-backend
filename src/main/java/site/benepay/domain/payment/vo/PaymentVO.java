@@ -5,8 +5,10 @@ import java.time.LocalDateTime;
 
 import lombok.Getter;
 import lombok.NonNull;
+import lombok.Setter;
 
 @Getter
+@Setter
 public class PaymentVO {
 
 	private Long paymentId;
