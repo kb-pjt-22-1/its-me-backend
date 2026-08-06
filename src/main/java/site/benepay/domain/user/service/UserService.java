@@ -7,6 +7,7 @@ import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
 import site.benepay.domain.user.dto.UpdateProfileRequestDto;
 import site.benepay.domain.user.dto.UserResponseDto;
 import site.benepay.domain.user.dto.VerifyPasswordRequestDto;
+import site.benepay.domain.user.dto.VerifyPinRequestDto;
 
 public interface UserService {
 
@@ -23,6 +24,8 @@ public interface UserService {
     void registerPin(Long userId, RegisterPinRequestDto request);
 
     void updateOrDeletePin(Long userId, UpdateDeletePinRequestDto request);
+
+    void verifyPin(Long userId, VerifyPinRequestDto request);
 
     void withdraw(Long userId, boolean confirmed);
 }
