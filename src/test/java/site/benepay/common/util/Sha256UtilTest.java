@@ -37,4 +37,30 @@ class Sha256UtilTest {
         assertThat(hash).hasSize(64);
         assertThat(hash).matches("^[0-9a-f]{64}$");
     }
+
+    @Test
+    void hashWithoutSaltIsDeterministic() {
+        String hash1 = Sha256Util.hash("홍길동");
+        String hash2 = Sha256Util.hash("홍길동");
+
+        assertThat(hash1).isEqualTo(hash2);
+        assertThat(hash1).hasSize(64);
+        assertThat(hash1).matches("^[0-9a-f]{64}$");
+    }
+
+    @Test
+    void hashWithoutSaltProducesDifferentHashesForDifferentInput() {
+        String hash1 = Sha256Util.hash("홍길동");
+        String hash2 = Sha256Util.hash("김철수");
+
+        assertThat(hash1).isNotEqualTo(hash2);
+    }
+
+    @Test
+    void hashWithoutSaltDiffersFromHashWithSaltForTheSameValue() {
+        String withoutSalt = Sha256Util.hash("some-name");
+        String withSalt = Sha256Util.hashWithSalt("some-name", "pepper");
+
+        assertThat(withoutSalt).isNotEqualTo(withSalt);
+    }
 }
