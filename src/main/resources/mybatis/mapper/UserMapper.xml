@@ -3,61 +3,71 @@
 <mapper namespace="site.benepay.domain.user.mapper.UserMapper">
 
     <resultMap id="userResultMap" type="site.benepay.domain.user.vo.User">
-        <id column="user_id" property="userId" />
-        <result column="login_id" property="loginId" />
-        <result column="login_password_hash" property="loginPasswordHash" />
-        <result column="pin_hash" property="pinHash" />
-        <result column="name" property="name" />
-        <result column="phone_number" property="phoneNumber" />
-        <result column="birth_date" property="birthDate" />
-        <result column="role" property="role" />
-        <result column="di" property="di" />
-        <result column="ci_encrypted" property="ciEncrypted" />
-        <result column="created_at" property="createdAt" />
-        <result column="is_deleted" property="deleted" />
-        <result column="fcm_token" property="fcmToken" />
+        <id column="user_id" property="userId"/>
+        <result column="login_id" property="loginId"/>
+        <result column="login_password_hash" property="loginPasswordHash"/>
+        <result column="pin_hash" property="pinHash"/>
+        <result column="name" property="name"/>
+        <result column="phone_number" property="phoneNumber"/>
+        <result column="birth_date" property="birthDate"/>
+        <result column="role" property="role"/>
+        <result column="di" property="di"/>
+        <result column="ci_hash" property="ciHash"/>
+        <result column="ci_encrypted" property="ciEncrypted"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="is_deleted" property="deleted"/>
+        <result column="fcm_token" property="fcmToken"/>
     </resultMap>
 
     <sql id="userColumns">
-        user_id, login_id, login_password_hash, pin_hash, name, phone_number,
-        birth_date, role, di, ci_encrypted, created_at, is_deleted, fcm_token
+        user_id
+        , login_id, login_password_hash, pin_hash, name, phone_number,
+        birth_date, role, di, ci_hash, ci_encrypted, created_at, is_deleted, fcm_token
     </sql>
 
     <insert id="insert" parameterType="site.benepay.domain.user.vo.User"
             useGeneratedKeys="true" keyProperty="userId" keyColumn="user_id">
-        INSERT INTO users (
-            login_id, login_password_hash, pin_hash, name, phone_number,
-            birth_date, role, di, ci_encrypted, created_at, is_deleted, fcm_token
-        ) VALUES (
-            #{loginId}, #{loginPasswordHash}, #{pinHash}, #{name}, #{phoneNumber},
-            #{birthDate}, #{role}, #{di}, #{ciEncrypted}, #{createdAt}, #{deleted}, #{fcmToken}
-        )
+        INSERT INTO users (login_id, login_password_hash, pin_hash, name, phone_number,
+                           birth_date, role, di, ci_hash, ci_encrypted, created_at, is_deleted, fcm_token)
+        VALUES (#{loginId}, #{loginPasswordHash}, #{pinHash}, #{name}, #{phoneNumber},
+                #{birthDate}, #{role}, #{di}, #{ciHash}, #{ciEncrypted}, #{createdAt}, #{deleted}, #{fcmToken})
     </insert>
 
     <select id="findByUserId" resultMap="userResultMap">
-        SELECT <include refid="userColumns" />
+        SELECT
+        <include refid="userColumns"/>
         FROM users
         WHERE user_id = #{userId}
-          AND is_deleted = FALSE
+        AND is_deleted = FALSE
     </select>
 
     <select id="findByLoginId" resultMap="userResultMap">
-        SELECT <include refid="userColumns" />
+        SELECT
+        <include refid="userColumns"/>
         FROM users
         WHERE login_id = #{loginId}
-          AND is_deleted = FALSE
+        AND is_deleted = FALSE
     </select>
 
     <select id="existsByLoginId" resultType="boolean">
-        SELECT EXISTS (
-            SELECT 1 FROM users WHERE login_id = #{loginId} AND is_deleted = FALSE
-        )
+        SELECT EXISTS (SELECT 1
+                       FROM users
+                       WHERE login_id = #{loginId}
+                         AND is_deleted = FALSE)
     </select>
 
     <select id="existsByDiHash" resultType="boolean">
-        SELECT EXISTS (
-            SELECT 1 FROM users WHERE di = #{diHash} AND is_deleted = FALSE
-        )
+        SELECT EXISTS (SELECT 1
+                       FROM users
+                       WHERE di = #{diHash}
+                         AND is_deleted = FALSE)
+    </select>
+
+    <select id="existsByCiHash" resultType="boolean">
+        SELECT EXISTS (SELECT 1
+                       FROM users
+                       WHERE ci_hash = #{ciHash}
+                         AND is_deleted = FALSE)
     </select>
 
     <update id="updateProfile">
@@ -74,6 +84,13 @@
           AND is_deleted = FALSE
     </update>
 
+    <update id="updatePasswordHash">
+        UPDATE users
+        SET login_password_hash = #{loginPasswordHash}
+        WHERE user_id = #{userId}
+          AND is_deleted = FALSE
+    </update>
+
     <!--
         login_id·di·ci_encrypted가 NOT NULL이 되어 예전처럼 NULL로 비울 수 없다. 그중 login_id와
         di는 UNIQUE라 고정 문자열을 넣으면 두 번째 탈퇴자부터 충돌하므로, user_id를 섞어 유일성을
@@ -81,15 +98,15 @@
     -->
     <update id="softDeleteAndAnonymize">
         UPDATE users
-        SET is_deleted = TRUE,
-            login_id = CONCAT('deleted_', user_id),
-            di = CONCAT('deleted_', user_id),
+        SET is_deleted   = TRUE,
+            login_id     = CONCAT('deleted_', user_id),
+            di           = CONCAT('deleted_', user_id),
             ci_encrypted = '',
-            name = '탈퇴회원',
+            name         = '탈퇴회원',
             phone_number = NULL,
-            pin_hash = NULL,
-            birth_date = NULL,
-            fcm_token = NULL
+            pin_hash     = NULL,
+            birth_date   = NULL,
+            fcm_token    = NULL
         WHERE user_id = #{userId}
     </update>
 

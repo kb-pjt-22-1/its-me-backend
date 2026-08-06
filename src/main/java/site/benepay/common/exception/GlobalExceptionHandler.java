@@ -18,9 +18,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
         String message = ex.getBindingResult().getFieldErrors().stream()
-                .findFirst()
-                .map(error -> error.getField() + ": " + error.getDefaultMessage())
-                .orElse("잘못된 요청입니다.");
+            .findFirst()
+            .map(error -> error.getField() + ": " + error.getDefaultMessage())
+            .orElse("잘못된 요청입니다.");
         return errorResponse(HttpStatus.BAD_REQUEST, message, request);
     }
 
@@ -64,6 +64,11 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(PaymentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentNotFound(PaymentNotFoundException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(DuplicateMerchantException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateMerchant(DuplicateMerchantException ex, HttpServletRequest request) {
         return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
@@ -86,7 +91,7 @@ public class GlobalExceptionHandler {
     }
 
     // MyBatis(SqlSessionTemplate)가 SQL 예외를 이 타입으로 변환해서 던진다.
-    // FK 제약 위반(존재하지 않는 categoryId/brandId 등), NOT NULL 위반 등이 여기로 들어온다.
+    // FK 제약 위반(존재하지 않는 categoryCode/brandId 등), NOT NULL 위반 등이 여기로 들어온다.
     // 안 잡으면 아래 500 핸들러로 떨어져 클라이언트가 서버 에러로 오인하게 된다.
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex, HttpServletRequest request) {
@@ -102,6 +107,6 @@ public class GlobalExceptionHandler {
 
     private static ResponseEntity<ErrorResponse> errorResponse(HttpStatus status, String message, HttpServletRequest request) {
         return ResponseEntity.status(status)
-                .body(new ErrorResponse(status.value(), message, request.getRequestURI(), LocalDateTime.now()));
+            .body(new ErrorResponse(status.value(), message, request.getRequestURI(), LocalDateTime.now()));
     }
 }

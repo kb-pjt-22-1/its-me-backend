@@ -7,14 +7,14 @@ import lombok.Setter;
 @Setter
 public class CardVariantVO {
 
-    /**
-     * CHAR(2)
-     * 예: 01, 02, 03
-     */
-    private String cardVariantId;
+	/**
+	 * CHAR(2)
+	 * 예: 01, 02, 03
+	 */
+	private String cardVariantId;
 
-    /**
-     * DOMESTIC, VISA, MASTER 등
-     */
-    private String cardNetwork;
+	/**
+	 * DOMESTIC, VISA, MASTER 등
+	 */
+	private String cardNetwork;
 }

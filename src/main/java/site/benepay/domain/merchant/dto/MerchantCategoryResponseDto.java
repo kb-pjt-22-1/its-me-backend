@@ -8,14 +8,12 @@ import site.benepay.domain.merchant.vo.MerchantCategory;
 @Builder
 public class MerchantCategoryResponseDto {
 
-    private Long categoryId;
     private String categoryCode;
     private String categoryName;
     private String categoryIcon;
 
     public static MerchantCategoryResponseDto from(MerchantCategory category) {
         return MerchantCategoryResponseDto.builder()
-                .categoryId(category.getCategoryId())
                 .categoryCode(category.getCategoryCode())
                 .categoryName(category.getCategoryName())
                 .categoryIcon(category.getCategoryIcon())

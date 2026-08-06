@@ -1,69 +1,82 @@
 package site.benepay.domain.card.controller;
 
-import lombok.RequiredArgsConstructor;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+
+import javax.validation.Valid;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import lombok.RequiredArgsConstructor;
+import site.benepay.domain.card.dto.CardBenefitResponseDto;
 import site.benepay.domain.card.dto.CardDetailResponseDto;
 import site.benepay.domain.card.dto.CardListResponseDto;
+import site.benepay.domain.card.dto.CardPerformanceResponseDto;
+import site.benepay.domain.card.dto.CardRecommendationRequestDto;
+import site.benepay.domain.card.dto.CardRecommendationResponseDto;
+import site.benepay.domain.card.dto.CardRepresentativeResponseDto;
 import site.benepay.domain.card.service.CardService;
-
-import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/cards")
 public class CardController {
 
-    private final CardService cardService;
+	private final CardService cardService;
 
-//    @GetMapping
-//    public ResponseEntity<List<CardListResponseDto>> getCardList() {
-//        // 로그인 기능 연결 전 임시 사용자
-//        Long userId = 1L;
-//        List<CardListResponseDto> response = cardService.getCardList(userId);
-//        return ResponseEntity.ok(response);
-//    }
-//    @GetMapping("/{userCardId}")
-//    public ResponseEntity<CardDetailResponseDto> getCardDetail(@PathVariable Long userCardId) {
-//        // 임시값
-//        // 나중에는 JWT 인증 정보에서 userId를 꺼내야 함
-//        Long userId = 1L;
-//        CardDetailResponseDto response = cardService.getCardDetail(userId, userCardId);
-//        return ResponseEntity.ok(response);
-//    }
+	@GetMapping("/{userCardId}/performance")
+	public ResponseEntity<CardPerformanceResponseDto> getCardPerformance(@AuthenticationPrincipal Long userId,
+		@PathVariable Long userCardId, @RequestParam(required = false) String yearMonth) {
+		String targetYearMonth =
+			yearMonth != null ? yearMonth : YearMonth.now().format(DateTimeFormatter.ofPattern("yyyyMM"));
 
-//    @GetMapping
-//    public ResponseEntity<List<CardListResponseDto>> getCardList(
-//            @AuthenticationPrincipal Long userId
-//    ) {
-//        List<CardListResponseDto> response =
-//                cardService.getCardList(userId);
-//
-//        return ResponseEntity.ok(response);
-//    }
+		CardPerformanceResponseDto response = cardService.getCardPerformance(userId, userCardId, targetYearMonth);
 
-    @GetMapping("/{userCardId}")
-    public ResponseEntity<CardDetailResponseDto> getCardDetail(
-            @AuthenticationPrincipal Long userId,
-            @PathVariable Long userCardId
-    ) {
-        CardDetailResponseDto response =
-                cardService.getCardDetail(userId, userCardId);
+		return ResponseEntity.ok(response);
+	}
 
-        return ResponseEntity.ok(response);
-    }
-    @GetMapping
-    public ResponseEntity<List<CardListResponseDto>> getCardList(
-            @AuthenticationPrincipal Long userId
-    ) {
-        System.out.println("JWT userId = " + userId);
+	@GetMapping("/{userCardId}/benefits")
+	public ResponseEntity<CardBenefitResponseDto> getCardBenefits(@AuthenticationPrincipal Long userId,
+		@PathVariable Long userCardId) {
+		CardBenefitResponseDto response = cardService.getCardBenefits(userId, userCardId);
+		return ResponseEntity.ok(response);
+	}
 
-        return ResponseEntity.ok(
-                cardService.getCardList(userId)
-        );
-    }
+	@GetMapping("/{userCardId}")
+	public ResponseEntity<CardDetailResponseDto> getCardDetail(@AuthenticationPrincipal Long userId,
+		@PathVariable Long userCardId) {
+		CardDetailResponseDto response = cardService.getCardDetail(userId, userCardId);
+		return ResponseEntity.ok(response);
+	}
+
+	@GetMapping
+	public ResponseEntity<List<CardListResponseDto>> getCardList(@AuthenticationPrincipal Long userId) {
+		return ResponseEntity.ok(cardService.getCardList(userId));
+	}
+
+	@PatchMapping("/{userCardId}/representative")
+	public ResponseEntity<CardRepresentativeResponseDto> setRepresentativeCard(@AuthenticationPrincipal Long userId,
+		@PathVariable Long userCardId) {
+		CardRepresentativeResponseDto response = cardService.setRepresentativeCard(userId, userCardId);
+
+		return ResponseEntity.ok(response);
+	}
+
+	@PatchMapping("/{userCardId}/recommendation")
+	public ResponseEntity<CardRecommendationResponseDto> updateRecommendation(@AuthenticationPrincipal Long userId,
+		@PathVariable Long userCardId, @Valid @RequestBody CardRecommendationRequestDto request) {
+		CardRecommendationResponseDto response = cardService.updateRecommendation(userId, userCardId,
+			request.getRecommendationEnabled());
+
+		return ResponseEntity.ok(response);
+	}
 }

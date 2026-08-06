@@ -8,6 +8,7 @@ import site.benepay.common.exception.DuplicateMerchantException;
 import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.domain.merchant.dto.MerchantRequestDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
+import site.benepay.domain.merchant.dto.NearbyMerchantResponseDto;
 import site.benepay.domain.merchant.mapper.MerchantMapper;
 import site.benepay.domain.merchant.vo.Merchant;
 
@@ -48,6 +49,14 @@ public class MerchantServiceImpl implements MerchantService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<NearbyMerchantResponseDto> getNearbyMerchants(double lat, double lng, double radiusMeters) {
+        return merchantMapper.findWithinRadius(lat, lng, radiusMeters).stream()
+                .map(NearbyMerchantResponseDto::from)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     @Transactional
     public MerchantResponseDto updateMerchant(Long merchantId, MerchantRequestDto request) {
         Merchant existing = findActiveMerchant(merchantId);
@@ -78,7 +87,7 @@ public class MerchantServiceImpl implements MerchantService {
     private Merchant buildMerchant(Long merchantId, MerchantRequestDto request) {
         return Merchant.builder()
                 .merchantId(merchantId)
-                .categoryId(request.getCategoryId())
+                .categoryCode(request.getCategoryCode())
                 .brandId(request.getBrandId())
                 .merchantCode(request.getMerchantCode())
                 .merchantName(request.getMerchantName())

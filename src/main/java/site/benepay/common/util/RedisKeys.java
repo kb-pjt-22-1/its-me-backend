@@ -25,6 +25,14 @@ public final class RedisKeys {
         return "pin:lock:" + userId;
     }
 
+    public static String passwordFailure(Long userId) {
+        return "password:failure:" + userId;
+    }
+
+    public static String passwordLock(Long userId) {
+        return "password:lock:" + userId;
+    }
+
     public static String blacklist(String jti) {
         return "blacklist:" + jti;
     }
@@ -36,4 +44,6 @@ public final class RedisKeys {
     public static String signupVerification(String token) {
         return "signup:verify:" + token;
     }
+
+
 }
