@@ -11,7 +11,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
-import site.benepay.domain.payment.dto.PaymentResponseDto;
 import site.benepay.domain.payment.service.PaymentService;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,10 +46,11 @@ class PaymentControllerTest {
 
 	@Test
 	void getPaymentReturnsOkWithTheServiceResult() {
-		PaymentResponseDto found = PaymentResponseDto.builder().paymentId(PAYMENT_ID).paymentStatus("APPROVED").build();
+		PaymentHistoryResponseDto found =
+			PaymentHistoryResponseDto.builder().paymentId(PAYMENT_ID).paymentStatus("APPROVED").build();
 		when(paymentService.getPayment(PAYMENT_ID)).thenReturn(found);
 
-		ResponseEntity<PaymentResponseDto> response = controller.getPayment(USER_ID, PAYMENT_ID);
+		ResponseEntity<PaymentHistoryResponseDto> response = controller.getPayment(USER_ID, PAYMENT_ID);
 
 		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(response.getBody()).isEqualTo(found);

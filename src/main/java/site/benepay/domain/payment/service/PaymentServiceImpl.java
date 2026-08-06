@@ -8,7 +8,6 @@ import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import site.benepay.common.exception.PaymentNotFoundException;
 import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
-import site.benepay.domain.payment.dto.PaymentResponseDto;
 import site.benepay.domain.payment.mapper.PaymentMapper;
 
 @Service
@@ -19,9 +18,9 @@ public class PaymentServiceImpl implements PaymentService {
 	private final PaymentMapper paymentMapper;
 
 	@Override
-	public PaymentResponseDto getPayment(Long paymentId) {
+	public PaymentHistoryResponseDto getPayment(Long paymentId) {
 		return paymentMapper.findByPaymentId(paymentId)
-			.map(PaymentResponseDto::from)
+			.map(PaymentHistoryResponseDto::from)
 			.orElseThrow(() -> new PaymentNotFoundException("결제 내역을 찾을 수 없습니다."));
 	}
 
