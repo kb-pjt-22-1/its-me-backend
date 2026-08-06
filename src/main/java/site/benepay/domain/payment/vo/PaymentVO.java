@@ -3,12 +3,18 @@ package site.benepay.domain.payment.vo;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.NonNull;
-import lombok.Setter;
 
+// MyBatis는 기본 생성자로 인스턴스를 만든 뒤 setter 없이도 필드에 직접 리플렉션으로 값을 채운다.
+// Builder는 테스트 등 코드에서 직접 값을 채워 만들 때 쓴다.
 @Getter
-@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class PaymentVO {
 
 	private Long paymentId;
@@ -16,9 +22,9 @@ public class PaymentVO {
 	private Long merchantId;
 	@NonNull
 	private Long userCardId;
-    @NonNull
+	@NonNull
 	private LocalDateTime paymentTime;
-    @NonNull
+	@NonNull
 	private BigDecimal originalAmount;
 	@NonNull
 	private BigDecimal discountAmount;
