@@ -39,32 +39,32 @@ class PaymentServiceImplTest {
 	}
 
 	private PaymentVO storedPayment() {
-		PaymentVO payment = new PaymentVO();
-		payment.setPaymentId(PAYMENT_ID);
-		payment.setMerchantId(1L);
-		payment.setUserCardId(2L);
-		payment.setPaymentTime(LocalDateTime.now());
-		payment.setOriginalAmount(BigDecimal.valueOf(10000));
-		payment.setDiscountAmount(BigDecimal.valueOf(1000));
-		payment.setFinalAmount(BigDecimal.valueOf(9000));
-		payment.setPaymentStatus("APPROVED");
-		payment.setPaymentMethod("BARCODE");
-		return payment;
+		return PaymentVO.builder()
+			.paymentId(PAYMENT_ID)
+			.merchantId(1L)
+			.userCardId(2L)
+			.paymentTime(LocalDateTime.now())
+			.originalAmount(BigDecimal.valueOf(10000))
+			.discountAmount(BigDecimal.valueOf(1000))
+			.finalAmount(BigDecimal.valueOf(9000))
+			.paymentStatus("APPROVED")
+			.paymentMethod("BARCODE")
+			.build();
 	}
 
 	private PaymentHistoryVO historyRow(String status) {
-		PaymentHistoryVO row = new PaymentHistoryVO();
-		row.setPaymentId(PAYMENT_ID);
-		row.setMerchantName("스타벅스 강남점");
-		row.setCardName("노리 체크카드");
-		row.setPanLast4("1234");
-		row.setPaymentTime(LocalDateTime.now());
-		row.setOriginalAmount(BigDecimal.valueOf(10000));
-		row.setDiscountAmount(BigDecimal.valueOf(1000));
-		row.setFinalAmount(BigDecimal.valueOf(9000));
-		row.setPaymentStatus(status);
-		row.setPaymentMethod("QR");
-		return row;
+		return PaymentHistoryVO.builder()
+			.paymentId(PAYMENT_ID)
+			.merchantName("스타벅스 강남점")
+			.cardName("노리 체크카드")
+			.panLast4("1234")
+			.paymentTime(LocalDateTime.now())
+			.originalAmount(BigDecimal.valueOf(10000))
+			.discountAmount(BigDecimal.valueOf(1000))
+			.finalAmount(BigDecimal.valueOf(9000))
+			.paymentStatus(status)
+			.paymentMethod("QR")
+			.build();
 	}
 
 	// ---- getPayment ----
