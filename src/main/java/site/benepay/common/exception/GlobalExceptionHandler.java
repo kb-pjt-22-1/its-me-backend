@@ -18,9 +18,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
         String message = ex.getBindingResult().getFieldErrors().stream()
-                .findFirst()
-                .map(error -> error.getField() + ": " + error.getDefaultMessage())
-                .orElse("잘못된 요청입니다.");
+            .findFirst()
+            .map(error -> error.getField() + ": " + error.getDefaultMessage())
+            .orElse("잘못된 요청입니다.");
         return errorResponse(HttpStatus.BAD_REQUEST, message, request);
     }
 
@@ -69,21 +69,6 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
-    @ExceptionHandler(InvalidPaymentAmountException.class)
-    public ResponseEntity<ErrorResponse> handleInvalidPaymentAmount(InvalidPaymentAmountException ex, HttpServletRequest request) {
-        return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
-    }
-
-    @ExceptionHandler(PaymentTokenNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handlePaymentTokenNotFound(PaymentTokenNotFoundException ex, HttpServletRequest request) {
-        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
-    }
-
-    @ExceptionHandler(PaymentTokenNotUsableException.class)
-    public ResponseEntity<ErrorResponse> handlePaymentTokenNotUsable(PaymentTokenNotUsableException ex, HttpServletRequest request) {
-        return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
-    }
-
     @ExceptionHandler(DuplicateMerchantException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateMerchant(DuplicateMerchantException ex, HttpServletRequest request) {
         return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
@@ -122,6 +107,6 @@ public class GlobalExceptionHandler {
 
     private static ResponseEntity<ErrorResponse> errorResponse(HttpStatus status, String message, HttpServletRequest request) {
         return ResponseEntity.status(status)
-                .body(new ErrorResponse(status.value(), message, request.getRequestURI(), LocalDateTime.now()));
+            .body(new ErrorResponse(status.value(), message, request.getRequestURI(), LocalDateTime.now()));
     }
 }

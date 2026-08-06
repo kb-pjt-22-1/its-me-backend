@@ -7,13 +7,16 @@ import lombok.Getter;
 import lombok.NonNull;
 
 @Getter
-public class PaymentVO {
+public class PaymentHistoryVO {
 
 	private Long paymentId;
 	@NonNull
-	private Long merchantId;
+	private String merchantName;
 	@NonNull
-	private Long userCardId;
+	private String cardName;
+	// 카드 마스킹 표시용 (카드번호 자체가 아니라 user_cards.pan_last4)
+	@NonNull
+	private String panLast4;
     @NonNull
 	private LocalDateTime paymentTime;
     @NonNull
@@ -22,10 +25,8 @@ public class PaymentVO {
 	private BigDecimal discountAmount;
 	@NonNull
 	private BigDecimal finalAmount;
-	// payment_status: PENDING, APPROVED, CANCELED, PAYMENT_FAILED (common_codes 그룹 PAYMENT_STATUS)
 	@NonNull
 	private String paymentStatus;
-	// payment_method: BARCODE, QR (common_codes 그룹 PAYMENT_METHOD)
 	@NonNull
 	private String paymentMethod;
 }
