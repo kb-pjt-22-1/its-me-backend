@@ -1,12 +1,12 @@
 package site.benepay.domain.user.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
+
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 /**
  * 실제 PortOne 연동에서는 name/phoneNumber/birthDate가 PortOne 자체 인증 화면에서
@@ -19,16 +19,16 @@ import javax.validation.constraints.Size;
 @AllArgsConstructor
 public class PortOneVerifyRequestDto {
 
-    @NotBlank
-    private String impUid;
+	@NotBlank
+	private String impUid;
 
-    @NotBlank
-    @Size(max = 50)
-    private String name;
+	@NotBlank
+	@Size(max = 50)
+	private String name;
 
-    @Pattern(regexp = "^01[0-9]-?\\d{3,4}-?\\d{4}$", message = "invalid phone number format")
-    private String phoneNumber;
+	@Pattern(regexp = "^01\\d-?\\d{3,4}-?\\d{4}$", message = "invalid phone number format")
+	private String phoneNumber;
 
-    @Pattern(regexp = "^\\d{8}$", message = "birthDate must be 8 digits in YYYYMMDD format")
-    private String birthDate;
+	@Pattern(regexp = "^\\d{8}$", message = "birthDate must be 8 digits in YYYYMMDD format")
+	private String birthDate;
 }

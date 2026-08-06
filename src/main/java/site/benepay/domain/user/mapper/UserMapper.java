@@ -1,27 +1,30 @@
 package site.benepay.domain.user.mapper;
 
-import org.apache.ibatis.annotations.Param;
-import site.benepay.domain.user.vo.User;
-
 import java.util.Optional;
+
+import org.apache.ibatis.annotations.Param;
+
+import site.benepay.domain.user.vo.User;
 
 public interface UserMapper {
 
-    void insert(User user);
+	void insert(User user);
 
-    Optional<User> findByUserId(Long userId);
+	Optional<User> findByUserId(Long userId);
 
-    Optional<User> findByLoginId(String loginId);
+	Optional<User> findByLoginId(String loginId);
 
-    boolean existsByLoginId(String loginId);
+	boolean existsByLoginId(String loginId);
 
-    boolean existsByDiHash(String diHash);
+	boolean existsByDiHash(String diHash);
 
-    void updateProfile(@Param("userId") Long userId, @Param("phoneNumber") String phoneNumber);
+	boolean existsByCiHash(String ciHash);
 
-    void updatePinHash(@Param("userId") Long userId, @Param("pinHash") String pinHash);
+	void updateProfile(@Param("userId") Long userId, @Param("phoneNumber") String phoneNumber);
 
-    void updatePasswordHash(@Param("userId") Long userId, @Param("loginPasswordHash") String loginPasswordHash);
+	void updatePinHash(@Param("userId") Long userId, @Param("pinHash") String pinHash);
 
-    void softDeleteAndAnonymize(Long userId);
+	void updatePasswordHash(@Param("userId") Long userId, @Param("loginPasswordHash") String loginPasswordHash);
+
+	void softDeleteAndAnonymize(Long userId);
 }
