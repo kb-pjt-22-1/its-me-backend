@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
-import site.benepay.domain.payment.dto.PaymentResponseDto;
 import site.benepay.domain.payment.service.PaymentService;
 
 @RestController
@@ -29,11 +28,11 @@ public class PaymentController {
 		return ResponseEntity.ok(response);
 	}
 
-	// 결제 단건 상세
+	// 결제 단건 상세 (가맹점명·카드명 포함)
 	@GetMapping("/{paymentId}")
-	public ResponseEntity<PaymentResponseDto> getPayment(@AuthenticationPrincipal Long userId,
+	public ResponseEntity<PaymentHistoryResponseDto> getPayment(@AuthenticationPrincipal Long userId,
 		@PathVariable Long paymentId) {
-		PaymentResponseDto response = paymentService.getPayment(paymentId);
+		PaymentHistoryResponseDto response = paymentService.getPayment(paymentId);
 
 		return ResponseEntity.ok(response);
 	}

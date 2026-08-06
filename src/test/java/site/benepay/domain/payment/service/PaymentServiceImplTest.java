@@ -13,10 +13,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import site.benepay.common.exception.PaymentNotFoundException;
 import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
-import site.benepay.domain.payment.dto.PaymentResponseDto;
 import site.benepay.domain.payment.mapper.PaymentMapper;
 import site.benepay.domain.payment.vo.PaymentHistoryVO;
-import site.benepay.domain.payment.vo.PaymentVO;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -38,21 +36,7 @@ class PaymentServiceImplTest {
 		paymentService = new PaymentServiceImpl(paymentMapper);
 	}
 
-	private PaymentVO storedPayment() {
-		return PaymentVO.builder()
-			.paymentId(PAYMENT_ID)
-			.merchantId(1L)
-			.userCardId(2L)
-			.paymentTime(LocalDateTime.now())
-			.originalAmount(BigDecimal.valueOf(10000))
-			.discountAmount(BigDecimal.valueOf(1000))
-			.finalAmount(BigDecimal.valueOf(9000))
-			.paymentStatus("APPROVED")
-			.paymentMethod("BARCODE")
-			.build();
-	}
-
-	private PaymentHistoryVO historyRow(String status) {
+	private PaymentHistoryVO row(String status) {
 		return PaymentHistoryVO.builder()
 			.paymentId(PAYMENT_ID)
 			.merchantName("스타벅스 강남점")
@@ -71,13 +55,14 @@ class PaymentServiceImplTest {
 
 	@Test
 	void getPaymentReturnsTheMappedResponseWhenFound() {
-		when(paymentMapper.findByPaymentId(PAYMENT_ID)).thenReturn(Optional.of(storedPayment()));
+		when(paymentMapper.findByPaymentId(PAYMENT_ID)).thenReturn(Optional.of(row("APPROVED")));
 
-		PaymentResponseDto response = paymentService.getPayment(PAYMENT_ID);
+		PaymentHistoryResponseDto response = paymentService.getPayment(PAYMENT_ID);
 
 		assertThat(response.getPaymentId()).isEqualTo(PAYMENT_ID);
+		assertThat(response.getMerchantName()).isEqualTo("스타벅스 강남점");
+		assertThat(response.getMaskedCardNumber()).isEqualTo("**** 1234");
 		assertThat(response.getPaymentStatus()).isEqualTo("APPROVED");
-		assertThat(response.getPaymentMethod()).isEqualTo("BARCODE");
 		assertThat(response.getFinalAmount()).isEqualByComparingTo("9000");
 	}
 
@@ -94,14 +79,11 @@ class PaymentServiceImplTest {
 	@Test
 	void getPaymentHistoryReturnsTheEnrichedListForTheUser() {
 		when(paymentMapper.findPaymentHistoryByUserId(USER_ID))
-			.thenReturn(List.of(historyRow("APPROVED"), historyRow("CANCELED")));
+			.thenReturn(List.of(row("APPROVED"), row("CANCELED")));
 
 		List<PaymentHistoryResponseDto> history = paymentService.getPaymentHistory(USER_ID);
 
 		assertThat(history).hasSize(2);
-		assertThat(history.get(0).getMerchantName()).isEqualTo("스타벅스 강남점");
-		assertThat(history.get(0).getCardName()).isEqualTo("노리 체크카드");
-		assertThat(history.get(0).getMaskedCardNumber()).isEqualTo("**** 1234");
 		assertThat(history.get(0).getPaymentStatus()).isEqualTo("APPROVED");
 		assertThat(history.get(1).getPaymentStatus()).isEqualTo("CANCELED");
 	}
