@@ -44,4 +44,6 @@ public final class RedisKeys {
     public static String signupVerification(String token) {
         return "signup:verify:" + token;
     }
+
+
 }
