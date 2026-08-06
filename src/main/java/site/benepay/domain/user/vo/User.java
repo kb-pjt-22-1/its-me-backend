@@ -1,12 +1,12 @@
 package site.benepay.domain.user.vo;
 
+import java.time.LocalDateTime;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-
-import java.time.LocalDateTime;
 
 /**
  * users 테이블의 한 행. 필드 순서는 스키마의 컬럼 순서를 따른다.
@@ -21,22 +21,23 @@ import java.time.LocalDateTime;
 @Builder
 public class User {
 
-    private Long userId;
-    private String loginId;
-    private String loginPasswordHash;
-    @Setter
-    private String pinHash;
-    private String name;
-    @Setter
-    private String phoneNumber;
-    // 컬럼이 CHAR(8) 'YYYYMMDD'이다. LocalDate로 받으면 TypeHandler를 따로 붙여야 하는데,
-    // 날짜 연산을 하는 곳이 없어 저장 형식 그대로 두는 편이 단순하다.
-    private String birthDate;
-    private Role role;
-    private String di;
-    private String ciEncrypted;
-    private LocalDateTime createdAt;
-    @Setter
-    private boolean deleted;
-    private String fcmToken;
+	private Long userId;
+	private String loginId;
+	private String loginPasswordHash;
+	@Setter
+	private String pinHash;
+	private String name;
+	@Setter
+	private String phoneNumber;
+	// 컬럼이 CHAR(8) 'YYYYMMDD'이다. LocalDate로 받으면 TypeHandler를 따로 붙여야 하는데,
+	// 날짜 연산을 하는 곳이 없어 저장 형식 그대로 두는 편이 단순하다.
+	private String birthDate;
+	private Role role;
+	private String di;
+	private String ciHash;
+	private String ciEncrypted;
+	private LocalDateTime createdAt;
+	@Setter
+	private boolean deleted;
+	private String fcmToken;
 }

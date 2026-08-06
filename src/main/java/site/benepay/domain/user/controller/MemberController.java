@@ -10,6 +10,7 @@ import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
 import site.benepay.domain.user.dto.UpdateProfileRequestDto;
 import site.benepay.domain.user.dto.UserResponseDto;
 import site.benepay.domain.user.dto.VerifyPasswordRequestDto;
+import site.benepay.domain.user.dto.VerifyPinRequestDto;
 import site.benepay.domain.user.service.UserService;
 
 import javax.validation.Valid;
@@ -55,6 +56,13 @@ public class MemberController {
     @PutMapping("/pin")
     public ResponseEntity<Void> updateOrDeletePin(@Valid @RequestBody UpdateDeletePinRequestDto request) {
         userService.updateOrDeletePin(currentUserId(), request);
+        return ResponseEntity.noContent().build();
+    }
+
+    // 결제 화면에서 간편 비밀번호 인증 게이트로 쓴다 - verify-password와 같은 용도, 대상만 PIN.
+    @PostMapping("/verify-pin")
+    public ResponseEntity<Void> verifyPin(@Valid @RequestBody VerifyPinRequestDto request) {
+        userService.verifyPin(currentUserId(), request);
         return ResponseEntity.noContent().build();
     }
 
