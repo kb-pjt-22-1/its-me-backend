@@ -28,6 +28,7 @@ class PaymentTokenStoreTest {
 
 	private static final Long USER_ID = 1L;
 	private static final Long USER_CARD_ID = 2L;
+	private static final Long MERCHANT_ID = 3L;
 	private static final String CARD_PAYMENT_TOKEN = "9475000000001234";
 
 	@Mock
@@ -45,7 +46,11 @@ class PaymentTokenStoreTest {
 	}
 
 	private PaymentTokenVO issue() {
-		return store.issue(USER_ID, USER_CARD_ID, CARD_PAYMENT_TOKEN);
+		return store.issue(USER_ID, USER_CARD_ID, MERCHANT_ID, CARD_PAYMENT_TOKEN);
+	}
+
+	private PaymentTokenVO issueWithoutMerchant() {
+		return store.issue(USER_ID, USER_CARD_ID, null, CARD_PAYMENT_TOKEN);
 	}
 
 	@Test
@@ -55,6 +60,7 @@ class PaymentTokenStoreTest {
 		assertThat(token.getPaymentTokenId()).isNotBlank();
 		assertThat(token.getUserId()).isEqualTo(USER_ID);
 		assertThat(token.getUserCardId()).isEqualTo(USER_CARD_ID);
+		assertThat(token.getMerchantId()).isEqualTo(MERCHANT_ID);
 		assertThat(token.getCardPaymentToken()).isEqualTo(CARD_PAYMENT_TOKEN);
 		assertThat(token.getPaymentMethod()).isEqualTo("BARCODE");
 		assertThat(token.getStatus()).isEqualTo(PaymentTokenStore.STATUS_ISSUED);
@@ -65,6 +71,13 @@ class PaymentTokenStoreTest {
 			jsonCaptor.capture(),
 			eq(PaymentTokenStore.TTL));
 		assertThat(jsonCaptor.getValue()).contains(token.getPaymentTokenId());
+	}
+
+	@Test
+	void issueAllowsANullMerchantIdForTheDirectEntryFlow() {
+		PaymentTokenVO token = issueWithoutMerchant();
+
+		assertThat(token.getMerchantId()).isNull();
 	}
 
 	@Test
@@ -129,6 +142,37 @@ class PaymentTokenStoreTest {
 		Optional<PaymentTokenVO> secondAttempt = store.markUsedIfIssued(issued.getPaymentTokenId());
 
 		assertThat(secondAttempt).isEmpty();
+	}
+
+	@Test
+	void cancelIfIssuedFlipsAnIssuedTokenToCanceled() {
+		String[] savedJson = new String[1];
+		captureSetCalls(savedJson);
+
+		PaymentTokenVO issued = issue();
+		when(valueOperations.get(RedisKeys.paymentToken(issued.getPaymentTokenId())))
+			.thenAnswer(invocation -> savedJson[0]);
+
+		Optional<PaymentTokenVO> result = store.cancelIfIssued(issued.getPaymentTokenId());
+
+		assertThat(result).isPresent();
+		assertThat(result.get().getStatus()).isEqualTo(PaymentTokenStore.STATUS_CANCELED);
+		assertThat(savedJson[0]).contains(PaymentTokenStore.STATUS_CANCELED);
+	}
+
+	@Test
+	void cancelIfIssuedDoesNothingWhenTheTokenIsAlreadyUsed() {
+		String[] savedJson = new String[1];
+		captureSetCalls(savedJson);
+
+		PaymentTokenVO issued = issue();
+		when(valueOperations.get(RedisKeys.paymentToken(issued.getPaymentTokenId())))
+			.thenAnswer(invocation -> savedJson[0]);
+		store.markUsedIfIssued(issued.getPaymentTokenId());
+
+		Optional<PaymentTokenVO> cancelAttempt = store.cancelIfIssued(issued.getPaymentTokenId());
+
+		assertThat(cancelAttempt).isEmpty();
 	}
 
 	private void captureSetCalls(String[] savedJson) {

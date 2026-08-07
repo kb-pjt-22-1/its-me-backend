@@ -68,4 +68,11 @@
           AND token_expiry_date >= CURDATE()
     </select>
 
+    <select id="findRandomMerchantId" resultType="java.lang.Long">
+        SELECT merchant_id
+        FROM merchants
+        ORDER BY RAND()
+            LIMIT 1
+    </select>
+
 </mapper>
