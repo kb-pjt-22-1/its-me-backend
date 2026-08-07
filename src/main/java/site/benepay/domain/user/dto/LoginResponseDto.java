@@ -9,10 +9,10 @@ import lombok.Getter;
 @AllArgsConstructor
 public class LoginResponseDto {
 
-    private String tokenType;
-    private String accessToken;
-    private String refreshToken;
-    private long expiresIn;
-    private Long userId;
-    private String loginId;
+	private String tokenType;
+	private String accessToken;
+	private String refreshToken;
+	private long expiresIn;
+	private Long userId;
+	private String loginId;
 }

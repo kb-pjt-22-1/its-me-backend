@@ -1,12 +1,12 @@
 package site.benepay.domain.user.dto;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
+
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 /**
  * name/phoneNumber/birthDate/ciEncrypted/diHash를 여기서 직접 받지 않는다. 그 값들은
@@ -19,20 +19,20 @@ import javax.validation.constraints.Size;
 @AllArgsConstructor
 public class SignUpRequestDto {
 
-    @NotBlank
-    @Size(min = 4, max = 20)
-    @Pattern(regexp = "^[a-zA-Z0-9_-]+$", message = "loginId must contain only letters, digits, '-' and '_'")
-    private String loginId;
+	@NotBlank
+	@Size(min = 4, max = 20)
+	@Pattern(regexp = "^[a-zA-Z0-9_-]+$", message = "loginId must contain only letters, digits, '-' and '_'")
+	private String loginId;
 
-    @NotBlank
-    @Size(min = 8, max = 64)
-    @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,64}$",
-            message = "password must contain at least one letter, one digit, and one special character")
-    private String password;
+	@NotBlank
+	@Size(min = 8, max = 64)
+	@Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,64}$",
+		message = "password must contain at least one letter, one digit, and one special character")
+	private String password;
 
-    @NotBlank
-    private String verificationToken;
+	@NotBlank
+	private String verificationToken;
 
-    @Size(max = 255)
-    private String fcmToken;
+	@Size(max = 255)
+	private String fcmToken;
 }

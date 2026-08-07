@@ -19,5 +19,5 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class DevLoginRequestDto {
 
-    private Integer slot;
+	private Integer slot;
 }
