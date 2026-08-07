@@ -5,15 +5,13 @@
     <scanScope>AllSourcesWithTests</scanScope>
     <suppressErrors>true</suppressErrors>
     <option name="thirdPartyClasspath" />
-    <option name="activeLocationIds">
-      <option value="5e32ef3e-4209-48ca-8fb8-23b8cc3f7e07" />
-    </option>
+    <option name="activeLocationIds" />
     <option name="locations">
       <list>
         <ConfigurationLocation id="bundled-sun-checks" type="BUNDLED" scope="All" description="Sun Checks">(bundled)</ConfigurationLocation>
         <ConfigurationLocation id="bundled-google-checks" type="BUNDLED" scope="All" description="Google Checks">(bundled)</ConfigurationLocation>
-        <ConfigurationLocation id="5e32ef3e-4209-48ca-8fb8-23b8cc3f7e07" type="LOCAL_FILE" scope="All" description="Naver Checkstyle Rules 1.2">
-          C:\Users\student\Downloads\naver-checkstyle-rules.xml
+        <ConfigurationLocation id="9b70d26b-ae3f-400d-a1c8-e81481f5cdcb" type="PROJECT_RELATIVE" scope="All" description="Naver Checkstyle">
+          $PROJECT_DIR$/.idea/codeStyles/naver-checkstyle-rules.xml
           <option name="properties">
             <map>
               <entry key="suppressionFile" value="naver-checkstyle-suppressions.xml" />
