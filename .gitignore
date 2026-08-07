@@ -3,8 +3,7 @@ build/
 !gradle/wrapper/gradle-wrapper.jar
 
 ### IntelliJ IDEA ###
-.idea/*
-!.idea/codeStyles/
+.idea/
 *.iws
 *.iml
 *.ipr
