@@ -9,8 +9,8 @@ import lombok.Getter;
 @AllArgsConstructor
 public class RefreshResponseDto {
 
-    private String tokenType;
-    private String accessToken;
-    private String refreshToken;
-    private long expiresIn;
+	private String tokenType;
+	private String accessToken;
+	private String refreshToken;
+	private long expiresIn;
 }

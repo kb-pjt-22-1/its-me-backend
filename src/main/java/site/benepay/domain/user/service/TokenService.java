@@ -5,11 +5,11 @@ import site.benepay.domain.user.vo.User;
 
 public interface TokenService {
 
-    TokenPairDto issueTokenPair(User user);
+	TokenPairDto issueTokenPair(User user);
 
-    TokenPairDto rotateRefreshToken(String presentedRefreshToken);
+	TokenPairDto rotateRefreshToken(String presentedRefreshToken);
 
-    void blacklistAccessToken(String accessToken);
+	void blacklistAccessToken(String accessToken);
 
-    void revokeRefreshToken(Long userId);
+	void revokeRefreshToken(Long userId);
 }
