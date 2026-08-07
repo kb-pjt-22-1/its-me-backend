@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
-import site.benepay.domain.payment.dto.PaymentCompleteRequestDto;
 import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
 import site.benepay.domain.payment.dto.PaymentTokenCreateRequestDto;
 import site.benepay.domain.payment.dto.PaymentTokenResponseDto;
@@ -29,7 +28,8 @@ public class PaymentTokenController {
 	@PostMapping
 	public ResponseEntity<PaymentTokenResponseDto> issueToken(@AuthenticationPrincipal Long userId,
 		@Valid @RequestBody PaymentTokenCreateRequestDto request) {
-		PaymentTokenResponseDto response = paymentTokenService.issueToken(userId, request.getUserCardId());
+		PaymentTokenResponseDto response = paymentTokenService.issueToken(
+			userId, request.getUserCardId(), request.getMerchantId());
 
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
@@ -42,12 +42,21 @@ public class PaymentTokenController {
 		return ResponseEntity.ok(response);
 	}
 
-	// 프론트의 "결제완료하기" 버튼이 호출한다. 실제 매장 스캔 대신 금액/가맹점을 직접 받는다.
+	// 프론트의 "결제완료하기" 버튼이 호출한다. 요청 바디 없음 - 실제 매장 스캔이 불가능한 구조라
+	// 가맹점/금액은 서버가 데모용으로 무작위 생성한다.
 	@PostMapping("/{paymentTokenId}/complete")
 	public ResponseEntity<PaymentHistoryResponseDto> completeToken(@AuthenticationPrincipal Long userId,
-		@PathVariable String paymentTokenId, @Valid @RequestBody PaymentCompleteRequestDto request) {
-		PaymentHistoryResponseDto response = paymentTokenService.completeToken(paymentTokenId,
-			request.getMerchantId(), request.getOriginalAmount(), request.getDiscountAmount());
+		@PathVariable String paymentTokenId) {
+		PaymentHistoryResponseDto response = paymentTokenService.completeToken(paymentTokenId);
+
+		return ResponseEntity.ok(response);
+	}
+
+	// 프론트의 "취소하기" 버튼이 호출한다. 아직 결제가 일어난 적이 없어서 payments 테이블은 안 건드린다.
+	@PostMapping("/{paymentTokenId}/cancel")
+	public ResponseEntity<PaymentTokenResponseDto> cancelToken(@AuthenticationPrincipal Long userId,
+		@PathVariable String paymentTokenId) {
+		PaymentTokenResponseDto response = paymentTokenService.cancelToken(paymentTokenId);
 
 		return ResponseEntity.ok(response);
 	}

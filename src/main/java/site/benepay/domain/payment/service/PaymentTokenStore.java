@@ -25,11 +25,12 @@ public class PaymentTokenStore {
 	// dto 패키지(PaymentTokenResponseDto)에서 expiresAt 계산에 참조하므로 public.
 	public static final Duration TTL = Duration.ofMinutes(3);
 
-	// 결제완료 처리 직후 상태 조회(폴링 중이던 클라이언트)가 USED를 볼 수 있게 짧게만 더 살려둔다.
-	private static final Duration USED_TTL = Duration.ofSeconds(30);
+	// 완료/취소 처리 직후 상태 조회(폴링 중이던 클라이언트)가 최종 상태를 볼 수 있게 짧게만 더 살려둔다.
+	private static final Duration FINAL_STATE_TTL = Duration.ofSeconds(30);
 
 	public static final String STATUS_ISSUED = "ISSUED";
 	public static final String STATUS_USED = "USED";
+	public static final String STATUS_CANCELED = "CANCELED";
 	private static final String PAYMENT_METHOD_BARCODE = "BARCODE";
 
 	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
@@ -41,12 +42,14 @@ public class PaymentTokenStore {
 		this.redisTemplate = redisTemplate;
 	}
 
-	public PaymentTokenVO issue(Long userId, Long userCardId, String cardPaymentToken) {
+	// merchantId는 nullable - 매장 페이지를 거쳐온 흐름이면 채워서, 결제 페이지 직접 진입이면 null로 발급한다.
+	public PaymentTokenVO issue(Long userId, Long userCardId, Long merchantId, String cardPaymentToken) {
 		String paymentTokenId = UUID.randomUUID().toString();
 		PaymentTokenVO token = new PaymentTokenVO(
 			paymentTokenId,
 			userId,
 			userCardId,
+			merchantId,
 			cardPaymentToken,
 			PAYMENT_METHOD_BARCODE,
 			STATUS_ISSUED,
@@ -67,17 +70,28 @@ public class PaymentTokenStore {
 		return Optional.of(deserialize(raw));
 	}
 
-	// ISSUED 상태인 토큰만 USED로 바꾼다. 이미 USED거나 존재하지 않으면(만료 포함) 아무것도 안 하고 빈 값을 돌려준다 -
-	// 상태 판단(이미 사용됨/만료됨을 구분해서 예외를 던질지)은 Service의 책임으로 남겨둔다.
+	// ISSUED 상태인 토큰만 USED로 바꾼다 (결제완료).
 	public Optional<PaymentTokenVO> markUsedIfIssued(String paymentTokenId) {
+		return transitionIfIssued(paymentTokenId, STATUS_USED);
+	}
+
+	// ISSUED 상태인 토큰만 CANCELED로 바꾼다 (바코드 화면에서 취소, payments 테이블은 건드리지 않는다 -
+	// 아직 실제로 결제가 이뤄진 적이 없어서 취소할 결제 자체가 없다).
+	public Optional<PaymentTokenVO> cancelIfIssued(String paymentTokenId) {
+		return transitionIfIssued(paymentTokenId, STATUS_CANCELED);
+	}
+
+	// ISSUED 상태인 토큰만 targetStatus로 바꾼다. 이미 다른 상태거나 존재하지 않으면(만료 포함)
+	// 아무것도 안 하고 빈 값을 돌려준다 - 상태 판단(예외를 던질지)은 Service의 책임으로 남겨둔다.
+	private Optional<PaymentTokenVO> transitionIfIssued(String paymentTokenId, String targetStatus) {
 		Optional<PaymentTokenVO> current = find(paymentTokenId);
 		if (current.isEmpty() || !STATUS_ISSUED.equals(current.get().getStatus())) {
 			return Optional.empty();
 		}
 
 		PaymentTokenVO token = current.get();
-		token.setStatus(STATUS_USED);
-		save(token, USED_TTL);
+		token.setStatus(targetStatus);
+		save(token, FINAL_STATE_TTL);
 
 		return Optional.of(token);
 	}

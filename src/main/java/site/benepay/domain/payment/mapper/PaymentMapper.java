@@ -23,4 +23,8 @@ public interface PaymentMapper {
 	// 소유하지 않았거나 비활성/삭제된 카드면 빈 값이 온다.
 	Optional<UserCardPaymentTokenVO> findActiveCardPaymentToken(@Param("userId") Long userId,
 		@Param("userCardId") Long userCardId);
+
+	// 결제완료 버튼엔 가맹점 정보가 없어서(실제 스캔이 불가능한 구조), 데모용으로 실제 존재하는
+	// 가맹점 중 하나를 무작위로 골라 쓴다.
+	Optional<Long> findRandomMerchantId();
 }
