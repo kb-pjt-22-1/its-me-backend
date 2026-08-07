@@ -14,8 +14,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import site.benepay.common.event.UserSignedUpEvent;
 import site.benepay.common.exception.AccountLockedException;
 import site.benepay.common.exception.DuplicateUserException;
 import site.benepay.common.exception.InvalidCredentialsException;
@@ -57,12 +59,15 @@ class UserServiceTest {
 	@Mock
 	private SignupVerificationStore signupVerificationStore;
 
+	@Mock
+	private ApplicationEventPublisher eventPublisher;
+
 	private UserService userService;
 
 	@BeforeEach
 	void setUp() {
 		userService = new UserServiceImpl(userMapper, passwordEncoder, redisLockoutService, tokenService,
-			signupVerificationStore);
+			signupVerificationStore, eventPublisher);
 	}
 
 	private SignupVerificationStore.VerifiedIdentity verifiedIdentity() {
@@ -180,6 +185,45 @@ class UserServiceTest {
 		assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
 
 		verify(userMapper, never()).insert(any());
+	}
+
+	// 카드 자동연동은 UserSignedUpEvent를 AFTER_COMMIT에서 구독해 처리한다 - 여기서는
+	// signUp()이 그 이벤트를 올바른 값으로, 성공했을 때만 발행하는지를 확인한다.
+	@Test
+	void signUpPublishesUserSignedUpEventAfterInsert() {
+		SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
+		when(userMapper.existsByLoginId("newuser")).thenReturn(false);
+		when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
+		when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
+		when(passwordEncoder.encode("Test1234!")).thenReturn("encoded-password");
+
+		userService.signUp(request);
+
+		ArgumentCaptor<UserSignedUpEvent> captor = ArgumentCaptor.forClass(UserSignedUpEvent.class);
+		verify(eventPublisher).publishEvent(captor.capture());
+		assertThat(captor.getValue().ciHash()).isEqualTo("ci-hash");
+	}
+
+	@Test
+	void signUpWithDuplicateLoginIdNeverPublishesEvent() {
+		SignUpRequestDto request = new SignUpRequestDto("existing", "Test1234!", "valid-token", "fcm-token");
+		when(userMapper.existsByLoginId("existing")).thenReturn(true);
+
+		assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
+
+		verify(eventPublisher, never()).publishEvent(any());
+	}
+
+	@Test
+	void signUpWithDuplicateDiHashNeverPublishesEvent() {
+		SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
+		when(userMapper.existsByLoginId("newuser")).thenReturn(false);
+		when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
+		when(userMapper.existsByDiHash("di-hash")).thenReturn(true);
+
+		assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
+
+		verify(eventPublisher, never()).publishEvent(any());
 	}
 
 	// ---- password verification (재인증 게이트) ----
