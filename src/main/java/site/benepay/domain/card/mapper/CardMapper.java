@@ -1,5 +1,6 @@
 package site.benepay.domain.card.mapper;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -30,6 +31,12 @@ public interface CardMapper {
 
 	int setPrimaryCard(@Param("userId") Long userId, @Param("userCardId") Long userCardId);
 
+	// 카드 추천 여부 갱신
 	int updateRecommendationEnabled(@Param("userId") Long userId, @Param("userCardId") Long userCardId,
 		@Param("recommendationEnabled") Boolean recommendationEnabled);
+
+	// 카드 실적 갱신
+	int addMonthlySpending(@Param("userCardId") Long userCardId, @Param("targetYearMonth") String targetYearMonth,
+		@Param("amount") BigDecimal amount
+	);
 }

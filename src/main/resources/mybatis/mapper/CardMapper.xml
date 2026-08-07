@@ -123,4 +123,18 @@
           AND deleted_at IS NULL
     </update>
 
+    <insert id="addMonthlySpending">
+        INSERT INTO card_monthly_status
+        (user_card_id,
+         target_year_month,
+         total_spending_amount,
+         updated_at)
+        VALUES (#{userCardId},
+                #{targetYearMonth},
+                #{amount},
+                NOW()) ON DUPLICATE KEY
+        UPDATE
+            total_spending_amount = total_spending_amount + #{amount},
+            updated_at = NOW()
+    </insert>
 </mapper>
