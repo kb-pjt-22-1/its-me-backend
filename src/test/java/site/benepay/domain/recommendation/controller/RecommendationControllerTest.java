@@ -20,6 +20,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import site.benepay.domain.recommendation.dto.CategoryCardRecommendationResponseDto;
+import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.service.RecommendationService;
 
 @ExtendWith(MockitoExtension.class)
@@ -62,5 +63,20 @@ class RecommendationControllerTest {
 		assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(result.getBody()).isEqualTo(response);
 		verify(recommendationService).getCardRecommendationsByCategory(USER_ID, "카페");
+	}
+
+	@Test
+	void getNearbyMerchantsReturnsOkWithTheServiceResultForTheAuthenticatedUser() {
+		List<NearbyMerchantRecommendationResponseDto> response = List.of(
+			NearbyMerchantRecommendationResponseDto.builder().merchantId(100L).recommendedCardName("청춘대로 톡톡카드").build()
+		);
+		when(recommendationService.getNearbyMerchants(USER_ID, 37.4, 126.9, 37.6, 127.1)).thenReturn(response);
+
+		ResponseEntity<List<NearbyMerchantRecommendationResponseDto>> result =
+			controller.getNearbyMerchants(37.4, 126.9, 37.6, 127.1);
+
+		assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(result.getBody()).isEqualTo(response);
+		verify(recommendationService).getNearbyMerchants(USER_ID, 37.4, 126.9, 37.6, 127.1);
 	}
 }

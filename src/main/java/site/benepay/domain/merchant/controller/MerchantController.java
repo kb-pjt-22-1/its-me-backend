@@ -57,6 +57,26 @@ public class MerchantController {
     }
 
     /**
+     * 지도 화면 bounds(bbox) 안의 매장 조회
+     * 지도를 이동/확대할 때마다 현재 화면(bounds)에 보이는 매장만 반환한다. 거리 개념이 없으므로
+     * distanceMeters는 항상 null이다.
+     * @param swLat 지도 화면 남서쪽 위도
+     * @param swLng 지도 화면 남서쪽 경도
+     * @param neLat 지도 화면 북동쪽 위도
+     * @param neLng 지도 화면 북동쪽 경도
+     * @return
+     */
+    @GetMapping("/within-bounds")
+    public ResponseEntity<List<NearbyMerchantResponseDto>> getMerchantsWithinBounds(
+            @RequestParam double swLat,
+            @RequestParam double swLng,
+            @RequestParam double neLat,
+            @RequestParam double neLng
+    ) {
+        return ResponseEntity.ok(merchantService.getMerchantsWithinBounds(swLat, swLng, neLat, neLng));
+    }
+
+    /**
      * 매장 생성
      * 매장을 등록할 때 사용
      * @param request

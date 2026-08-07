@@ -16,6 +16,8 @@ public interface MerchantService {
 
     List<NearbyMerchantResponseDto> getNearbyMerchants(double lat, double lng, double radiusMeters);
 
+    List<NearbyMerchantResponseDto> getMerchantsWithinBounds(double swLat, double swLng, double neLat, double neLng);
+
     MerchantResponseDto updateMerchant(Long merchantId, MerchantRequestDto request);
 
     void deleteMerchant(Long merchantId);

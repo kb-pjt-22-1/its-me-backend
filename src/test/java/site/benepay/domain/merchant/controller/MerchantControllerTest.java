@@ -115,6 +115,25 @@ class MerchantControllerTest {
 		verify(merchantService).getNearbyMerchants(37.5, 127.0, 500);
 	}
 
+	// ---- GET /api/v1/merchants/within-bounds ----
+
+	@Test
+	void getMerchantsWithinBoundsReturnsOkWithBody() throws Exception {
+		when(merchantService.getMerchantsWithinBounds(37.4, 126.9, 37.6, 127.1)).thenReturn(
+			List.of(NearbyMerchantResponseDto.builder().merchantId(MERCHANT_ID).build()));
+
+		MvcResult result = mockMvc.perform(get("/api/v1/merchants/within-bounds")
+				.param("swLat", "37.4")
+				.param("swLng", "126.9")
+				.param("neLat", "37.6")
+				.param("neLng", "127.1"))
+			.andExpect(status().isOk())
+			.andReturn();
+
+		assertThat(bodyOf(result).get(0).get("merchantId").asLong()).isEqualTo(MERCHANT_ID);
+		verify(merchantService).getMerchantsWithinBounds(37.4, 126.9, 37.6, 127.1);
+	}
+
 	// ---- POST /api/v1/merchants ----
 
 	@Test

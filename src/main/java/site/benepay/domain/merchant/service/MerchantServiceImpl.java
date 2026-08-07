@@ -57,6 +57,18 @@ public class MerchantServiceImpl implements MerchantService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<NearbyMerchantResponseDto> getMerchantsWithinBounds(double swLat, double swLng, double neLat, double neLng) {
+        if (swLat >= neLat || swLng >= neLng) {
+            throw new IllegalArgumentException("올바르지 않은 지도 영역입니다.");
+        }
+
+        return merchantMapper.findWithinBounds(swLat, swLng, neLat, neLng).stream()
+                .map(NearbyMerchantResponseDto::from)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     @Transactional
     public MerchantResponseDto updateMerchant(Long merchantId, MerchantRequestDto request) {
         Merchant existing = findActiveMerchant(merchantId);

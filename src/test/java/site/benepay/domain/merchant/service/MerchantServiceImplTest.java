@@ -167,6 +167,38 @@ class MerchantServiceImplTest {
 		verify(merchantMapper).findWithinRadius(37.5, 127.0, 1000);
 	}
 
+	// ---- getMerchantsWithinBounds ----
+
+	@Test
+	void getMerchantsWithinBoundsQueriesMapperAndMapsResults() {
+		MerchantNearbyVO nearby = mock(MerchantNearbyVO.class);
+		when(nearby.getMerchantId()).thenReturn(MERCHANT_ID);
+		when(nearby.getCategoryCode()).thenReturn("5812");
+		when(nearby.getBrandId()).thenReturn(1L);
+		when(nearby.getMerchantCode()).thenReturn("M001");
+		when(nearby.getMerchantName()).thenReturn("테스트 식당");
+		when(nearby.getAddress()).thenReturn("서울시 강남구");
+		when(nearby.getLatitude()).thenReturn(BigDecimal.valueOf(37.5));
+		when(nearby.getLongitude()).thenReturn(BigDecimal.valueOf(127.0));
+		when(nearby.getPhone()).thenReturn("02-000-0000");
+		when(merchantMapper.findWithinBounds(37.4, 126.9, 37.6, 127.1)).thenReturn(List.of(nearby));
+
+		List<NearbyMerchantResponseDto> result = merchantService.getMerchantsWithinBounds(37.4, 126.9, 37.6, 127.1);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getMerchantId()).isEqualTo(MERCHANT_ID);
+		assertThat(result.get(0).getMerchantName()).isEqualTo("테스트 식당");
+		verify(merchantMapper).findWithinBounds(37.4, 126.9, 37.6, 127.1);
+	}
+
+	@Test
+	void getMerchantsWithinBoundsThrowsWhenSouthwestIsNotBelowNortheast() {
+		assertThatThrownBy(() -> merchantService.getMerchantsWithinBounds(37.6, 126.9, 37.4, 127.1))
+			.isInstanceOf(IllegalArgumentException.class);
+
+		verify(merchantMapper, never()).findWithinBounds(anyDouble(), anyDouble(), anyDouble(), anyDouble());
+	}
+
 	// ---- updateMerchant ----
 
 	@Test

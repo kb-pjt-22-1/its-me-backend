@@ -9,19 +9,22 @@ import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationRespon
 public interface RecommendationService {
 
 	/**
-	 * 주변 매장 후보 중 사용자의 카드 혜택을 받을 수 있는 매장만 조회한다.
+	 * 지도 화면 bounds(bbox) 안의 매장 중, 사용자 보유 카드로 골랐을 때 최적 카드가 지금 당장
+	 * (즉시할인) 혜택을 주는 매장만 조회한다.
 	 *
 	 * @param userId 로그인한 사용자 식별자
-	 * @param latitude 사용자 현재 위도
-	 * @param longitude 사용자 현재 경도
-	 * @param radiusMeters 조회 반경(m)
-	 * @return 카드 혜택을 받을 수 있는 주변 매장 목록
+	 * @param swLat 지도 화면 남서쪽 위도
+	 * @param swLng 지도 화면 남서쪽 경도
+	 * @param neLat 지도 화면 북동쪽 위도
+	 * @param neLng 지도 화면 북동쪽 경도
+	 * @return 최적 카드가 즉시할인을 주는 매장 목록(recommendedCardName 포함)
 	 */
 	List<NearbyMerchantRecommendationResponseDto> getNearbyMerchants(
 		Long userId,
-		double latitude,
-		double longitude,
-		double radiusMeters
+		double swLat,
+		double swLng,
+		double neLat,
+		double neLng
 	);
 
 	/**

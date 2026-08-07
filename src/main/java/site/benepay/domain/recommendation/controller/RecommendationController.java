@@ -24,27 +24,31 @@ public class RecommendationController {
 	private final RecommendationService recommendationService;
 
 	/**
-	 * 주변 매장 후보 중 사용자의 보유 카드 혜택을 받을 수 있는 매장만 반환한다.
+	 * 지도 화면 bounds(bbox) 안의 매장 중, 사용자 보유 카드로 골랐을 때 최적 카드가 지금 당장
+	 * 혜택을 주는 매장만 반환한다(recommendedCardName에 그 카드명이 채워진다).
 	 *
-	 * @param latitude 사용자 현재 위도
-	 * @param longitude 사용자 현재 경도
-	 * @param radiusMeters 조회 반경(m), 기본 1000m
-	 * @return 카드 혜택을 받을 수 있는 주변 매장 목록
+	 * @param swLat 지도 화면 남서쪽 위도
+	 * @param swLng 지도 화면 남서쪽 경도
+	 * @param neLat 지도 화면 북동쪽 위도
+	 * @param neLng 지도 화면 북동쪽 경도
+	 * @return 최적 카드가 즉시할인을 주는 매장 목록
 	 */
 	@GetMapping("/merchants")
 	public ResponseEntity<List<NearbyMerchantRecommendationResponseDto>> getNearbyMerchants(
-		@RequestParam double latitude,
-		@RequestParam double longitude,
-		@RequestParam(defaultValue = "1000") double radiusMeters
+		@RequestParam double swLat,
+		@RequestParam double swLng,
+		@RequestParam double neLat,
+		@RequestParam double neLng
 	) {
 		Long userId = getAuthenticatedUserId();
 
 		List<NearbyMerchantRecommendationResponseDto> response =
 			recommendationService.getNearbyMerchants(
 				userId,
-				latitude,
-				longitude,
-				radiusMeters
+				swLat,
+				swLng,
+				neLat,
+				neLng
 			);
 
 		return ResponseEntity.ok(response);

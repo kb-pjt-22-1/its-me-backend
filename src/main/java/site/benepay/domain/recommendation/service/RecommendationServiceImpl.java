@@ -14,7 +14,6 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
@@ -30,6 +29,7 @@ import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponse
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.engine.BenefitEngine;
 import site.benepay.domain.recommendation.engine.BenefitJsonParser;
+import site.benepay.domain.recommendation.engine.BenefitStatus;
 import site.benepay.domain.recommendation.engine.BenefitUsage;
 import site.benepay.domain.recommendation.engine.Mode1Result;
 import site.benepay.domain.recommendation.engine.PerformanceTier;
@@ -63,32 +63,33 @@ public class RecommendationServiceImpl implements RecommendationService {
 	@Override
 	public List<NearbyMerchantRecommendationResponseDto> getNearbyMerchants(
 		Long userId,
-		double latitude,
-		double longitude,
-		double radiusMeters
+		double swLat,
+		double swLng,
+		double neLat,
+		double neLng
 	) {
 		validateUserId(userId);
 
-		if (radiusMeters <= 0) {
-			throw new IllegalArgumentException(
-				"radiusMeters는 0보다 커야 합니다."
-			);
+		/*
+		 * MerchantService에서 지도 화면 bounds 안의 매장 후보를 조회한다(bounds 자체 검증은
+		 * MerchantService.getMerchantsWithinBounds가 한다). MerchantController의 API를 HTTP로
+		 * 호출하는 것이 아니라, 같은 백엔드 안에 있는 MerchantService 메서드를 직접 호출한다.
+		 */
+		List<NearbyMerchantResponseDto> merchants =
+			merchantService.getMerchantsWithinBounds(swLat, swLng, neLat, neLng);
+
+		if (merchants.isEmpty()) {
+			return Collections.emptyList();
 		}
 
-		String targetYearMonth = getPreviousYearMonth();
-
-		// 사용자의 활성 상태이면서 추천이 허용된 보유 카드를 조회한다.
 		List<RecommendationCardCandidateVO> candidates =
-			recommendationMapper.findRecommendationCardCandidates(
-				userId,
-				targetYearMonth
-			);
+			recommendationMapper.findRecommendationCardCandidates(userId, getPreviousYearMonth());
 
 		if (candidates.isEmpty()) {
 			return Collections.emptyList();
 		}
 
-		// 카테고리 코드를 응답용 카테고리 이름으로 변환하기 위한 Map이다.
+		// 카테고리 코드를 응답용 카테고리 이름 + typicalPaymentAmount 조회 키로 쓰기 위한 Map이다.
 		Map<String, String> categoryNames =
 			merchantCategoryService.getCategoryList().stream()
 				.collect(Collectors.toMap(
@@ -97,27 +98,57 @@ public class RecommendationServiceImpl implements RecommendationService {
 					(first, ignored) -> first
 				));
 
-		/*
-		 * MerchantService에서 반경 내 매장 후보를 조회한다.
-		 *
-		 * MerchantController의 API를 HTTP로 호출하는 것이 아니라,
-		 * 같은 백엔드 안에 있는 MerchantService 메서드를 직접 호출한다.
-		 *
-		 * 이후 RecommendationService에서 사용자의 카드 혜택을
-		 * 받을 수 있는 매장만 다시 추려낸다.
-		 */
-		return merchantService.getNearbyMerchants(
-				latitude,
-				longitude,
-				radiusMeters
-			).stream()
-			.map(merchant -> toNearbyRecommendation(
-				merchant,
-				candidates,
-				categoryNames
-			))
+		return merchants.stream()
+			.map(merchant -> toOptimalCardRecommendation(merchant, candidates, categoryNames))
 			.flatMap(Optional::stream)
 			.collect(Collectors.toList());
+	}
+
+	/**
+	 * 매장 하나에 대해 사용자 보유 카드 중 최적 카드를 고르고(scoreAndRank 재사용), 그 카드가
+	 * 이 매장 카테고리에서 지금 당장(즉시할인) 혜택을 주는 경우에만 결과에 포함시킨다. 카테고리가
+	 * 추천 분석 대상(16개 대분류) 밖이면 이 매장은 건너뛴다. bounds 조회라 거리 개념이 없어
+	 * distanceMeters는 항상 null이다.
+	 */
+	private Optional<NearbyMerchantRecommendationResponseDto> toOptimalCardRecommendation(
+		NearbyMerchantResponseDto merchant,
+		List<RecommendationCardCandidateVO> candidates,
+		Map<String, String> categoryNames
+	) {
+		String categoryName = categoryNames.get(merchant.getCategoryCode());
+		if (categoryName == null) {
+			return Optional.empty();
+		}
+
+		Long typicalAmount = recommendationParamsLoader.params().typicalPaymentAmount().get(categoryName);
+		if (typicalAmount == null) {
+			return Optional.empty();
+		}
+
+		List<Map.Entry<RecommendationCardCandidateVO, Mode1Result>> ranked =
+			scoreAndRank(candidates, merchant.getCategoryCode(), categoryName, typicalAmount);
+
+		if (ranked.isEmpty()) {
+			return Optional.empty();
+		}
+
+		Map.Entry<RecommendationCardCandidateVO, Mode1Result> best = ranked.get(0);
+		if (best.getValue().status() != BenefitStatus.IMMEDIATE_DISCOUNT) {
+			return Optional.empty();
+		}
+
+		return Optional.of(
+			NearbyMerchantRecommendationResponseDto.builder()
+				.merchantId(merchant.getMerchantId())
+				.merchantName(merchant.getMerchantName())
+				.categoryName(categoryName)
+				.latitude(merchant.getLatitude() == null ? null : merchant.getLatitude().doubleValue())
+				.longitude(merchant.getLongitude() == null ? null : merchant.getLongitude().doubleValue())
+				.distanceMeters(null)
+				.benefitSummary(best.getValue().note())
+				.recommendedCardName(best.getKey().getCardName())
+				.build()
+		);
 	}
 
 	@Override
@@ -187,12 +218,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		List<RecommendationCardCandidateVO> candidates =
 			recommendationMapper.findRecommendationCardCandidates(userId, getPreviousYearMonth());
 
-		List<CardBenefitScoreDto> cards = candidates.stream()
-			.map(candidate -> Map.entry(candidate, scoreCandidate(candidate, categoryCode, categoryName, typicalAmount)))
-			// NOW_STATES 순서(즉시할인 -> 조건부할인 -> ... 열거 순서와 동일) -> 그룹 내 할인율 내림차순
-			.sorted(Comparator
-				.<Map.Entry<RecommendationCardCandidateVO, Mode1Result>>comparingInt(e -> e.getValue().status().ordinal())
-				.thenComparing(e -> -e.getValue().rate()))
+		List<CardBenefitScoreDto> cards = scoreAndRank(candidates, categoryCode, categoryName, typicalAmount).stream()
 			.map(e -> toDto(e.getKey(), e.getValue()))
 			.collect(Collectors.toList());
 
@@ -201,6 +227,25 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.typicalPaymentAmount(typicalAmount)
 			.cards(cards)
 			.build();
+	}
+
+	/**
+	 * 카드 후보 전체를 이 카테고리 기준으로 평가해 상태(즉시할인 -> 조건부할인 -> ...) -> 할인율
+	 * 내림차순으로 정렬한다. getCardRecommendationsByCategory와 getNearbyMerchants(최적 카드 선정)가
+	 * 공유하는 랭킹 로직이다.
+	 */
+	private List<Map.Entry<RecommendationCardCandidateVO, Mode1Result>> scoreAndRank(
+		List<RecommendationCardCandidateVO> candidates,
+		String categoryCode,
+		String categoryName,
+		long typicalAmount
+	) {
+		return candidates.stream()
+			.map(candidate -> Map.entry(candidate, scoreCandidate(candidate, categoryCode, categoryName, typicalAmount)))
+			.sorted(Comparator
+				.<Map.Entry<RecommendationCardCandidateVO, Mode1Result>>comparingInt(e -> e.getValue().status().ordinal())
+				.thenComparing(e -> -e.getValue().rate()))
+			.collect(Collectors.toList());
 	}
 
 	/**
@@ -283,354 +328,6 @@ public class RecommendationServiceImpl implements RecommendationService {
 	}
 
 	/**
-	 * 주변 매장 하나가 사용자의 카드 혜택 대상인지 확인하고
-	 * 혜택 대상이라면 주변 추천 매장 응답으로 변환한다.
-	 */
-	private Optional<NearbyMerchantRecommendationResponseDto> toNearbyRecommendation(
-		NearbyMerchantResponseDto nearbyMerchant,
-		List<RecommendationCardCandidateVO> candidates,
-		Map<String, String> categoryNames
-	) {
-		RecommendationMerchantVO merchant =
-			toRecommendationMerchant(nearbyMerchant);
-
-		/*
-		 * 여기서는 최적 카드를 고르지 않는다.
-		 *
-		 * 해당 매장에서 적용 가능한 카드 혜택이
-		 * 하나라도 존재하는지만 확인한다.
-		 */
-		Optional<ApplicableBenefit> applicableBenefit =
-			candidates.stream()
-				.map(candidate ->
-					findApplicableBenefit(candidate, merchant)
-				)
-				.flatMap(Optional::stream)
-				.findFirst();
-
-		// 모든 보유 카드를 확인했지만 적용 가능한 혜택이 없다면 제외한다.
-		if (applicableBenefit.isEmpty()) {
-			return Optional.empty();
-		}
-
-		return Optional.of(
-			NearbyMerchantRecommendationResponseDto.builder()
-				.merchantId(nearbyMerchant.getMerchantId())
-				.merchantName(nearbyMerchant.getMerchantName())
-				.categoryName(categoryNames.getOrDefault(
-					nearbyMerchant.getCategoryCode(),
-					nearbyMerchant.getCategoryCode()
-				))
-				.latitude(
-					nearbyMerchant.getLatitude() == null
-						? null
-						: nearbyMerchant.getLatitude().doubleValue()
-				)
-				.longitude(
-					nearbyMerchant.getLongitude() == null
-						? null
-						: nearbyMerchant.getLongitude().doubleValue()
-				)
-				.distanceMeters(nearbyMerchant.getDistanceMeters())
-				.benefitSummary(
-					applicableBenefit.get().description()
-				)
-
-				/*
-				 * TODO: 다른 팀원의 추천 알고리즘 연결 후
-				 * 이 매장의 추천 카드명을 설정한다.
-				 *
-				 * 현재는 최적 카드를 직접 선택하지 않으므로
-				 * null로 반환한다.
-				 */
-				.recommendedCardName(null)
-				.build()
-		);
-	}
-
-	/**
-	 * 카드의 혜택 JSON에서 현재 매장에 적용되는 혜택을 찾는다.
-	 */
-	private Optional<ApplicableBenefit> findApplicableBenefit(
-		RecommendationCardCandidateVO card,
-		RecommendationMerchantVO merchant
-	) {
-		if (
-			card.getBenefitsInfo() == null
-				|| card.getBenefitsInfo().isBlank()
-		) {
-			return Optional.empty();
-		}
-
-		try {
-			JsonNode performanceTiers = objectMapper
-				.readTree(card.getBenefitsInfo())
-				.path("performanceTiers");
-
-			if (!performanceTiers.isArray()) {
-				return Optional.empty();
-			}
-
-			long spending =
-				card.getTotalSpendingAmount() == null
-					? 0L
-					: card.getTotalSpendingAmount();
-
-			for (JsonNode tier : performanceTiers) {
-				if (!isPerformanceTierApplicable(tier, spending)) {
-					continue;
-				}
-
-				for (JsonNode benefit : tier.path("benefits")) {
-					if (matchesMerchant(benefit, merchant)) {
-						return Optional.of(
-							new ApplicableBenefit(
-								getBenefitDescription(benefit)
-							)
-						);
-					}
-				}
-			}
-		} catch (Exception exception) {
-			/*
-			 * 카드 혜택 JSON 형식이 잘못된 카드는
-			 * 주변 혜택 매장 판정에서 제외한다.
-			 */
-			return Optional.empty();
-		}
-
-		return Optional.empty();
-	}
-
-	/**
-	 * 사용자의 전월 실적이 카드 혜택 구간에 포함되는지 확인한다.
-	 *
-	 * minimumSpending <= spending
-	 * spending < maximumSpending
-	 */
-	private boolean isPerformanceTierApplicable(
-		JsonNode tier,
-		long spending
-	) {
-		long minimumSpending =
-			tier.path("minimumSpending").asLong(0L);
-
-		JsonNode maximumSpendingNode =
-			tier.get("maximumSpending");
-
-		boolean belowMaximum =
-			maximumSpendingNode == null
-				|| maximumSpendingNode.isNull()
-				|| spending < maximumSpendingNode.asLong();
-
-		return minimumSpending <= spending && belowMaximum;
-	}
-
-	/**
-	 * 카드 혜택 조건이 현재 매장의 업종 또는 브랜드 조건과
-	 * 일치하는지 확인한다.
-	 */
-	private boolean matchesMerchant(
-		JsonNode benefit,
-		RecommendationMerchantVO merchant
-	) {
-		// 모든 가맹점 대상 혜택이면 바로 적용한다.
-		if (
-			"ALL_MERCHANTS".equals(
-				benefit.path("benefitType").asText()
-			)
-		) {
-			return true;
-		}
-
-		boolean hasCategoryCondition =
-			benefit.hasNonNull("categoryCode")
-				|| hasArrayValues(
-				benefit.path("categoryCodes")
-			);
-
-		boolean categoryMatched =
-			textEquals(
-				benefit.get("categoryCode"),
-				merchant.getCategoryCode()
-			)
-				|| arrayContainsText(
-				benefit.path("categoryCodes"),
-				merchant.getCategoryCode()
-			);
-
-		boolean hasMerchantCondition =
-			benefit.hasNonNull("brandId")
-				|| hasArrayValues(
-				benefit.path("brandIds")
-			)
-				|| hasArrayValues(
-				benefit.path("merchantNames")
-			)
-				|| hasArrayValues(
-				benefit.path("merchants")
-			);
-
-		boolean merchantMatched =
-			numberEquals(
-				benefit.get("brandId"),
-				merchant.getBrandId()
-			)
-				|| arrayContainsNumber(
-				benefit.path("brandIds"),
-				merchant.getBrandId()
-			)
-				|| arrayContainsMerchantName(
-				benefit.path("merchantNames"),
-				merchant.getMerchantName()
-			)
-				|| arrayContainsMerchantName(
-				benefit.path("merchants"),
-				merchant.getMerchantName()
-			);
-
-		/*
-		 * 업종 조건도 없고 매장 조건도 없는 혜택은
-		 * 현재 매장에 적용되는 혜택이라고 판단하지 않는다.
-		 */
-		if (!hasCategoryCondition && !hasMerchantCondition) {
-			return false;
-		}
-
-		/*
-		 * 업종 조건이 있으면 업종이 일치해야 하고,
-		 * 매장 조건이 있으면 매장도 일치해야 한다.
-		 */
-		return (!hasCategoryCondition || categoryMatched)
-			&& (!hasMerchantCondition || merchantMatched);
-	}
-
-	/**
-	 * Merchant 도메인의 주변 매장 DTO를
-	 * Recommendation 도메인에서 사용하는 VO로 변환한다.
-	 */
-	private RecommendationMerchantVO toRecommendationMerchant(
-		NearbyMerchantResponseDto nearbyMerchant
-	) {
-		RecommendationMerchantVO merchant =
-			new RecommendationMerchantVO();
-
-		merchant.setMerchantId(
-			nearbyMerchant.getMerchantId()
-		);
-		merchant.setMerchantName(
-			nearbyMerchant.getMerchantName()
-		);
-		merchant.setCategoryCode(
-			nearbyMerchant.getCategoryCode()
-		);
-		merchant.setBrandId(
-			nearbyMerchant.getBrandId()
-		);
-
-		return merchant;
-	}
-
-	private boolean hasArrayValues(JsonNode node) {
-		return node.isArray() && !node.isEmpty();
-	}
-
-	private boolean textEquals(
-		JsonNode node,
-		String value
-	) {
-		return node != null
-			&& !node.isNull()
-			&& value != null
-			&& value.equals(node.asText());
-	}
-
-	private boolean arrayContainsText(
-		JsonNode arrayNode,
-		String value
-	) {
-		if (!arrayNode.isArray() || value == null) {
-			return false;
-		}
-
-		for (JsonNode node : arrayNode) {
-			if (value.equals(node.asText())) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	private boolean numberEquals(
-		JsonNode node,
-		Long value
-	) {
-		return node != null
-			&& !node.isNull()
-			&& value != null
-			&& value.equals(node.asLong());
-	}
-
-	private boolean arrayContainsNumber(
-		JsonNode arrayNode,
-		Long value
-	) {
-		if (!arrayNode.isArray() || value == null) {
-			return false;
-		}
-
-		for (JsonNode node : arrayNode) {
-			if (value.equals(node.asLong())) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	private boolean arrayContainsMerchantName(
-		JsonNode arrayNode,
-		String merchantName
-	) {
-		if (!arrayNode.isArray() || merchantName == null) {
-			return false;
-		}
-
-		for (JsonNode node : arrayNode) {
-			String benefitMerchantName = node.asText();
-
-			if (
-				!benefitMerchantName.isBlank()
-					&& merchantName.contains(
-					benefitMerchantName
-				)
-			) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * 카드 혜택 설명을 주변 매장 응답의 혜택 요약으로 사용한다.
-	 */
-	private String getBenefitDescription(JsonNode benefit) {
-		String description =
-			benefit.path("description").asText();
-
-		if (!description.isBlank()) {
-			return description;
-		}
-
-		String categoryName =
-			benefit.path("categoryName").asText("카드");
-
-		return categoryName + " 혜택";
-	}
-
-	/**
 	 * 전월 실적 조회에 사용할 연월을 yyyyMM 형태로 반환한다.
 	 */
 	private String getPreviousYearMonth() {
@@ -645,15 +342,5 @@ public class RecommendationServiceImpl implements RecommendationService {
 				"로그인 사용자 정보가 필요합니다."
 			);
 		}
-	}
-
-	/**
-	 * 주변 매장 필터링 과정에서 발견한 적용 가능 혜택이다.
-	 *
-	 * 최적 카드나 추천 점수를 나타내는 객체가 아니다.
-	 */
-	private record ApplicableBenefit(
-		String description
-	) {
 	}
 }

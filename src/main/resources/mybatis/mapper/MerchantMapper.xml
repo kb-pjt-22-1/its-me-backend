@@ -39,6 +39,15 @@
         ORDER BY distance_meters ASC
     </select>
 
+    <!-- 지도 화면 bounds(bbox) 안의 매장만 반환 - 거리 개념이 없어 distance_meters는 선택하지 않는다 -->
+    <select id="findWithinBounds" resultType="site.benepay.domain.merchant.vo.MerchantNearbyVO">
+        SELECT <include refid="merchantColumns" />
+        FROM merchants
+        WHERE latitude BETWEEN #{swLat} AND #{neLat}
+          AND longitude BETWEEN #{swLng} AND #{neLng}
+        ORDER BY merchant_name
+    </select>
+
     <select id="existsByMerchantCode" resultType="boolean">
         SELECT EXISTS (SELECT 1 FROM merchants WHERE merchant_code = #{merchantCode})
     </select>
