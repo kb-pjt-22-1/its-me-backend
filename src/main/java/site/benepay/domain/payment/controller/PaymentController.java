@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -20,7 +21,7 @@ public class PaymentController {
 
 	private final PaymentService paymentService;
 
-	// 결제 내역 목록 (최신순, 가맹점명·카드명 포함)
+	// 결제 내역 목록 (최신순, 가맹점명·카드명 포함, 취소된 결제도 CANCELED 상태로 그대로 포함됨)
 	@GetMapping
 	public ResponseEntity<List<PaymentHistoryResponseDto>> getPaymentHistory(@AuthenticationPrincipal Long userId) {
 		List<PaymentHistoryResponseDto> response = paymentService.getPaymentHistory(userId);
@@ -33,6 +34,15 @@ public class PaymentController {
 	public ResponseEntity<PaymentHistoryResponseDto> getPayment(@AuthenticationPrincipal Long userId,
 		@PathVariable Long paymentId) {
 		PaymentHistoryResponseDto response = paymentService.getPayment(paymentId);
+
+		return ResponseEntity.ok(response);
+	}
+
+	// 승인된 결제 취소 (환불). 요청 바디 없음.
+	@PostMapping("/{paymentId}/cancel")
+	public ResponseEntity<PaymentHistoryResponseDto> cancelPayment(@AuthenticationPrincipal Long userId,
+		@PathVariable Long paymentId) {
+		PaymentHistoryResponseDto response = paymentService.cancelPayment(userId, paymentId);
 
 		return ResponseEntity.ok(response);
 	}

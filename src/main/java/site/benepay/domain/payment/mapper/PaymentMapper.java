@@ -27,4 +27,8 @@ public interface PaymentMapper {
 	// 결제완료 버튼엔 가맹점 정보가 없어서(실제 스캔이 불가능한 구조), 데모용으로 실제 존재하는
 	// 가맹점 중 하나를 무작위로 골라 쓴다.
 	Optional<Long> findRandomMerchantId();
+
+	// user_cards로 소유권을 확인하고 status='APPROVED'인 것만 CANCELED로 바꾼다 (승인된 결제만 취소 가능).
+	// 소유하지 않았거나, 없거나, 이미 APPROVED가 아니면 0을 반환한다.
+	int cancelApprovedPayment(@Param("userId") Long userId, @Param("paymentId") Long paymentId);
 }
