@@ -10,10 +10,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import javax.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
@@ -69,6 +72,26 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(PaymentTokenNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentTokenNotFound(PaymentTokenNotFoundException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(UserCardNotAvailableException.class)
+    public ResponseEntity<ErrorResponse> handleUserCardNotAvailable(UserCardNotAvailableException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(InvalidPaymentAmountException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidPaymentAmount(InvalidPaymentAmountException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(PaymentTokenNotUsableException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentTokenNotUsable(PaymentTokenNotUsableException ex, HttpServletRequest request) {
+        return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(DuplicateMerchantException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateMerchant(DuplicateMerchantException ex, HttpServletRequest request) {
         return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
@@ -107,6 +130,6 @@ public class GlobalExceptionHandler {
 
     private static ResponseEntity<ErrorResponse> errorResponse(HttpStatus status, String message, HttpServletRequest request) {
         return ResponseEntity.status(status)
-            .body(new ErrorResponse(status.value(), message, request.getRequestURI(), LocalDateTime.now()));
+            .body(new ErrorResponse(status.value(), message, request.getRequestURI(), LocalDateTime.now(ZONE)));
     }
 }

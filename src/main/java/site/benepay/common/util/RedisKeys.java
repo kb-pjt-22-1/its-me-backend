@@ -45,5 +45,9 @@ public final class RedisKeys {
         return "signup:verify:" + token;
     }
 
+    public static String paymentToken(String paymentTokenId) {
+        return "payment:token:" + paymentTokenId;
+    }
+
 
 }
