@@ -55,4 +55,16 @@ class PaymentControllerTest {
 		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(response.getBody()).isEqualTo(found);
 	}
+
+	@Test
+	void cancelPaymentReturnsOkWithTheServiceResult() {
+		PaymentHistoryResponseDto canceled =
+			PaymentHistoryResponseDto.builder().paymentId(PAYMENT_ID).paymentStatus("CANCELED").build();
+		when(paymentService.cancelPayment(USER_ID, PAYMENT_ID)).thenReturn(canceled);
+
+		ResponseEntity<PaymentHistoryResponseDto> response = controller.cancelPayment(USER_ID, PAYMENT_ID);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody()).isEqualTo(canceled);
+	}
 }

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import site.benepay.common.exception.PaymentNotCancelableException;
 import site.benepay.common.exception.PaymentNotFoundException;
 import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
 import site.benepay.domain.payment.mapper.PaymentMapper;
@@ -93,5 +94,25 @@ class PaymentServiceImplTest {
 		when(paymentMapper.findPaymentHistoryByUserId(USER_ID)).thenReturn(List.of());
 
 		assertThat(paymentService.getPaymentHistory(USER_ID)).isEmpty();
+	}
+
+	// ---- cancelPayment ----
+
+	@Test
+	void cancelPaymentUpdatesThenReturnsTheCanceledPayment() {
+		when(paymentMapper.cancelApprovedPayment(USER_ID, PAYMENT_ID)).thenReturn(1);
+		when(paymentMapper.findByPaymentId(PAYMENT_ID)).thenReturn(Optional.of(row("CANCELED")));
+
+		PaymentHistoryResponseDto response = paymentService.cancelPayment(USER_ID, PAYMENT_ID);
+
+		assertThat(response.getPaymentStatus()).isEqualTo("CANCELED");
+	}
+
+	@Test
+	void cancelPaymentThrowsWhenNotFoundNotOwnedOrNotApproved() {
+		when(paymentMapper.cancelApprovedPayment(USER_ID, PAYMENT_ID)).thenReturn(0);
+
+		assertThatThrownBy(() -> paymentService.cancelPayment(USER_ID, PAYMENT_ID))
+			.isInstanceOf(PaymentNotCancelableException.class);
 	}
 }

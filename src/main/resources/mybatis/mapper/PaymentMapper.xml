@@ -75,4 +75,13 @@
             LIMIT 1
     </select>
 
+    <update id="cancelApprovedPayment">
+        UPDATE payments p
+            JOIN user_cards uc ON uc.user_card_id = p.user_card_id
+            SET p.payment_status = 'CANCELED'
+        WHERE p.payment_id = #{paymentId}
+          AND uc.user_id = #{userId}
+          AND p.payment_status = 'APPROVED'
+    </update>
+
 </mapper>
