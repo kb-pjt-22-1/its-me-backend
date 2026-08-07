@@ -1,8 +1,11 @@
 package site.benepay.domain.recommendation.service;
 
+import java.time.Year;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -15,14 +18,24 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
+import site.benepay.common.exception.CategoryNotFoundException;
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
 import site.benepay.domain.merchant.dto.NearbyMerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
 import site.benepay.domain.merchant.service.MerchantService;
 import site.benepay.domain.recommendation.dto.CardBenefitComparisonResponseDto;
+import site.benepay.domain.recommendation.dto.CardBenefitScoreDto;
+import site.benepay.domain.recommendation.dto.CategoryCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
+import site.benepay.domain.recommendation.engine.BenefitEngine;
+import site.benepay.domain.recommendation.engine.BenefitJsonParser;
+import site.benepay.domain.recommendation.engine.BenefitUsage;
+import site.benepay.domain.recommendation.engine.Mode1Result;
+import site.benepay.domain.recommendation.engine.PerformanceTier;
+import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
+import site.benepay.domain.recommendation.vo.BenefitUsageVO;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 import site.benepay.domain.recommendation.vo.RecommendationMerchantVO;
 
@@ -38,6 +51,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 	private final MerchantService merchantService;
 	private final MerchantCategoryService merchantCategoryService;
 	private final ObjectMapper objectMapper;
+	private final RecommendationParamsLoader recommendationParamsLoader;
 
 	/*
 	 * TODO: 다른 팀원의 카드 추천 알고리즘 구현이 완료되면 이 클래스에 주입한다.
@@ -153,6 +167,119 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.brandId(merchant.getBrandId())
 			.cards(cards)
 			.build();
+	}
+
+	@Override
+	public CategoryCardRecommendationResponseDto getCardRecommendationsByCategory(
+		Long userId,
+		String categoryName
+	) {
+		validateUserId(userId);
+
+		String categoryCode = resolveCategoryCode(categoryName);
+		Long typicalAmount = recommendationParamsLoader.params().typicalPaymentAmount().get(categoryName);
+		if (typicalAmount == null) {
+			throw new CategoryNotFoundException(
+				"'" + categoryName + "'는 추천 분석 대상 대분류가 아닙니다."
+			);
+		}
+
+		List<RecommendationCardCandidateVO> candidates =
+			recommendationMapper.findRecommendationCardCandidates(userId, getPreviousYearMonth());
+
+		List<CardBenefitScoreDto> cards = candidates.stream()
+			.map(candidate -> Map.entry(candidate, scoreCandidate(candidate, categoryCode, categoryName, typicalAmount)))
+			// NOW_STATES 순서(즉시할인 -> 조건부할인 -> ... 열거 순서와 동일) -> 그룹 내 할인율 내림차순
+			.sorted(Comparator
+				.<Map.Entry<RecommendationCardCandidateVO, Mode1Result>>comparingInt(e -> e.getValue().status().ordinal())
+				.thenComparing(e -> -e.getValue().rate()))
+			.map(e -> toDto(e.getKey(), e.getValue()))
+			.collect(Collectors.toList());
+
+		return CategoryCardRecommendationResponseDto.builder()
+			.categoryName(categoryName)
+			.typicalPaymentAmount(typicalAmount)
+			.cards(cards)
+			.build();
+	}
+
+	/**
+	 * 카드 한 장에 대해 모드 1을 평가한다.
+	 */
+	private Mode1Result scoreCandidate(
+		RecommendationCardCandidateVO candidate,
+		String categoryCode,
+		String categoryName,
+		long typicalAmount
+	) {
+		List<PerformanceTier> tiers = BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper);
+		long prevMonthSpend = candidate.getTotalSpendingAmount() == null ? 0L : candidate.getTotalSpendingAmount();
+		Map<String, BenefitUsage> usage = loadBenefitUsage(candidate.getUserCardId());
+
+		return BenefitEngine.evaluateNow(
+			tiers, prevMonthSpend, categoryCode, categoryName, typicalAmount, usage, recommendationParamsLoader.params()
+		);
+	}
+
+	private CardBenefitScoreDto toDto(RecommendationCardCandidateVO candidate, Mode1Result result) {
+		return CardBenefitScoreDto.builder()
+			.userCardId(candidate.getUserCardId())
+			.cardName(candidate.getCardName())
+			.cardImageUrl(candidate.getCardImageUrl())
+			.status(result.status().label())
+			.discountRate(result.rate())
+			.nominalDiscountRate(result.nominalRate())
+			.capped(result.capped())
+			.discountAmount(result.discount())
+			.evaluatedAmount(result.amount())
+			.note(result.note())
+			.build();
+	}
+
+	/**
+	 * 이 카드의 올해치 혜택 소진 현황을 조회해 이번 달(월 한도/월 횟수)·올해 누적(연 횟수)
+	 * 사용량으로 접는다. 지금은 결제 처리 기능이 없어 findYearlyBenefitUsage가 항상 빈
+	 * 리스트를 돌려주므로, 결과적으로 항상 "미사용"으로 계산된다(db/2026-08-07_card_benefit_monthly_usage.sql 참고).
+	 */
+	private Map<String, BenefitUsage> loadBenefitUsage(Long userCardId) {
+		int year = Year.now().getValue();
+		String currentYearMonth = YearMonth.now().format(YEAR_MONTH_FORMATTER);
+
+		List<BenefitUsageVO> rows = recommendationMapper.findYearlyBenefitUsage(userCardId, year);
+		if (rows.isEmpty()) {
+			return Collections.emptyMap();
+		}
+
+		Map<String, Long> monthlyAmount = new HashMap<>();
+		Map<String, Integer> monthlyCount = new HashMap<>();
+		Map<String, Integer> yearlyCount = new HashMap<>();
+		for (BenefitUsageVO row : rows) {
+			yearlyCount.merge(row.getServiceName(), row.getUsedCount() == null ? 0 : row.getUsedCount(), Integer::sum);
+			if (currentYearMonth.equals(row.getTargetYearMonth())) {
+				monthlyAmount.put(row.getServiceName(), row.getUsedAmount() == null ? 0L : row.getUsedAmount());
+				monthlyCount.put(row.getServiceName(), row.getUsedCount() == null ? 0 : row.getUsedCount());
+			}
+		}
+
+		Map<String, BenefitUsage> usage = new HashMap<>();
+		for (String serviceName : yearlyCount.keySet()) {
+			usage.put(serviceName, new BenefitUsage(
+				monthlyAmount.getOrDefault(serviceName, 0L),
+				monthlyCount.getOrDefault(serviceName, 0),
+				yearlyCount.get(serviceName)
+			));
+		}
+		return usage;
+	}
+
+	private String resolveCategoryCode(String categoryName) {
+		return merchantCategoryService.getCategoryList().stream()
+			.filter(category -> category.getCategoryName().equals(categoryName))
+			.map(MerchantCategoryResponseDto::getCategoryCode)
+			.findFirst()
+			.orElseThrow(() -> new CategoryNotFoundException(
+				"존재하지 않는 카테고리입니다: " + categoryName
+			));
 	}
 
 	/**

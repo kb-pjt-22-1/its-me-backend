@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
+import site.benepay.domain.recommendation.dto.CategoryCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.service.RecommendationService;
@@ -64,6 +65,24 @@ public class RecommendationController {
 
 		MerchantCardRecommendationResponseDto response =
 			recommendationService.getCardRecommendations(userId, merchantId);
+
+		return ResponseEntity.ok(response);
+	}
+
+	/**
+	 * 대분류(카테고리명)를 검색해 보유 카드를 모드 1(즉시 할인) 기준으로 순위 매긴다.
+	 *
+	 * @param categoryName merchant_categories.category_name과 일치하는 대분류명(예: "카페")
+	 * @return 상태별로 그룹핑되고 그룹 내 할인율 내림차순으로 정렬된 카드 목록
+	 */
+	@GetMapping("/categories/{categoryName}/cards")
+	public ResponseEntity<CategoryCardRecommendationResponseDto> getCardRecommendationsByCategory(
+		@PathVariable String categoryName
+	) {
+		Long userId = getAuthenticatedUserId();
+
+		CategoryCardRecommendationResponseDto response =
+			recommendationService.getCardRecommendationsByCategory(userId, categoryName);
 
 		return ResponseEntity.ok(response);
 	}

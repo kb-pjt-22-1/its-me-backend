@@ -42,4 +42,18 @@
         WHERE m.merchant_id = #{merchantId}
 
     </select>
+
+    <select id="findYearlyBenefitUsage"
+            resultType="site.benepay.domain.recommendation.vo.BenefitUsageVO">
+
+        SELECT
+        benefit_service_name AS serviceName,
+        target_year_month AS targetYearMonth,
+        used_amount AS usedAmount,
+        used_count AS usedCount
+        FROM card_benefit_monthly_usage
+        WHERE user_card_id = #{userCardId}
+        AND target_year = #{targetYear}
+
+    </select>
 </mapper>
