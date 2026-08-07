@@ -4,10 +4,12 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import site.benepay.common.event.UserSignedUpEvent;
 import site.benepay.common.exception.AccountLockedException;
 import site.benepay.common.exception.DuplicateUserException;
 import site.benepay.common.exception.InvalidCredentialsException;
@@ -41,15 +43,17 @@ public class UserServiceImpl implements UserService {
 	private final RedisLockoutService redisLockoutService;
 	private final TokenService tokenService;
 	private final SignupVerificationStore signupVerificationStore;
+	private final ApplicationEventPublisher eventPublisher;
 
 	public UserServiceImpl(UserMapper userMapper, PasswordEncoder passwordEncoder,
 		RedisLockoutService redisLockoutService, TokenService tokenService,
-		SignupVerificationStore signupVerificationStore) {
+		SignupVerificationStore signupVerificationStore, ApplicationEventPublisher eventPublisher) {
 		this.userMapper = userMapper;
 		this.passwordEncoder = passwordEncoder;
 		this.redisLockoutService = redisLockoutService;
 		this.tokenService = tokenService;
 		this.signupVerificationStore = signupVerificationStore;
+		this.eventPublisher = eventPublisher;
 	}
 
 	@Override
@@ -92,6 +96,13 @@ public class UserServiceImpl implements UserService {
 			.build();
 
 		userMapper.insert(user);
+
+		// 이 시점에는 userId가 발급됐지만 아직 회원가입 트랜잭션 안이다.
+		// 실제 카드 동기화는 UserSignedUpCardSyncHandler의 AFTER_COMMIT에서 실행된다.
+		// 따라서 KB Mock Server가 중단돼도 users INSERT는 정상적으로 COMMIT된다.
+		eventPublisher.publishEvent(
+			new UserSignedUpEvent(user.getUserId(), user.getCiHash())
+		);
 
 		return UserResponseDto.from(user);
 	}
