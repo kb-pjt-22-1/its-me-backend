@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="site.benepay.domain.recommendation.mapper.RecommendationMapper">
+
+    <select id="findRecommendationCardCandidates"
+            resultType="site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO">
+
+        SELECT
+        uc.user_card_id AS userCardId,
+        c.card_id AS cardId,
+        c.card_name AS cardName,
+        c.card_image_url AS cardImageUrl,
+        c.benefits_info AS benefitsInfo,
+        cms.target_year_month AS targetYearMonth,
+        COALESCE(cms.total_spending_amount, 0)
+        AS totalSpendingAmount
+        FROM user_cards uc
+        INNER JOIN cards c
+        ON c.card_id = uc.card_id
+        LEFT JOIN card_monthly_status cms
+        ON cms.user_card_id = uc.user_card_id
+        AND cms.target_year_month = #{targetYearMonth}
+        WHERE uc.user_id = #{userId}
+        AND uc.status = 'ACTIVE'
+        AND uc.recommendation_enabled = TRUE
+        AND uc.deleted_at IS NULL
+        AND c.is_supported = TRUE
+
+    </select>
+    <select id="findMerchantForRecommendation"
+            resultType="site.benepay.domain.recommendation.vo.RecommendationMerchantVO">
+
+        SELECT
+        m.merchant_id AS merchantId,
+        m.merchant_name AS merchantName,
+        m.category_code AS categoryCode,
+        m.brand_id AS brandId
+        FROM merchants m
+        WHERE m.merchant_id = #{merchantId}
+
+    </select>
+</mapper>
