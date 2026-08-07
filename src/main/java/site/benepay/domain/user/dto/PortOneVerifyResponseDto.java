@@ -14,5 +14,5 @@ import lombok.Getter;
 @AllArgsConstructor
 public class PortOneVerifyResponseDto {
 
-    private String verificationToken;
+	private String verificationToken;
 }
