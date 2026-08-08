@@ -1,22 +1,12 @@
 package site.benepay.domain.merchant.service;
 
-import site.benepay.domain.merchant.dto.MerchantRequestDto;
-import site.benepay.domain.merchant.dto.MerchantResponseDto;
-import site.benepay.domain.merchant.dto.NearbyMerchantResponseDto;
-
 import java.util.List;
+
+import site.benepay.domain.merchant.dto.MerchantResponseDto;
 
 public interface MerchantService {
 
-    MerchantResponseDto createMerchant(MerchantRequestDto request);
+	List<MerchantResponseDto> getMerchants(String categoryCode);
 
-    MerchantResponseDto getMerchant(Long merchantId);
-
-    List<MerchantResponseDto> getMerchantList();
-
-    List<NearbyMerchantResponseDto> getNearbyMerchants(double lat, double lng, double radiusMeters);
-
-    MerchantResponseDto updateMerchant(Long merchantId, MerchantRequestDto request);
-
-    void deleteMerchant(Long merchantId);
+	List<MerchantResponseDto> getMerchants(double swLat, double swLng, double neLat, double neLng, String categoryCode);
 }

@@ -1,10 +1,10 @@
 package site.benepay.domain.merchant.mapper;
 
-import site.benepay.domain.merchant.vo.MerchantCategory;
-
 import java.util.List;
+
+import site.benepay.domain.merchant.vo.MerchantCategory;
 
 public interface MerchantCategoryMapper {
 
-    List<MerchantCategory> findAll();
+	List<MerchantCategory> findAll();
 }

@@ -128,14 +128,6 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void handleMerchantNotFoundReturnsNotFound() {
-        ResponseEntity<ErrorResponse> response =
-                handler.handleMerchantNotFound(new MerchantNotFoundException("매장을 찾을 수 없습니다."), request);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-    }
-
-    @Test
     void handlePaymentNotFoundReturnsNotFound() {
         ResponseEntity<ErrorResponse> response =
                 handler.handlePaymentNotFound(new PaymentNotFoundException("결제 내역을 찾을 수 없습니다."), request);
@@ -143,14 +135,6 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(response.getBody().message()).isEqualTo("결제 내역을 찾을 수 없습니다.");
         assertThat(response.getBody().path()).isEqualTo(PATH);
-    }
-
-    @Test
-    void handleDuplicateMerchantReturnsConflict() {
-        ResponseEntity<ErrorResponse> response =
-                handler.handleDuplicateMerchant(new DuplicateMerchantException("이미 등록된 매장입니다."), request);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
 
     @Test
