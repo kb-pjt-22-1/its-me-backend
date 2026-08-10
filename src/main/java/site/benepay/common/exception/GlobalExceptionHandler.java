@@ -62,11 +62,6 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
-    @ExceptionHandler(MerchantNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleMerchantNotFound(MerchantNotFoundException ex, HttpServletRequest request) {
-        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
-    }
-
     @ExceptionHandler(PaymentNotFoundException.class)
     public ResponseEntity<ErrorResponse> handlePaymentNotFound(PaymentNotFoundException ex, HttpServletRequest request) {
         return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
@@ -94,11 +89,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(PaymentNotCancelableException.class)
     public ResponseEntity<ErrorResponse> handlePaymentNotCancelable(PaymentNotCancelableException ex, HttpServletRequest request) {
-        return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
-    }
-
-    @ExceptionHandler(DuplicateMerchantException.class)
-    public ResponseEntity<ErrorResponse> handleDuplicateMerchant(DuplicateMerchantException ex, HttpServletRequest request) {
         return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
     }
 
