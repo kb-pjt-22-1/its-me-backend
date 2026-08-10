@@ -9,10 +9,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
+import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.common.exception.PaymentTokenNotFoundException;
 import site.benepay.common.exception.PaymentTokenNotUsableException;
 import site.benepay.common.exception.UserCardNotAvailableException;
-import site.benepay.domain.merchant.service.MerchantService;
 import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
 import site.benepay.domain.payment.dto.PaymentTokenResponseDto;
 import site.benepay.domain.payment.mapper.PaymentMapper;
@@ -36,7 +36,6 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 
 	private final PaymentTokenStore paymentTokenStore;
 	private final PaymentMapper paymentMapper;
-	private final MerchantService merchantService;
 
 	@Override
 	public PaymentTokenResponseDto issueToken(Long userId, Long userCardId, Long merchantId) {
@@ -44,10 +43,9 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 		UserCardPaymentTokenVO userCardToken = paymentMapper.findActiveCardPaymentToken(userId, userCardId)
 			.orElseThrow(() -> new UserCardNotAvailableException("결제에 사용할 수 없는 카드입니다."));
 
-		// if (merchantId != null) {
-			// 존재하지 않는 가맹점이면 MerchantService가 MerchantNotFoundException을 던진다.
-			// merchantService.getMerchant(merchantId);
-		// }
+		if (merchantId != null && !paymentMapper.existsMerchant(merchantId)) {
+			throw new MerchantNotFoundException("가맹점을 찾을 수 없습니다.");
+		}
 
 		PaymentTokenVO token = paymentTokenStore.issue(userId, userCardId, merchantId, userCardToken.getPaymentToken());
 
@@ -66,7 +64,7 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 	@Transactional
 	public PaymentHistoryResponseDto completeToken(String paymentTokenId) {
 		PaymentTokenVO token = paymentTokenStore.find(paymentTokenId)
-			.orElseThrow(() -> new PaymentTokenNotFoundException("결제 토큰을 찾을 수 없거나 만료되었습니다."));
+			.orElseThrow(() -> new PaymentTokenNotFoundException("결제 토큰이 없거나 만료되었습니다."));
 
 		if (!PaymentTokenStore.STATUS_ISSUED.equals(token.getStatus())) {
 			throw new PaymentTokenNotUsableException("이미 처리되었거나 완료할 수 없는 결제 토큰입니다.");

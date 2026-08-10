@@ -13,9 +13,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import site.benepay.common.exception.PaymentTokenNotFoundException;
+import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.common.exception.PaymentTokenNotUsableException;
 import site.benepay.common.exception.UserCardNotAvailableException;
-import site.benepay.domain.merchant.service.MerchantService;
 import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
 import site.benepay.domain.payment.dto.PaymentTokenResponseDto;
 import site.benepay.domain.payment.mapper.PaymentMapper;
@@ -48,14 +48,11 @@ class PaymentTokenServiceImplTest {
 	@Mock
 	private PaymentMapper paymentMapper;
 
-	@Mock
-	private MerchantService merchantService;
-
 	private PaymentTokenService paymentTokenService;
 
 	@BeforeEach
 	void setUp() {
-		paymentTokenService = new PaymentTokenServiceImpl(paymentTokenStore, paymentMapper, merchantService);
+		paymentTokenService = new PaymentTokenServiceImpl(paymentTokenStore, paymentMapper);
 	}
 
 	private PaymentTokenVO token(Long merchantId, String status) {
@@ -88,6 +85,7 @@ class PaymentTokenServiceImplTest {
 	void issueTokenWithAKnownMerchantValidatesItAndPassesItToTheStore() {
 		when(paymentMapper.findActiveCardPaymentToken(USER_ID, USER_CARD_ID))
 			.thenReturn(Optional.of(activeCardToken()));
+		when(paymentMapper.existsMerchant(MERCHANT_ID)).thenReturn(true);
 		when(paymentTokenStore.issue(USER_ID, USER_CARD_ID, MERCHANT_ID, CARD_PAYMENT_TOKEN))
 			.thenReturn(token(MERCHANT_ID, PaymentTokenStore.STATUS_ISSUED));
 
@@ -95,7 +93,19 @@ class PaymentTokenServiceImplTest {
 
 		assertThat(response.getPaymentTokenId()).isEqualTo(PAYMENT_TOKEN_ID);
 		assertThat(response.getTokenValue()).isEqualTo(PAYMENT_TOKEN_ID);
-		verify(merchantService).getMerchant(MERCHANT_ID);
+		verify(paymentMapper).existsMerchant(MERCHANT_ID);
+	}
+
+	@Test
+	void issueTokenThrowsWhenTheMerchantDoesNotExistAndNeverCallsTheStore() {
+		when(paymentMapper.findActiveCardPaymentToken(USER_ID, USER_CARD_ID))
+			.thenReturn(Optional.of(activeCardToken()));
+		when(paymentMapper.existsMerchant(MERCHANT_ID)).thenReturn(false);
+
+		assertThatThrownBy(() -> paymentTokenService.issueToken(USER_ID, USER_CARD_ID, MERCHANT_ID))
+			.isInstanceOf(MerchantNotFoundException.class);
+
+		verify(paymentTokenStore, never()).issue(any(), any(), any(), any());
 	}
 
 	@Test
@@ -108,7 +118,7 @@ class PaymentTokenServiceImplTest {
 		PaymentTokenResponseDto response = paymentTokenService.issueToken(USER_ID, USER_CARD_ID, null);
 
 		assertThat(response.getPaymentTokenId()).isEqualTo(PAYMENT_TOKEN_ID);
-		verify(merchantService, never()).getMerchant(any());
+		verify(paymentMapper, never()).existsMerchant(any());
 	}
 
 	@Test

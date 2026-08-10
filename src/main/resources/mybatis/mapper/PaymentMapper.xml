@@ -84,4 +84,10 @@
           AND p.payment_status = 'APPROVED'
     </update>
 
+    <select id="existsMerchant" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM merchants WHERE merchant_id = #{merchantId}
+        )
+    </select>
+
 </mapper>

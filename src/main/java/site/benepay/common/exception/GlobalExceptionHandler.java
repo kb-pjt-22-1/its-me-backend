@@ -123,6 +123,11 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "예상치 못한 서버 오류가 발생했습니다.", request);
     }
 
+	@ExceptionHandler(MerchantNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handleMerchantNotFound(MerchantNotFoundException ex, HttpServletRequest request) {
+		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+	}
+
     private static ResponseEntity<ErrorResponse> errorResponse(HttpStatus status, String message, HttpServletRequest request) {
         return ResponseEntity.status(status)
             .body(new ErrorResponse(status.value(), message, request.getRequestURI(), LocalDateTime.now(ZONE)));

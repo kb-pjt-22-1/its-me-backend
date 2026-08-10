@@ -31,4 +31,8 @@ public interface PaymentMapper {
 	// user_cards로 소유권을 확인하고 status='APPROVED'인 것만 CANCELED로 바꾼다 (승인된 결제만 취소 가능).
 	// 소유하지 않았거나, 없거나, 이미 APPROVED가 아니면 0을 반환한다.
 	int cancelApprovedPayment(@Param("userId") Long userId, @Param("paymentId") Long paymentId);
+
+	// 발급 시점에 merchantId를 넘겨받았을 때 존재 여부만 확인한다. MerchantService에 단건 조회가
+	// 없어서(카테고리/좌표 기반 목록 조회만 있음), payment 도메인 자체 쿼리로 확인한다.
+	boolean existsMerchant(@Param("merchantId") Long merchantId);
 }
