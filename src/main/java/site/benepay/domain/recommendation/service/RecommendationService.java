@@ -2,30 +2,12 @@ package site.benepay.domain.recommendation.service;
 
 import java.util.List;
 
-import site.benepay.domain.recommendation.dto.CategoryCardRecommendationResponseDto;
+import site.benepay.domain.merchant.dto.NearbyMerchantResponseDto;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
+import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 
 public interface RecommendationService {
-
-	/**
-	 * 지도 화면 bounds(bbox) 안의 매장 중, 사용자 보유 카드로 골랐을 때 최적 카드가 지금 당장
-	 * (즉시할인) 혜택을 주는 매장만 조회한다.
-	 *
-	 * @param userId 로그인한 사용자 식별자
-	 * @param swLat 지도 화면 남서쪽 위도
-	 * @param swLng 지도 화면 남서쪽 경도
-	 * @param neLat 지도 화면 북동쪽 위도
-	 * @param neLng 지도 화면 북동쪽 경도
-	 * @return 최적 카드가 즉시할인을 주는 매장 목록(recommendedCardName 포함)
-	 */
-	List<NearbyMerchantRecommendationResponseDto> getNearbyMerchants(
-		Long userId,
-		double swLat,
-		double swLng,
-		double neLat,
-		double neLng
-	);
 
 	/**
 	 * 선택한 매장에서 사용자의 보유 카드별 혜택을 비교하고
@@ -41,15 +23,21 @@ public interface RecommendationService {
 	);
 
 	/**
-	 * 대분류(카테고리명)를 검색해 보유 카드를 모드 1(즉시 할인) 기준으로 순위 매긴다.
-	 * CsvProcessing/category_search.py의 '카테고리 검색 -> 카드 순위' 흐름 포팅.
+	 * 매장 도메인이 (유저 아이디 + 위치정보) 진입점에서 카드 도메인의 유저 보유 카드와 자신이
+	 * 조회한 위치 기반 매장 리스트를 모아 전달하면(가정 - 실제로는
+	 * {@link site.benepay.common.event.MerchantRecommendationRequestedEvent}로 전달됨), 매장마다
+	 * 보유 카드 전체를 모드 1(즉시 할인) 기준으로 평가해 최적 카드를 고르고, 그 카드가 지금 당장
+	 * 혜택을 주는 매장만 추려서 반환한다. 카테고리로 미리 좁히지 않고 전달받은 매장 리스트 전체를
+	 * 평가하므로, 검색한 카테고리 밖이라 혜택받을 수 있는 다른 매장을 놓치는 문제가 없다.
 	 *
 	 * @param userId 로그인한 사용자 식별자
-	 * @param categoryName merchant_categories.category_name과 일치하는 대분류명(예: "카페")
-	 * @return 상태별로 그룹핑되고 그룹 내 할인율 내림차순으로 정렬된 카드 목록
+	 * @param heldCards 카드 도메인에서 전달받은 사용자 보유 카드 + 혜택 정보
+	 * @param merchants 매장 도메인에서 전달받은 위치 기반 매장 후보 리스트
+	 * @return 최적 카드가 즉시할인을 주는 매장 목록(recommendedCardName 포함)
 	 */
-	CategoryCardRecommendationResponseDto getCardRecommendationsByCategory(
+	List<NearbyMerchantRecommendationResponseDto> recommendMerchants(
 		Long userId,
-		String categoryName
+		List<RecommendationCardCandidateVO> heldCards,
+		List<NearbyMerchantResponseDto> merchants
 	);
 }

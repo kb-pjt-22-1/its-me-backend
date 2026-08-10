@@ -19,14 +19,14 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-import site.benepay.domain.recommendation.dto.CategoryCardRecommendationResponseDto;
-import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
+import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.service.RecommendationService;
 
 @ExtendWith(MockitoExtension.class)
 class RecommendationControllerTest {
 
 	private static final Long USER_ID = 1L;
+	private static final Long MERCHANT_ID = 100L;
 
 	@Mock
 	private RecommendationService recommendationService;
@@ -50,33 +50,19 @@ class RecommendationControllerTest {
 	}
 
 	@Test
-	void getCardRecommendationsByCategoryReturnsOkWithTheServiceResultForTheAuthenticatedUser() {
-		CategoryCardRecommendationResponseDto response = CategoryCardRecommendationResponseDto.builder()
-			.categoryName("카페")
-			.typicalPaymentAmount(10_000L)
+	void getCardRecommendationsReturnsOkWithTheServiceResultForTheAuthenticatedUser() {
+		MerchantCardRecommendationResponseDto response = MerchantCardRecommendationResponseDto.builder()
+			.merchantId(MERCHANT_ID)
+			.merchantName("스타벅스 강남점")
+			.categoryCode("5813")
 			.cards(List.of())
 			.build();
-		when(recommendationService.getCardRecommendationsByCategory(USER_ID, "카페")).thenReturn(response);
+		when(recommendationService.getCardRecommendations(USER_ID, MERCHANT_ID)).thenReturn(response);
 
-		ResponseEntity<CategoryCardRecommendationResponseDto> result = controller.getCardRecommendationsByCategory("카페");
-
-		assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-		assertThat(result.getBody()).isEqualTo(response);
-		verify(recommendationService).getCardRecommendationsByCategory(USER_ID, "카페");
-	}
-
-	@Test
-	void getNearbyMerchantsReturnsOkWithTheServiceResultForTheAuthenticatedUser() {
-		List<NearbyMerchantRecommendationResponseDto> response = List.of(
-			NearbyMerchantRecommendationResponseDto.builder().merchantId(100L).recommendedCardName("청춘대로 톡톡카드").build()
-		);
-		when(recommendationService.getNearbyMerchants(USER_ID, 37.4, 126.9, 37.6, 127.1)).thenReturn(response);
-
-		ResponseEntity<List<NearbyMerchantRecommendationResponseDto>> result =
-			controller.getNearbyMerchants(37.4, 126.9, 37.6, 127.1);
+		ResponseEntity<MerchantCardRecommendationResponseDto> result = controller.getCardRecommendations(MERCHANT_ID);
 
 		assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(result.getBody()).isEqualTo(response);
-		verify(recommendationService).getNearbyMerchants(USER_ID, 37.4, 126.9, 37.6, 127.1);
+		verify(recommendationService).getCardRecommendations(USER_ID, MERCHANT_ID);
 	}
 }

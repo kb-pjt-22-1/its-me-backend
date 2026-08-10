@@ -1,6 +1,5 @@
 package site.benepay.domain.recommendation.service;
 
-import java.time.LocalDate;
 import java.time.Year;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
@@ -18,14 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
-import site.benepay.common.exception.CategoryNotFoundException;
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
 import site.benepay.domain.merchant.dto.NearbyMerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
-import site.benepay.domain.merchant.service.MerchantService;
 import site.benepay.domain.recommendation.dto.CardBenefitComparisonResponseDto;
-import site.benepay.domain.recommendation.dto.CardBenefitScoreDto;
-import site.benepay.domain.recommendation.dto.CategoryCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.engine.BenefitEngine;
@@ -33,12 +28,10 @@ import site.benepay.domain.recommendation.engine.BenefitJsonParser;
 import site.benepay.domain.recommendation.engine.BenefitStatus;
 import site.benepay.domain.recommendation.engine.BenefitUsage;
 import site.benepay.domain.recommendation.engine.Mode1Result;
-import site.benepay.domain.recommendation.engine.Mode2Result;
 import site.benepay.domain.recommendation.engine.PerformanceTier;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
 import site.benepay.domain.recommendation.vo.BenefitUsageVO;
-import site.benepay.domain.recommendation.vo.CardMonthlySpendVO;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 import site.benepay.domain.recommendation.vo.RecommendationMerchantVO;
 
@@ -49,11 +42,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 
 	private static final DateTimeFormatter YEAR_MONTH_FORMATTER =
 		DateTimeFormatter.ofPattern("yyyyMM");
-	// 모드 2(실적 채우기)의 dailyRate/cv/hits 계산에 쓸 이력 조회 범위(이번 달 포함 개월 수).
-	private static final int SPEND_HISTORY_MONTHS = 12;
 
 	private final RecommendationMapper recommendationMapper;
-	private final MerchantService merchantService;
 	private final MerchantCategoryService merchantCategoryService;
 	private final ObjectMapper objectMapper;
 	private final RecommendationParamsLoader recommendationParamsLoader;
@@ -64,97 +54,6 @@ public class RecommendationServiceImpl implements RecommendationService {
 	 * 예시:
 	 * private final CardBenefitRecommendationAlgorithm cardRecommendationAlgorithm;
 	 */
-
-	@Override
-	public List<NearbyMerchantRecommendationResponseDto> getNearbyMerchants(
-		Long userId,
-		double swLat,
-		double swLng,
-		double neLat,
-		double neLng
-	) {
-		validateUserId(userId);
-
-		/*
-		 * MerchantService에서 지도 화면 bounds 안의 매장 후보를 조회한다(bounds 자체 검증은
-		 * MerchantService.getMerchantsWithinBounds가 한다). MerchantController의 API를 HTTP로
-		 * 호출하는 것이 아니라, 같은 백엔드 안에 있는 MerchantService 메서드를 직접 호출한다.
-		 */
-		List<NearbyMerchantResponseDto> merchants =
-			merchantService.getMerchantsWithinBounds(swLat, swLng, neLat, neLng);
-
-		if (merchants.isEmpty()) {
-			return Collections.emptyList();
-		}
-
-		List<RecommendationCardCandidateVO> candidates =
-			recommendationMapper.findRecommendationCardCandidates(userId, getPreviousYearMonth());
-
-		if (candidates.isEmpty()) {
-			return Collections.emptyList();
-		}
-
-		// 카테고리 코드를 응답용 카테고리 이름 + typicalPaymentAmount 조회 키로 쓰기 위한 Map이다.
-		Map<String, String> categoryNames =
-			merchantCategoryService.getCategoryList().stream()
-				.collect(Collectors.toMap(
-					MerchantCategoryResponseDto::getCategoryCode,
-					MerchantCategoryResponseDto::getCategoryName,
-					(first, ignored) -> first
-				));
-
-		return merchants.stream()
-			.map(merchant -> toOptimalCardRecommendation(merchant, candidates, categoryNames))
-			.flatMap(Optional::stream)
-			.collect(Collectors.toList());
-	}
-
-	/**
-	 * 매장 하나에 대해 사용자 보유 카드 중 최적 카드를 고르고(scoreAndRank 재사용), 그 카드가
-	 * 이 매장 카테고리에서 지금 당장(즉시할인) 혜택을 주는 경우에만 결과에 포함시킨다. 카테고리가
-	 * 추천 분석 대상(16개 대분류) 밖이면 이 매장은 건너뛴다. bounds 조회라 거리 개념이 없어
-	 * distanceMeters는 항상 null이다.
-	 */
-	private Optional<NearbyMerchantRecommendationResponseDto> toOptimalCardRecommendation(
-		NearbyMerchantResponseDto merchant,
-		List<RecommendationCardCandidateVO> candidates,
-		Map<String, String> categoryNames
-	) {
-		String categoryName = categoryNames.get(merchant.getCategoryCode());
-		if (categoryName == null) {
-			return Optional.empty();
-		}
-
-		Long typicalAmount = recommendationParamsLoader.params().typicalPaymentAmount().get(categoryName);
-		if (typicalAmount == null) {
-			return Optional.empty();
-		}
-
-		List<Map.Entry<RecommendationCardCandidateVO, Mode1Result>> ranked =
-			scoreAndRank(candidates, merchant.getCategoryCode(), categoryName, typicalAmount);
-
-		if (ranked.isEmpty()) {
-			return Optional.empty();
-		}
-
-		Map.Entry<RecommendationCardCandidateVO, Mode1Result> best = ranked.get(0);
-		if (best.getValue().status() != BenefitStatus.IMMEDIATE_DISCOUNT) {
-			return Optional.empty();
-		}
-
-		return Optional.of(
-			NearbyMerchantRecommendationResponseDto.builder()
-				.merchantId(merchant.getMerchantId())
-				.merchantName(merchant.getMerchantName())
-				.categoryName(categoryName)
-				.latitude(merchant.getLatitude() == null ? null : merchant.getLatitude().doubleValue())
-				.longitude(merchant.getLongitude() == null ? null : merchant.getLongitude().doubleValue())
-				.distanceMeters(null)
-				.benefitSummary(best.getValue().note())
-				.recommendedCardName(best.getKey().getCardName())
-				.build()
-		);
-	}
 
 	@Override
 	public MerchantCardRecommendationResponseDto getCardRecommendations(
@@ -206,39 +105,82 @@ public class RecommendationServiceImpl implements RecommendationService {
 	}
 
 	@Override
-	public CategoryCardRecommendationResponseDto getCardRecommendationsByCategory(
+	public List<NearbyMerchantRecommendationResponseDto> recommendMerchants(
 		Long userId,
-		String categoryName
+		List<RecommendationCardCandidateVO> heldCards,
+		List<NearbyMerchantResponseDto> merchants
 	) {
 		validateUserId(userId);
 
-		String categoryCode = resolveCategoryCode(categoryName);
-		Long typicalAmount = recommendationParamsLoader.params().typicalPaymentAmount().get(categoryName);
-		if (typicalAmount == null) {
-			throw new CategoryNotFoundException(
-				"'" + categoryName + "'는 추천 분석 대상 대분류가 아닙니다."
-			);
+		if (heldCards.isEmpty() || merchants.isEmpty()) {
+			return Collections.emptyList();
 		}
 
-		List<RecommendationCardCandidateVO> candidates =
-			recommendationMapper.findRecommendationCardCandidates(userId, getPreviousYearMonth());
-		Map<Long, Map<String, Long>> spendHistoryByCard = loadSpendHistory(userId);
+		// 카테고리 코드를 응답용 카테고리 이름 + typicalPaymentAmount 조회 키로 쓰기 위한 Map이다.
+		Map<String, String> categoryNames = merchantCategoryService.getCategoryList().stream()
+			.collect(Collectors.toMap(
+				MerchantCategoryResponseDto::getCategoryCode,
+				MerchantCategoryResponseDto::getCategoryName,
+				(first, ignored) -> first
+			));
 
-		List<CardBenefitScoreDto> cards = scoreAndRank(candidates, categoryCode, categoryName, typicalAmount).stream()
-			.map(e -> toDto(e.getKey(), e.getValue(), categoryCode, categoryName, typicalAmount, spendHistoryByCard))
+		return merchants.stream()
+			.map(merchant -> toOptimalCardRecommendation(merchant, heldCards, categoryNames))
+			.flatMap(Optional::stream)
 			.collect(Collectors.toList());
+	}
 
-		return CategoryCardRecommendationResponseDto.builder()
-			.categoryName(categoryName)
-			.typicalPaymentAmount(typicalAmount)
-			.cards(cards)
-			.build();
+	/**
+	 * 매장 하나에 대해 사용자 보유 카드 중 최적 카드를 고르고(scoreAndRank 재사용), 그 카드가
+	 * 이 매장 카테고리에서 지금 당장(즉시할인) 혜택을 주는 경우에만 결과에 포함시킨다. 카테고리가
+	 * 추천 분석 대상(16개 대분류) 밖이면 이 매장은 건너뛴다. 전달받은 매장 리스트를 카테고리로
+	 * 미리 좁히지 않고 전부 평가하므로, 검색 카테고리 밖이라 혜택받을 수 있는 다른 매장을 놓치는
+	 * 문제가 없다. 위치 기반 조회라 거리 개념이 없어 distanceMeters는 항상 null이다.
+	 */
+	private Optional<NearbyMerchantRecommendationResponseDto> toOptimalCardRecommendation(
+		NearbyMerchantResponseDto merchant,
+		List<RecommendationCardCandidateVO> heldCards,
+		Map<String, String> categoryNames
+	) {
+		String categoryName = categoryNames.get(merchant.getCategoryCode());
+		if (categoryName == null) {
+			return Optional.empty();
+		}
+
+		Long typicalAmount = recommendationParamsLoader.params().typicalPaymentAmount().get(categoryName);
+		if (typicalAmount == null) {
+			return Optional.empty();
+		}
+
+		List<Map.Entry<RecommendationCardCandidateVO, Mode1Result>> ranked =
+			scoreAndRank(heldCards, merchant.getCategoryCode(), categoryName, typicalAmount);
+
+		if (ranked.isEmpty()) {
+			return Optional.empty();
+		}
+
+		Map.Entry<RecommendationCardCandidateVO, Mode1Result> best = ranked.get(0);
+		if (best.getValue().status() != BenefitStatus.IMMEDIATE_DISCOUNT) {
+			return Optional.empty();
+		}
+
+		return Optional.of(
+			NearbyMerchantRecommendationResponseDto.builder()
+				.merchantId(merchant.getMerchantId())
+				.merchantName(merchant.getMerchantName())
+				.categoryName(categoryName)
+				.latitude(merchant.getLatitude() == null ? null : merchant.getLatitude().doubleValue())
+				.longitude(merchant.getLongitude() == null ? null : merchant.getLongitude().doubleValue())
+				.distanceMeters(null)
+				.benefitSummary(best.getValue().note())
+				.recommendedCardName(best.getKey().getCardName())
+				.build()
+		);
 	}
 
 	/**
 	 * 카드 후보 전체를 이 카테고리 기준으로 평가해 상태(즉시할인 -> 조건부할인 -> ...) -> 할인율
-	 * 내림차순으로 정렬한다. getCardRecommendationsByCategory와 getNearbyMerchants(최적 카드 선정)가
-	 * 공유하는 랭킹 로직이다.
+	 * 내림차순으로 정렬한다.
 	 */
 	private List<Map.Entry<RecommendationCardCandidateVO, Mode1Result>> scoreAndRank(
 		List<RecommendationCardCandidateVO> candidates,
@@ -270,80 +212,6 @@ public class RecommendationServiceImpl implements RecommendationService {
 		return BenefitEngine.evaluateNow(
 			tiers, prevMonthSpend, categoryCode, categoryName, typicalAmount, usage, recommendationParamsLoader.params()
 		);
-	}
-
-	private CardBenefitScoreDto toDto(
-		RecommendationCardCandidateVO candidate,
-		Mode1Result result,
-		String categoryCode,
-		String categoryName,
-		long typicalAmount,
-		Map<Long, Map<String, Long>> spendHistoryByCard
-	) {
-		Mode2Result build = scoreBuild(candidate, categoryCode, categoryName, typicalAmount, spendHistoryByCard);
-		return CardBenefitScoreDto.builder()
-			.userCardId(candidate.getUserCardId())
-			.cardName(candidate.getCardName())
-			.cardImageUrl(candidate.getCardImageUrl())
-			.status(result.status().label())
-			.discountRate(result.rate())
-			.nominalDiscountRate(result.nominalRate())
-			.capped(result.capped())
-			.discountAmount(result.discount())
-			.evaluatedAmount(result.amount())
-			.note(result.note())
-			.buildStatus(build.status().label())
-			.reachProbability(build.reachProbability())
-			.expectedValue(build.expectedValue())
-			.gapAmount(build.gapAmount())
-			.gainAmount(build.gainAmount())
-			.buildNote(build.note())
-			.build();
-	}
-
-	/**
-	 * 카드 한 장에 대해 모드 2를 평가한다. spendHistoryByCard는 이번 달을 포함해 최근
-	 * {@link #SPEND_HISTORY_MONTHS}개월치 실적 - 이번 달분은 currentMonthSpend로 따로 빼고,
-	 * 나머지 과거 완료된 달만 dailyRate/cv/hits 계산용 이력으로 넘긴다(Python CardState의
-	 * current_month_spend/spend_history 분리와 동일).
-	 */
-	private Mode2Result scoreBuild(
-		RecommendationCardCandidateVO candidate,
-		String categoryCode,
-		String categoryName,
-		long typicalAmount,
-		Map<Long, Map<String, Long>> spendHistoryByCard
-	) {
-		List<PerformanceTier> tiers = BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper);
-		Map<String, Long> allMonths =
-			spendHistoryByCard.getOrDefault(candidate.getUserCardId(), Collections.emptyMap());
-		String currentYearMonth = YearMonth.now().format(YEAR_MONTH_FORMATTER);
-		long currentMonthSpend = allMonths.getOrDefault(currentYearMonth, 0L);
-
-		Map<String, Long> pastHistory = allMonths.entrySet().stream()
-			.filter(e -> !e.getKey().equals(currentYearMonth))
-			.collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-
-		return BenefitEngine.evaluateBuild(
-			tiers, currentMonthSpend, categoryCode, categoryName, typicalAmount, pastHistory,
-			recommendationParamsLoader.params(), LocalDate.now()
-		);
-	}
-
-	/**
-	 * 이 유저의 활성 카드 전부에 대해 최근 {@link #SPEND_HISTORY_MONTHS}개월치 실적을 한 번에
-	 * 가져와 userCardId별로 묶는다(카드마다 따로 쿼리하지 않도록) - loadBenefitUsage와 같은 패턴.
-	 */
-	private Map<Long, Map<String, Long>> loadSpendHistory(Long userId) {
-		String fromYearMonth = YearMonth.now().minusMonths(SPEND_HISTORY_MONTHS - 1L).format(YEAR_MONTH_FORMATTER);
-		List<CardMonthlySpendVO> rows = recommendationMapper.findSpendHistoryForUser(userId, fromYearMonth);
-
-		Map<Long, Map<String, Long>> byCard = new HashMap<>();
-		for (CardMonthlySpendVO row : rows) {
-			byCard.computeIfAbsent(row.getUserCardId(), key -> new HashMap<>())
-				.put(row.getTargetYearMonth(), row.getTotalSpendingAmount() == null ? 0L : row.getTotalSpendingAmount());
-		}
-		return byCard;
 	}
 
 	/**
@@ -380,25 +248,6 @@ public class RecommendationServiceImpl implements RecommendationService {
 			));
 		}
 		return usage;
-	}
-
-	private String resolveCategoryCode(String categoryName) {
-		return merchantCategoryService.getCategoryList().stream()
-			.filter(category -> category.getCategoryName().equals(categoryName))
-			.map(MerchantCategoryResponseDto::getCategoryCode)
-			.findFirst()
-			.orElseThrow(() -> new CategoryNotFoundException(
-				"존재하지 않는 카테고리입니다: " + categoryName
-			));
-	}
-
-	/**
-	 * 전월 실적 조회에 사용할 연월을 yyyyMM 형태로 반환한다.
-	 */
-	private String getPreviousYearMonth() {
-		return YearMonth.now()
-			.minusMonths(1)
-			.format(YEAR_MONTH_FORMATTER);
 	}
 
 	private void validateUserId(Long userId) {

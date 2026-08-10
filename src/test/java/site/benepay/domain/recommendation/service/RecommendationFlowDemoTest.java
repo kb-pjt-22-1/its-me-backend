@@ -1,10 +1,8 @@
 package site.benepay.domain.recommendation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Method;
@@ -19,25 +17,26 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import site.benepay.common.event.MerchantRecommendationRequestedEvent;
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
 import site.benepay.domain.merchant.dto.NearbyMerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
-import site.benepay.domain.merchant.service.MerchantService;
-import site.benepay.domain.recommendation.dto.CardBenefitScoreDto;
-import site.benepay.domain.recommendation.dto.CategoryCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
+import site.benepay.domain.recommendation.listener.MerchantRecommendationEventListener;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 
 /**
- * 프론트 -> 백엔드 -> 프론트로 이어지는 추천 흐름을 실제 RecommendationServiceImpl로 재현해서
- * 눈으로 확인하기 위한 시나리오 테스트다.
+ * 프론트 -> 백엔드 -> 프론트로 이어지는 추천 흐름을 실제 RecommendationServiceImpl +
+ * MerchantRecommendationEventListener로 재현해서 눈으로 확인하기 위한 시나리오 테스트다.
  *
- * <p>회원가입·카드 자동연동 이벤트, 실제 HTTP/게이트웨이 등 아직 완성되지 않은 다른 기능에는
- * 기대지 않는다 - "① 카테고리 검색 또는 지도 위치정보(bounds) -> ② 백엔드가 그 회원의 보유
- * 카드·혜택 조회 -> ③ BenefitEngine 계산 -> ④ 해당 매장/카드를 프론트로 반환"이라는 핵심
- * 파이프라인만 격리해서 검증한다. 추천 파라미터는 실제 recommendation-params.json 원본을
+ * <p>"매장 도메인이 (유저 아이디 + 위치정보) 진입점에서 카드 도메인의 유저 보유 카드와 자신이
+ * 조회한 위치 기반 매장 리스트를 모아 이벤트로 발행한다"는 것은 이 저장소 밖(다른 도메인)의
+ * 일이라고 가정한다 - 여기서는 그 이벤트가 이미 만들어졌다고 보고, 추천 도메인의 리스너가 그
+ * 이벤트를 받아서 "① BenefitEngine으로 매장마다 최적 카드 계산 -> ② 그 카드가 지금 당장
+ * 혜택을 주는 매장만 필터링 -> ③ 결과를 이벤트에 채워 넣어(발행자가 이어서 프론트로 반환)"
+ * 처리하는 부분만 격리해서 검증한다. 추천 파라미터는 실제 recommendation-params.json 원본을
  * 그대로 읽어 쓴다(합성 데이터 아님) - 운영과 같은 통상결제액 기준으로 계산된다.
  */
 @ExtendWith(MockitoExtension.class)
@@ -51,19 +50,17 @@ class RecommendationFlowDemoTest {
 	private RecommendationMapper recommendationMapper;
 
 	@Mock
-	private MerchantService merchantService;
-
-	@Mock
 	private MerchantCategoryService merchantCategoryService;
 
-	private RecommendationServiceImpl recommendationService;
+	private MerchantRecommendationEventListener listener;
 
 	@BeforeEach
 	void setUp() {
 		ObjectMapper objectMapper = new ObjectMapper();
-		recommendationService = new RecommendationServiceImpl(
-			recommendationMapper, merchantService, merchantCategoryService, objectMapper, realParamsLoader(objectMapper)
+		RecommendationServiceImpl recommendationService = new RecommendationServiceImpl(
+			recommendationMapper, merchantCategoryService, objectMapper, realParamsLoader(objectMapper)
 		);
+		listener = new MerchantRecommendationEventListener(recommendationService);
 
 		when(merchantCategoryService.getCategoryList()).thenReturn(List.of(
 			MerchantCategoryResponseDto.builder().categoryCode(CAFE_CODE).categoryName("카페").build()
@@ -104,7 +101,7 @@ class RecommendationFlowDemoTest {
 		return vo;
 	}
 
-	/** 회원 42가 실제로 들고 있다고 가정한 보유 카드 3장. */
+	/** 회원 42가 실제로 들고 있다고(카드 도메인 이벤트로 전달받았다고) 가정한 보유 카드 3장. */
 	private List<RecommendationCardCandidateVO> heldCards() {
 		return List.of(
 			card(1L, "청춘대로 톡톡카드", 50),
@@ -114,63 +111,48 @@ class RecommendationFlowDemoTest {
 	}
 
 	@Test
-	void categorySearchFlow_frontendCategoryQueryToRankedCards() {
+	void merchantRecommendationRequestedFlow_eventDataToFrontendReadyResult() {
 		System.out.println();
-		System.out.println("[1] 프론트 -> 백엔드: 카테고리 검색 \"카페\" (GET /api/v1/recommendations/categories/카페/cards)");
-		when(recommendationMapper.findRecommendationCardCandidates(any(), anyString())).thenReturn(heldCards());
-		when(recommendationMapper.findYearlyBenefitUsage(anyLong(), anyInt())).thenReturn(List.of());
-		System.out.println("[2] 백엔드: 회원 " + USER_ID + "의 보유 카드 " + heldCards().size() + "장 + 혜택 정보(benefits_info) 조회");
-
-		CategoryCardRecommendationResponseDto response =
-			recommendationService.getCardRecommendationsByCategory(USER_ID, "카페");
-
-		System.out.println("[3] 백엔드: BenefitEngine.evaluateNow()(모드1)+evaluateBuild()(모드2)로 카드별 계산 -> "
-			+ "모드1 상태 -> 할인율 순 정렬");
-		System.out.println("    통상결제액(recommendation-params.json 실값) = " + response.getTypicalPaymentAmount() + "원");
-		for (CardBenefitScoreDto c : response.getCards()) {
-			System.out.printf("    - %-14s [모드1] %-6s 할인율 %5.1f%%  [모드2] %-8s 다음구간까지 %,8d원 기대값 %,6d원%n",
-				c.getCardName(), c.getStatus(), c.getDiscountRate() * 100,
-				c.getBuildStatus(), c.getGapAmount(), c.getExpectedValue());
-		}
-		System.out.println("[4] 백엔드 -> 프론트: 위 순위 그대로 응답 (프론트는 1등 카드를 강조 표시)");
-
-		assertThat(response.getCards()).extracting(CardBenefitScoreDto::getCardName)
-			.containsExactly("청춘대로 톡톡카드", "굿데이카드", "ALL카드");
-		assertThat(response.getCards().get(0).getStatus()).isEqualTo("즉시할인");
-		assertThat(response.getTypicalPaymentAmount()).isGreaterThan(0);
-	}
-
-	@Test
-	void mapBoundsFlow_frontendLocationToFilteredMerchants() {
-		System.out.println();
-		System.out.println("[1] 프론트 -> 백엔드: 지도 위치정보 bounds=(37.550,126.920)~(37.570,126.940) "
-			+ "(GET /api/v1/recommendations/merchants)");
-		NearbyMerchantResponseDto merchant = NearbyMerchantResponseDto.builder()
+		System.out.println("[1] (가정) 프론트 -> 매장 도메인: 유저 아이디 + 위치정보. 매장 도메인이 카드 도메인에게 "
+			+ "회원 " + USER_ID + "의 보유 카드를 받고, 자신은 위치 기반 매장 리스트를 조회한 뒤 "
+			+ "MerchantRecommendationRequestedEvent를 발행한다.");
+		NearbyMerchantResponseDto cafeMerchant = NearbyMerchantResponseDto.builder()
 			.merchantId(501L)
 			.categoryCode(CAFE_CODE)
 			.merchantName("카페 트리 홍대점")
 			.latitude(BigDecimal.valueOf(37.556))
 			.longitude(BigDecimal.valueOf(126.925))
 			.build();
-		when(merchantService.getMerchantsWithinBounds(37.55, 126.92, 37.57, 126.94)).thenReturn(List.of(merchant));
-		when(recommendationMapper.findRecommendationCardCandidates(any(), anyString())).thenReturn(heldCards());
+		NearbyMerchantResponseDto otherCategoryMerchant = NearbyMerchantResponseDto.builder()
+			.merchantId(502L)
+			.categoryCode("9999")
+			.merchantName("올리브영 홍대점")
+			.latitude(BigDecimal.valueOf(37.557))
+			.longitude(BigDecimal.valueOf(126.926))
+			.build();
 		when(recommendationMapper.findYearlyBenefitUsage(anyLong(), anyInt())).thenReturn(List.of());
-		System.out.println("[2] 백엔드: bounds 안 매장 조회(merchants.within-bounds) + "
-			+ "회원 " + USER_ID + "의 보유 카드·혜택 조회");
 
-		List<NearbyMerchantRecommendationResponseDto> merchants =
-			recommendationService.getNearbyMerchants(USER_ID, 37.55, 126.92, 37.57, 126.94);
+		MerchantRecommendationRequestedEvent event = new MerchantRecommendationRequestedEvent(
+			USER_ID, heldCards(), List.of(cafeMerchant, otherCategoryMerchant)
+		);
 
-		System.out.println("[3] 백엔드: 매장마다 보유 카드 전체를 BenefitEngine으로 평가 -> "
-			+ "1등이 즉시할인인 매장만 필터링");
-		for (NearbyMerchantRecommendationResponseDto m : merchants) {
+		System.out.println("[2] 추천 도메인 리스너: 이벤트에서 유저 보유 카드 " + heldCards().size()
+			+ "장 + 매장 " + event.getMerchants().size() + "개를 받는다 (직접 DB/다른 서비스 조회 없음)");
+
+		listener.handleMerchantRecommendationRequested(event);
+
+		System.out.println("[3] 리스너 -> RecommendationService.recommendMerchants: 매장마다 보유 카드 전체를 "
+			+ "BenefitEngine.evaluateNow()로 평가 -> 최적 카드가 즉시할인인 매장만 채택");
+		for (NearbyMerchantRecommendationResponseDto m : event.getResult()) {
 			System.out.printf("    - %-16s 추천카드=%-14s %s%n",
 				m.getMerchantName(), m.getRecommendedCardName(), m.getBenefitSummary());
 		}
-		System.out.println("[4] 백엔드 -> 프론트: 위 매장만 지도 화면 마커로 표시 (recommendedCardName 포함)");
+		System.out.println("[4] 리스너: 계산 결과를 이벤트에 채워 넣는다 (event.completeWith) -> "
+			+ "발행한 매장 도메인이 이어서 프론트로 반환");
 
-		assertThat(merchants).hasSize(1);
-		assertThat(merchants.get(0).getMerchantName()).isEqualTo("카페 트리 홍대점");
-		assertThat(merchants.get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
+		assertThat(event.getResult()).hasSize(1);
+		assertThat(event.getResult().get(0).getMerchantName()).isEqualTo("카페 트리 홍대점");
+		assertThat(event.getResult().get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
+		assertThat(event.getResult().get(0).getCategoryName()).isEqualTo("카페");
 	}
 }
