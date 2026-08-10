@@ -44,10 +44,10 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 		UserCardPaymentTokenVO userCardToken = paymentMapper.findActiveCardPaymentToken(userId, userCardId)
 			.orElseThrow(() -> new UserCardNotAvailableException("결제에 사용할 수 없는 카드입니다."));
 
-		if (merchantId != null) {
+		// if (merchantId != null) {
 			// 존재하지 않는 가맹점이면 MerchantService가 MerchantNotFoundException을 던진다.
-			merchantService.getMerchant(merchantId);
-		}
+			// merchantService.getMerchant(merchantId);
+		// }
 
 		PaymentTokenVO token = paymentTokenStore.issue(userId, userCardId, merchantId, userCardToken.getPaymentToken());
 
