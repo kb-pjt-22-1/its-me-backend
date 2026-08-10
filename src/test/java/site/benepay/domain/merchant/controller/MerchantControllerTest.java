@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import site.benepay.common.exception.GlobalExceptionHandler;
+import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantService;
 
@@ -85,39 +86,25 @@ class MerchantControllerTest {
 		verify(merchantService).getMerchants("5812");
 	}
 
-	// ---- GET /api/v1/merchants/within-bounds ----
+	// ---- GET /api/v1/merchants/{merchantId} ----
 
 	@Test
-	void getMerchantsWithinBoundsReturnsOkWithBody() throws Exception {
-		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null))
-			.thenReturn(List.of(merchantResponse()));
+	void getMerchantReturnsOkWithBody() throws Exception {
+		when(merchantService.getMerchant(MERCHANT_ID)).thenReturn(merchantResponse());
 
-		MvcResult result = mockMvc.perform(get("/api/v1/merchants/within-bounds")
-				.param("swLat", "37.4")
-				.param("swLng", "127.0")
-				.param("neLat", "37.6")
-				.param("neLng", "127.2"))
+		MvcResult result = mockMvc.perform(get("/api/v1/merchants/{merchantId}", MERCHANT_ID))
 			.andExpect(status().isOk())
 			.andReturn();
 
 		JsonNode body = bodyOf(result);
-		assertThat(body.get(0).get("merchantId").asLong()).isEqualTo(MERCHANT_ID);
-		verify(merchantService).getMerchants(37.4, 127.0, 37.6, 127.2, null);
+		assertThat(body.get("merchantId").asLong()).isEqualTo(MERCHANT_ID);
 	}
 
 	@Test
-	void getMerchantsWithinBoundsPassesCategoryCodeWhenProvided() throws Exception {
-		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, "5812"))
-			.thenReturn(List.of(merchantResponse()));
+	void getMerchantReturnsNotFoundWhenMissing() throws Exception {
+		when(merchantService.getMerchant(MERCHANT_ID)).thenThrow(new MerchantNotFoundException("존재하지 않는 매장입니다: " + MERCHANT_ID));
 
-		mockMvc.perform(get("/api/v1/merchants/within-bounds")
-				.param("swLat", "37.4")
-				.param("swLng", "127.0")
-				.param("neLat", "37.6")
-				.param("neLng", "127.2")
-				.param("categoryCode", "5812"))
-			.andExpect(status().isOk());
-
-		verify(merchantService).getMerchants(37.4, 127.0, 37.6, 127.2, "5812");
+		mockMvc.perform(get("/api/v1/merchants/{merchantId}", MERCHANT_ID))
+			.andExpect(status().isNotFound());
 	}
 }
