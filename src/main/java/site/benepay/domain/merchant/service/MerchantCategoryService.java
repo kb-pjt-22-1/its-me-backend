@@ -1,10 +1,10 @@
 package site.benepay.domain.merchant.service;
 
-import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
-
 import java.util.List;
+
+import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
 
 public interface MerchantCategoryService {
 
-    List<MerchantCategoryResponseDto> getCategoryList();
+	List<MerchantCategoryResponseDto> getCategoryList();
 }
