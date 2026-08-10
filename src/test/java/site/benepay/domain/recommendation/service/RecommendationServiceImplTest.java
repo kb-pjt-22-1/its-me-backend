@@ -9,6 +9,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
@@ -34,6 +36,7 @@ import site.benepay.domain.recommendation.engine.RecommendationParams;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
 import site.benepay.domain.recommendation.vo.BenefitUsageVO;
+import site.benepay.domain.recommendation.vo.CardMonthlySpendVO;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 
 @ExtendWith(MockitoExtension.class)
@@ -68,8 +71,14 @@ class RecommendationServiceImplTest {
 		return new RecommendationParams(
 			Map.of("카페", typicalAmount),
 			new RecommendationParams.TicketHistogram(new double[0], Map.of()),
-			new RecommendationParams.Constants(1700.0)
+			Map.of(),
+			testConstants()
 		);
+	}
+
+	// CsvProcessing/recommendation_params.json의 실제 값과 동일.
+	private static RecommendationParams.Constants testConstants() {
+		return new RecommendationParams.Constants(1700.0, 0.35, 2.0, 0.25, 0.15, 0.05, 0.95, 0.2);
 	}
 
 	private static RecommendationCardCandidateVO candidate(Long userCardId, String cardName, double rate) {
@@ -104,6 +113,30 @@ class RecommendationServiceImplTest {
 				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
 				+ "\"discountRate\":%s,\"minimumPaymentAmount\":%d}]}]}",
 			cardName, CAFE_CODE, rate, minimumPaymentAmount
+		));
+		return vo;
+	}
+
+	/** 2구간 카드 - 0원부터 5%, 30만원부터 10%. 모드 2(다음 구간 진입) 테스트용. */
+	private static RecommendationCardCandidateVO twoTierCandidate(Long userCardId, String cardName) {
+		RecommendationCardCandidateVO vo = new RecommendationCardCandidateVO();
+		vo.setUserCardId(userCardId);
+		vo.setCardId(userCardId);
+		vo.setCardName(cardName);
+		vo.setCardImageUrl("https://example.com/" + userCardId + ".png");
+		vo.setTotalSpendingAmount(500_000L);
+		vo.setBenefitsInfo(String.format(
+			"{\"performanceTiers\":["
+				+ "{\"minimumSpending\":0,\"benefits\":["
+				+ "{\"serviceName\":\"%s\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":5,\"minimumPaymentAmount\":0}]},"
+				+ "{\"minimumSpending\":300000,\"benefits\":["
+				+ "{\"serviceName\":\"%s\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":10,\"minimumPaymentAmount\":0}]}"
+				+ "]}",
+			cardName, CAFE_CODE, cardName, CAFE_CODE
 		));
 		return vo;
 	}
@@ -149,6 +182,57 @@ class RecommendationServiceImplTest {
 		assertThat(response.getCards()).extracting(CardBenefitScoreDto::getStatus)
 			.containsOnly(BenefitStatus.IMMEDIATE_DISCOUNT.label());
 		assertThat(response.getCards().get(0).getDiscountRate()).isCloseTo(0.50, Offset.offset(1e-9));
+		// 단일 구간 카드라 다음 구간이 없다 - 모드 2는 항상 최고구간확보로 나온다.
+		assertThat(response.getCards()).extracting(CardBenefitScoreDto::getBuildStatus)
+			.containsOnly("최고구간확보");
+	}
+
+	// ---- 모드 2 (실적 채우기) ----
+
+	@Test
+	void includesBuildFieldsWhenTheCardCanUpgradeToTheNextTier() {
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmount(10_000L));
+		when(recommendationMapper.findRecommendationCardCandidates(any(), anyString()))
+			.thenReturn(List.of(twoTierCandidate(1L, "성장카드")));
+		stubNoUsage();
+
+		String currentYearMonth = YearMonth.now().format(DateTimeFormatter.ofPattern("yyyyMM"));
+		CardMonthlySpendVO currentMonthRow = new CardMonthlySpendVO();
+		currentMonthRow.setUserCardId(1L);
+		currentMonthRow.setTargetYearMonth(currentYearMonth);
+		currentMonthRow.setTotalSpendingAmount(250_000L);
+		when(recommendationMapper.findSpendHistoryForUser(any(), anyString())).thenReturn(List.of(currentMonthRow));
+
+		CategoryCardRecommendationResponseDto response =
+			recommendationService.getCardRecommendationsByCategory(USER_ID, "카페");
+
+		CardBenefitScoreDto card = response.getCards().get(0);
+		assertThat(card.getBuildStatus()).isIn("구간상향가능", "도달어려움");
+		assertThat(card.getGapAmount()).isEqualTo(50_000L);
+		assertThat(card.getGainAmount()).isGreaterThan(0L);
+		assertThat(card.getBuildNote()).isNotBlank();
+	}
+
+	@Test
+	void reportsTopTierSecuredWhenAlreadyAtTheHighestTier() {
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmount(10_000L));
+		when(recommendationMapper.findRecommendationCardCandidates(any(), anyString()))
+			.thenReturn(List.of(twoTierCandidate(1L, "성장카드")));
+		stubNoUsage();
+
+		String currentYearMonth = YearMonth.now().format(DateTimeFormatter.ofPattern("yyyyMM"));
+		CardMonthlySpendVO currentMonthRow = new CardMonthlySpendVO();
+		currentMonthRow.setUserCardId(1L);
+		currentMonthRow.setTargetYearMonth(currentYearMonth);
+		currentMonthRow.setTotalSpendingAmount(300_000L);
+		when(recommendationMapper.findSpendHistoryForUser(any(), anyString())).thenReturn(List.of(currentMonthRow));
+
+		CategoryCardRecommendationResponseDto response =
+			recommendationService.getCardRecommendationsByCategory(USER_ID, "카페");
+
+		assertThat(response.getCards().get(0).getBuildStatus()).isEqualTo("최고구간확보");
 	}
 
 	@Test
@@ -164,7 +248,7 @@ class RecommendationServiceImplTest {
 		stubCafeCategory();
 		when(recommendationParamsLoader.params()).thenReturn(
 			new RecommendationParams(Map.of(), new RecommendationParams.TicketHistogram(new double[0], Map.of()),
-				new RecommendationParams.Constants(1700.0))
+				Map.of(), testConstants())
 		);
 
 		assertThatThrownBy(() -> recommendationService.getCardRecommendationsByCategory(USER_ID, "카페"))

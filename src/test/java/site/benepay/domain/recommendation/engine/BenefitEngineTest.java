@@ -2,6 +2,7 @@ package site.benepay.domain.recommendation.engine;
 
 import static org.assertj.core.api.Assertions.*;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -9,9 +10,8 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * CsvProcessing/test_boundary.py의 65개 경계값 테스트 중 모드 1(즉시 할인) 관련 항목만
- * 이식했다. 모드 2(실적 채우기)·모드 3(우선순위 비교) 전용 테스트는 그 기능을 포팅할 때
- * 같이 옮긴다.
+ * CsvProcessing/test_boundary.py의 65개 경계값 테스트 중 모드 1(즉시 할인)·모드 2(실적 채우기)
+ * 관련 항목을 이식했다. 모드 3(우선순위 비교) 전용 테스트는 그 기능을 포팅할 때 같이 옮긴다.
  */
 class BenefitEngineTest {
 
@@ -22,8 +22,14 @@ class BenefitEngineTest {
 	private static final RecommendationParams TEST_PARAMS = new RecommendationParams(
 		Map.of(),
 		new RecommendationParams.TicketHistogram(new double[0], Map.of()),
-		new RecommendationParams.Constants(1700.0)
+		Map.of(),
+		testConstants()
 	);
+
+	// CsvProcessing/recommendation_params.json의 실제 값과 동일 - 테스트도 같은 상수로 검증한다.
+	private static RecommendationParams.Constants testConstants() {
+		return new RecommendationParams.Constants(1700.0, 0.35, 2.0, 0.25, 0.15, 0.05, 0.95, 0.2);
+	}
 
 	// ---------------------------------------------------------------- 헬퍼
 
@@ -249,5 +255,55 @@ class BenefitEngineTest {
 
 		assertThat(high.rate()).isGreaterThan(low.rate());
 		assertThat(high.discount()).isGreaterThan(low.discount());
+	}
+
+	// ==================================================================== 모드 2
+
+	@Test
+	void buildGapBoundaryReturnsTopTierSecuredAtOrOverThreshold() {
+		List<PerformanceTier> tiers = oneTierCard(300_000, 10, null, 0, null);
+		LocalDate today = LocalDate.of(2026, 8, 15);
+
+		Mode2Result atThreshold = BenefitEngine.evaluateBuild(
+			tiers, 300_000, CAFE, "카페", 10_000, Map.of(), TEST_PARAMS, today);
+		assertThat(atThreshold.status()).isEqualTo(BuildStatus.TOP_TIER_SECURED);
+
+		Mode2Result overThreshold = BenefitEngine.evaluateBuild(
+			tiers, 400_000, CAFE, "카페", 10_000, Map.of(), TEST_PARAMS, today);
+		assertThat(overThreshold.status()).isEqualTo(BuildStatus.TOP_TIER_SECURED);
+	}
+
+	@Test
+	void noRemainingDaysPushesFlowProbabilityToTheFloor() {
+		List<PerformanceTier> tiers = oneTierCard(300_000, 10, null, 0, null);
+		LocalDate lastDayOfMonth = LocalDate.of(2026, 8, 31);
+
+		Mode2Result r = BenefitEngine.evaluateBuild(
+			tiers, 100_000, CAFE, "카페", 10_000, Map.of(), TEST_PARAMS, lastDayOfMonth);
+
+		assertThat(r.pFlow()).isCloseTo(TEST_PARAMS.constants().pFlowMin(), within(1e-9));
+		assertThat(r.reachProbability()).isBetween(0.0, 1.0);
+		assertThat(r.status()).isEqualTo(BuildStatus.HARD_TO_REACH);
+	}
+
+	@Test
+	void historyBoundary() {
+		RecommendationParams.Constants c = testConstants();
+
+		BenefitEngine.FillProbability none = BenefitEngine.fillProbability(0, c.defaultCv(), 10.0, 300_000, 0, 0, c);
+		assertThat(none.pHist()).isCloseTo(c.historyPrior(), within(1e-9));
+
+		BenefitEngine.FillProbability never = BenefitEngine.fillProbability(0, c.defaultCv(), 10.0, 300_000, 0, 12, c);
+		assertThat(never.pHist()).isLessThan(c.historyPrior());
+
+		BenefitEngine.FillProbability always = BenefitEngine.fillProbability(0, c.defaultCv(), 10.0, 300_000, 12, 12, c);
+		assertThat(always.pHist()).isGreaterThan(c.historyPrior());
+
+		BenefitEngine.FillProbability shortHistory =
+			BenefitEngine.fillProbability(0, c.defaultCv(), 10.0, 300_000, 1, 1, c);
+		assertThat(shortHistory.pHist()).isLessThan(always.pHist());
+
+		BenefitEngine.FillProbability gapZero = BenefitEngine.fillProbability(0, c.defaultCv(), 10.0, 0, 12, 12, c);
+		assertThat(gapZero.pFill()).isCloseTo(1.0, within(1e-9));
 	}
 }

@@ -124,11 +124,13 @@ class RecommendationFlowDemoTest {
 		CategoryCardRecommendationResponseDto response =
 			recommendationService.getCardRecommendationsByCategory(USER_ID, "카페");
 
-		System.out.println("[3] 백엔드: BenefitEngine.evaluateNow()로 카드별 계산 -> 상태 -> 할인율 순 정렬");
+		System.out.println("[3] 백엔드: BenefitEngine.evaluateNow()(모드1)+evaluateBuild()(모드2)로 카드별 계산 -> "
+			+ "모드1 상태 -> 할인율 순 정렬");
 		System.out.println("    통상결제액(recommendation-params.json 실값) = " + response.getTypicalPaymentAmount() + "원");
 		for (CardBenefitScoreDto c : response.getCards()) {
-			System.out.printf("    - %-14s %-6s 할인율 %5.1f%%  %s%n",
-				c.getCardName(), c.getStatus(), c.getDiscountRate() * 100, c.getNote());
+			System.out.printf("    - %-14s [모드1] %-6s 할인율 %5.1f%%  [모드2] %-8s 다음구간까지 %,8d원 기대값 %,6d원%n",
+				c.getCardName(), c.getStatus(), c.getDiscountRate() * 100,
+				c.getBuildStatus(), c.getGapAmount(), c.getExpectedValue());
 		}
 		System.out.println("[4] 백엔드 -> 프론트: 위 순위 그대로 응답 (프론트는 1등 카드를 강조 표시)");
 

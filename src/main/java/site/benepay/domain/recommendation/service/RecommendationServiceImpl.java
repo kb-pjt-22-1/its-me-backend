@@ -1,5 +1,6 @@
 package site.benepay.domain.recommendation.service;
 
+import java.time.LocalDate;
 import java.time.Year;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
@@ -32,10 +33,12 @@ import site.benepay.domain.recommendation.engine.BenefitJsonParser;
 import site.benepay.domain.recommendation.engine.BenefitStatus;
 import site.benepay.domain.recommendation.engine.BenefitUsage;
 import site.benepay.domain.recommendation.engine.Mode1Result;
+import site.benepay.domain.recommendation.engine.Mode2Result;
 import site.benepay.domain.recommendation.engine.PerformanceTier;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
 import site.benepay.domain.recommendation.vo.BenefitUsageVO;
+import site.benepay.domain.recommendation.vo.CardMonthlySpendVO;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 import site.benepay.domain.recommendation.vo.RecommendationMerchantVO;
 
@@ -46,6 +49,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 
 	private static final DateTimeFormatter YEAR_MONTH_FORMATTER =
 		DateTimeFormatter.ofPattern("yyyyMM");
+	// 모드 2(실적 채우기)의 dailyRate/cv/hits 계산에 쓸 이력 조회 범위(이번 달 포함 개월 수).
+	private static final int SPEND_HISTORY_MONTHS = 12;
 
 	private final RecommendationMapper recommendationMapper;
 	private final MerchantService merchantService;
@@ -217,9 +222,10 @@ public class RecommendationServiceImpl implements RecommendationService {
 
 		List<RecommendationCardCandidateVO> candidates =
 			recommendationMapper.findRecommendationCardCandidates(userId, getPreviousYearMonth());
+		Map<Long, Map<String, Long>> spendHistoryByCard = loadSpendHistory(userId);
 
 		List<CardBenefitScoreDto> cards = scoreAndRank(candidates, categoryCode, categoryName, typicalAmount).stream()
-			.map(e -> toDto(e.getKey(), e.getValue()))
+			.map(e -> toDto(e.getKey(), e.getValue(), categoryCode, categoryName, typicalAmount, spendHistoryByCard))
 			.collect(Collectors.toList());
 
 		return CategoryCardRecommendationResponseDto.builder()
@@ -266,7 +272,15 @@ public class RecommendationServiceImpl implements RecommendationService {
 		);
 	}
 
-	private CardBenefitScoreDto toDto(RecommendationCardCandidateVO candidate, Mode1Result result) {
+	private CardBenefitScoreDto toDto(
+		RecommendationCardCandidateVO candidate,
+		Mode1Result result,
+		String categoryCode,
+		String categoryName,
+		long typicalAmount,
+		Map<Long, Map<String, Long>> spendHistoryByCard
+	) {
+		Mode2Result build = scoreBuild(candidate, categoryCode, categoryName, typicalAmount, spendHistoryByCard);
 		return CardBenefitScoreDto.builder()
 			.userCardId(candidate.getUserCardId())
 			.cardName(candidate.getCardName())
@@ -278,7 +292,58 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.discountAmount(result.discount())
 			.evaluatedAmount(result.amount())
 			.note(result.note())
+			.buildStatus(build.status().label())
+			.reachProbability(build.reachProbability())
+			.expectedValue(build.expectedValue())
+			.gapAmount(build.gapAmount())
+			.gainAmount(build.gainAmount())
+			.buildNote(build.note())
 			.build();
+	}
+
+	/**
+	 * 카드 한 장에 대해 모드 2를 평가한다. spendHistoryByCard는 이번 달을 포함해 최근
+	 * {@link #SPEND_HISTORY_MONTHS}개월치 실적 - 이번 달분은 currentMonthSpend로 따로 빼고,
+	 * 나머지 과거 완료된 달만 dailyRate/cv/hits 계산용 이력으로 넘긴다(Python CardState의
+	 * current_month_spend/spend_history 분리와 동일).
+	 */
+	private Mode2Result scoreBuild(
+		RecommendationCardCandidateVO candidate,
+		String categoryCode,
+		String categoryName,
+		long typicalAmount,
+		Map<Long, Map<String, Long>> spendHistoryByCard
+	) {
+		List<PerformanceTier> tiers = BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper);
+		Map<String, Long> allMonths =
+			spendHistoryByCard.getOrDefault(candidate.getUserCardId(), Collections.emptyMap());
+		String currentYearMonth = YearMonth.now().format(YEAR_MONTH_FORMATTER);
+		long currentMonthSpend = allMonths.getOrDefault(currentYearMonth, 0L);
+
+		Map<String, Long> pastHistory = allMonths.entrySet().stream()
+			.filter(e -> !e.getKey().equals(currentYearMonth))
+			.collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+		return BenefitEngine.evaluateBuild(
+			tiers, currentMonthSpend, categoryCode, categoryName, typicalAmount, pastHistory,
+			recommendationParamsLoader.params(), LocalDate.now()
+		);
+	}
+
+	/**
+	 * 이 유저의 활성 카드 전부에 대해 최근 {@link #SPEND_HISTORY_MONTHS}개월치 실적을 한 번에
+	 * 가져와 userCardId별로 묶는다(카드마다 따로 쿼리하지 않도록) - loadBenefitUsage와 같은 패턴.
+	 */
+	private Map<Long, Map<String, Long>> loadSpendHistory(Long userId) {
+		String fromYearMonth = YearMonth.now().minusMonths(SPEND_HISTORY_MONTHS - 1L).format(YEAR_MONTH_FORMATTER);
+		List<CardMonthlySpendVO> rows = recommendationMapper.findSpendHistoryForUser(userId, fromYearMonth);
+
+		Map<Long, Map<String, Long>> byCard = new HashMap<>();
+		for (CardMonthlySpendVO row : rows) {
+			byCard.computeIfAbsent(row.getUserCardId(), key -> new HashMap<>())
+				.put(row.getTargetYearMonth(), row.getTotalSpendingAmount() == null ? 0L : row.getTotalSpendingAmount());
+		}
+		return byCard;
 	}
 
 	/**

@@ -5,6 +5,7 @@ import java.util.List;
 import org.apache.ibatis.annotations.Param;
 
 import site.benepay.domain.recommendation.vo.BenefitUsageVO;
+import site.benepay.domain.recommendation.vo.CardMonthlySpendVO;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 import site.benepay.domain.recommendation.vo.RecommendationMerchantVO;
 
@@ -13,6 +14,16 @@ public interface RecommendationMapper {
 	List<RecommendationCardCandidateVO> findRecommendationCardCandidates(
 		@Param("userId") Long userId,
 		@Param("targetYearMonth") String targetYearMonth
+	);
+
+	/**
+	 * 모드 2(실적 채우기)용 - 이 유저의 활성 카드 전부에 대해 fromYearMonth부터 지금까지의
+	 * 월별 실적을 한 번에 가져온다(카드마다 따로 조회하지 않도록). 서비스 계층에서
+	 * userCardId별로 묶어 dailyRate/cv/hits 계산에 쓴다.
+	 */
+	List<CardMonthlySpendVO> findSpendHistoryForUser(
+		@Param("userId") Long userId,
+		@Param("fromYearMonth") String fromYearMonth
 	);
 
 	RecommendationMerchantVO findMerchantForRecommendation(

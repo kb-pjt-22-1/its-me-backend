@@ -30,6 +30,24 @@
         AND c.is_supported = TRUE
 
     </select>
+    <select id="findSpendHistoryForUser"
+            resultType="site.benepay.domain.recommendation.vo.CardMonthlySpendVO">
+
+        SELECT
+        cms.user_card_id AS userCardId,
+        cms.target_year_month AS targetYearMonth,
+        cms.total_spending_amount AS totalSpendingAmount
+        FROM card_monthly_status cms
+        INNER JOIN user_cards uc
+        ON uc.user_card_id = cms.user_card_id
+        WHERE uc.user_id = #{userId}
+        AND uc.status = 'ACTIVE'
+        AND uc.recommendation_enabled = TRUE
+        AND uc.deleted_at IS NULL
+        AND cms.target_year_month &gt;= #{fromYearMonth}
+
+    </select>
+
     <select id="findMerchantForRecommendation"
             resultType="site.benepay.domain.recommendation.vo.RecommendationMerchantVO">
 
