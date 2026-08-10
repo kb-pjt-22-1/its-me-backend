@@ -38,4 +38,19 @@ public class MerchantRecommendationResponseDto {
 			.recommended(false)
 			.build();
 	}
+
+	public static MerchantRecommendationResponseDto from(MerchantResponseDto merchant) {
+		return MerchantRecommendationResponseDto.builder()
+			.merchantId(merchant.getMerchantId())
+			.categoryCode(merchant.getCategoryCode())
+			.brandId(merchant.getBrandId())
+			.merchantCode(merchant.getMerchantCode())
+			.merchantName(merchant.getMerchantName())
+			.address(merchant.getAddress())
+			.latitude(merchant.getLatitude())
+			.longitude(merchant.getLongitude())
+			.phone(merchant.getPhone())
+			.recommended(false)
+			.build();
+	}
 }

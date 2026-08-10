@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -22,6 +23,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import site.benepay.common.exception.GlobalExceptionHandler;
 import site.benepay.common.exception.MerchantNotFoundException;
+import site.benepay.common.facade.Facade;
+import site.benepay.domain.merchant.dto.MerchantRecommendationResponseDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantService;
 
@@ -29,16 +32,20 @@ import site.benepay.domain.merchant.service.MerchantService;
 class MerchantControllerTest {
 
 	private static final Long MERCHANT_ID = 7L;
+	private static final Long USER_ID = 1L;
 
 	@Mock
 	private MerchantService merchantService;
+
+	@Mock
+	private Facade facade;
 
 	private MockMvc mockMvc;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@BeforeEach
 	void setUp() {
-		mockMvc = MockMvcBuilders.standaloneSetup(new MerchantController(merchantService))
+		mockMvc = MockMvcBuilders.standaloneSetup(new MerchantController(merchantService, facade))
 			.setControllerAdvice(new GlobalExceptionHandler())
 			.build();
 	}
@@ -106,5 +113,25 @@ class MerchantControllerTest {
 
 		mockMvc.perform(get("/api/v1/merchants/{merchantId}", MERCHANT_ID))
 			.andExpect(status().isNotFound());
+	}
+
+	// ---- GET /api/v1/merchants/recommendations ----
+	// standaloneSetup은 @AuthenticationPrincipal을 못 풀어주므로, 컨트롤러 메서드를 직접 호출한다
+	// (BookmarkControllerTest와 동일한 방식).
+
+	@Test
+	void getRecommendedMerchantsInBoundsAsksServiceThenFacadeAndReturnsFacadeResult() {
+		MerchantController controller = new MerchantController(merchantService, facade);
+		List<MerchantResponseDto> merchants = List.of(merchantResponse());
+		List<MerchantRecommendationResponseDto> recommended =
+			List.of(MerchantRecommendationResponseDto.from(merchantResponse()).toBuilder().recommended(true).build());
+		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null)).thenReturn(merchants);
+		when(facade.getRecommendedMerchants(USER_ID, merchants)).thenReturn(recommended);
+
+		ResponseEntity<List<MerchantRecommendationResponseDto>> response =
+			controller.getRecommendedMerchantsInBounds(USER_ID, 37.4, 127.0, 37.6, 127.2, null);
+
+		assertThat(response.getBody()).isEqualTo(recommended);
+		verify(facade).getRecommendedMerchants(USER_ID, merchants);
 	}
 }

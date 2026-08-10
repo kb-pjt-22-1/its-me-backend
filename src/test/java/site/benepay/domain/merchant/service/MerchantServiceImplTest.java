@@ -14,29 +14,23 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import site.benepay.common.exception.MerchantNotFoundException;
-import site.benepay.domain.merchant.dto.MerchantRecommendationResponseDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.mapper.MerchantMapper;
 import site.benepay.domain.merchant.vo.Merchant;
-import site.benepay.domain.recommendation.service.RecommendationService;
 
 @ExtendWith(MockitoExtension.class)
 class MerchantServiceImplTest {
 
 	private static final Long MERCHANT_ID = 7L;
-	private static final Long USER_ID = 1L;
 
 	@Mock
 	private MerchantMapper merchantMapper;
-
-	@Mock
-	private RecommendationService recommendationService;
 
 	private MerchantServiceImpl merchantService;
 
 	@BeforeEach
 	void setUp() {
-		merchantService = new MerchantServiceImpl(merchantMapper, recommendationService);
+		merchantService = new MerchantServiceImpl(merchantMapper);
 	}
 
 	private Merchant existingMerchant(String merchantCode) {
@@ -102,36 +96,35 @@ class MerchantServiceImplTest {
 			.isInstanceOf(MerchantNotFoundException.class);
 	}
 
-	// ---- getRecommendedMerchantsInBounds(userId, bounds, categoryCode) ----
+	// ---- getMerchants(bounds, categoryCode) ----
 
 	@Test
-	void getRecommendedMerchantsInBoundsSendsCandidatesToRecommendationServiceAndReturnsItsResult() {
+	void getMerchantsWithinBoundsQueriesMapperAndMapsResult() {
 		when(merchantMapper.findWithinBounds(37.4, 127.0, 37.6, 127.2, null))
 			.thenReturn(List.of(existingMerchant("M001")));
 
-		List<MerchantRecommendationResponseDto> marked =
-			List.of(MerchantRecommendationResponseDto.from(existingMerchant("M001")).toBuilder()
-				.recommended(true)
-				.build());
-		when(recommendationService.markRecommendedMerchants(eq(USER_ID), anyList())).thenReturn(marked);
+		List<MerchantResponseDto> result = merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null);
 
-		List<MerchantRecommendationResponseDto> result =
-			merchantService.getRecommendedMerchantsInBounds(USER_ID, 37.4, 127.0, 37.6, 127.2, null);
-
-		assertThat(result).isEqualTo(marked);
-		verify(recommendationService).markRecommendedMerchants(eq(USER_ID), argThat(candidates ->
-			candidates.size() == 1 && !candidates.get(0).isRecommended()
-		));
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getMerchantCode()).isEqualTo("M001");
+		verify(merchantMapper).findWithinBounds(37.4, 127.0, 37.6, 127.2, null);
 	}
 
 	@Test
-	void getRecommendedMerchantsInBoundsSkipsRecommendationServiceWhenNoCandidates() {
+	void getMerchantsWithinBoundsReturnsEmptyListWhenNoneInRange() {
 		when(merchantMapper.findWithinBounds(37.4, 127.0, 37.6, 127.2, null)).thenReturn(List.of());
 
-		List<MerchantRecommendationResponseDto> result =
-			merchantService.getRecommendedMerchantsInBounds(USER_ID, 37.4, 127.0, 37.6, 127.2, null);
+		assertThat(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null)).isEmpty();
+	}
 
-		assertThat(result).isEmpty();
-		verifyNoInteractions(recommendationService);
+	@Test
+	void getMerchantsWithinBoundsPassesCategoryCodeThroughToMapper() {
+		when(merchantMapper.findWithinBounds(37.4, 127.0, 37.6, 127.2, "5812"))
+			.thenReturn(List.of(existingMerchant("M001")));
+
+		List<MerchantResponseDto> result = merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, "5812");
+
+		assertThat(result).hasSize(1);
+		verify(merchantMapper).findWithinBounds(37.4, 127.0, 37.6, 127.2, "5812");
 	}
 }
