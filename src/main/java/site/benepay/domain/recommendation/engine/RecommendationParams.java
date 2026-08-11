@@ -1,6 +1,8 @@
 package site.benepay.domain.recommendation.engine;
 
+import java.util.Arrays;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * CsvProcessing/export_params.py 산출물(recommendation_params.json)의 런타임 표현.
@@ -35,6 +37,44 @@ public record RecommendationParams(
 				}
 			}
 			return total == 0 ? 1.0 : (double) hit / total;
+		}
+
+		// centers가 배열이라 record 기본 equals/hashCode는 내용이 아니라 참조를 비교한다
+		// (java:S6218) - 배열 내용을 비교하도록 직접 오버라이드한다. counts는 Map<String, long[]>라
+		// Map.equals()에 그냥 맡기면 long[] 값도 참조 비교가 되므로 항목별로 Arrays.equals를 돌린다.
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (!(o instanceof TicketHistogram other)) {
+				return false;
+			}
+			if (!Arrays.equals(centers, other.centers) || !counts.keySet().equals(other.counts.keySet())) {
+				return false;
+			}
+			for (Map.Entry<String, long[]> entry : counts.entrySet()) {
+				if (!Arrays.equals(entry.getValue(), other.counts.get(entry.getKey()))) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		@Override
+		public int hashCode() {
+			// counts는 순서 보장이 없는 Map이라, 항목 해시를 곱셈 누적이 아니라 합산해
+			// 순서와 무관하게 같은 값이 나오도록 한다(hashCode 계약: 같은 equals면 같은 hashCode).
+			int countsHash = 0;
+			for (Map.Entry<String, long[]> entry : counts.entrySet()) {
+				countsHash += Objects.hash(entry.getKey(), Arrays.hashCode(entry.getValue()));
+			}
+			return Objects.hash(Arrays.hashCode(centers), countsHash);
+		}
+
+		@Override
+		public String toString() {
+			return "TicketHistogram[centers=" + Arrays.toString(centers) + ", counts=" + counts + "]";
 		}
 	}
 
