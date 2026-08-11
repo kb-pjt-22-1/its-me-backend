@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
+import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
@@ -59,7 +60,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 			recommendationMapper.findMerchantForRecommendation(merchantId);
 
 		if (merchant == null) {
-			throw new IllegalArgumentException(
+			throw new MerchantNotFoundException(
 				"존재하지 않는 매장입니다."
 			);
 		}
@@ -114,8 +115,17 @@ public class RecommendationServiceImpl implements RecommendationService {
 		// 지갑 전체 여력(P_흐름 기준) - 매장마다 다시 합산하지 않도록 한 번만 계산해 재사용한다.
 		Map<String, Long> walletSpendHistory = aggregateWalletSpendHistory(heldCards);
 
+		// benefitsInfo JSON 파싱은 카드당 비용이 있으므로, 매장 수만큼 반복하지 않도록
+		// 카드별로 한 번만 파싱해 재사용한다(카드 M장 x 매장 N개가 아니라 M번만 파싱).
+		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers = heldCards.stream()
+			.collect(Collectors.toMap(
+				candidate -> candidate,
+				candidate -> BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper)
+			));
+
 		return merchants.stream()
-			.map(merchant -> toOptimalCardRecommendation(merchant, heldCards, categoryNames, walletSpendHistory))
+			.map(merchant -> toOptimalCardRecommendation(merchant, heldCards, categoryNames, walletSpendHistory,
+				parsedTiers))
 			.toList();
 	}
 
@@ -133,12 +143,13 @@ public class RecommendationServiceImpl implements RecommendationService {
 		MerchantResponseDto merchant,
 		List<RecommendationCardCandidateVO> heldCards,
 		Map<String, String> categoryNames,
-		Map<String, Long> walletSpendHistory
+		Map<String, Long> walletSpendHistory,
+		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers
 	) {
 		String categoryName = categoryNames.get(merchant.getCategoryCode());
 		Map.Entry<RecommendationCardCandidateVO, Mode3Result> best = categoryName == null
 			? null
-			: findBestCard(heldCards, merchant.getCategoryCode(), categoryName, walletSpendHistory);
+			: findBestCard(heldCards, merchant.getCategoryCode(), categoryName, walletSpendHistory, parsedTiers);
 
 		boolean benefitAvailable = best != null && best.getValue().total() > 0;
 
@@ -159,7 +170,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 		List<RecommendationCardCandidateVO> heldCards,
 		String categoryCode,
 		String categoryName,
-		Map<String, Long> walletSpendHistory
+		Map<String, Long> walletSpendHistory,
+		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers
 	) {
 		Long typicalAmount = recommendationParamsLoader.params().typicalPaymentAmount().get(categoryName);
 		if (typicalAmount == null || heldCards.isEmpty()) {
@@ -169,7 +181,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 		return heldCards.stream()
 			.map(candidate -> Map.entry(
 				candidate,
-				scorePriority(candidate, categoryCode, categoryName, typicalAmount, walletSpendHistory)
+				scorePriority(candidate, categoryCode, categoryName, typicalAmount, walletSpendHistory,
+					parsedTiers.get(candidate))
 			))
 			.max(Comparator.comparingDouble(e -> e.getValue().total()))
 			.orElse(null);
@@ -185,9 +198,9 @@ public class RecommendationServiceImpl implements RecommendationService {
 		String categoryCode,
 		String categoryName,
 		long typicalAmount,
-		Map<String, Long> walletSpendHistory
+		Map<String, Long> walletSpendHistory,
+		List<PerformanceTier> tiers
 	) {
-		List<PerformanceTier> tiers = BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper);
 		Map<String, Long> spendHistory =
 			candidate.getSpendHistory() == null ? Collections.emptyMap() : candidate.getSpendHistory();
 		long prevMonthSpend = spendHistory.isEmpty() ? 0L : spendHistory.get(Collections.max(spendHistory.keySet()));

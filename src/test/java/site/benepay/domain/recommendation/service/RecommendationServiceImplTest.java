@@ -1,8 +1,7 @@
 package site.benepay.domain.recommendation.service;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
@@ -17,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
@@ -70,7 +70,8 @@ class RecommendationServiceImplTest {
 	}
 
 	/** 단일 구간(다음 구간 없음) · 정률 혜택 하나짜리 카드. 다음 구간이 없어 future=0, total=now다. */
-	private static RecommendationCardCandidateVO candidate(Long userCardId, String cardName, String categoryCode, double rate) {
+	private static RecommendationCardCandidateVO candidate(Long userCardId, String cardName, String categoryCode,
+		double rate) {
 		return candidate(userCardId, cardName, categoryCode, rate, SOME_PAST_HISTORY, 0L);
 	}
 
@@ -350,7 +351,7 @@ class RecommendationServiceImplTest {
 		when(recommendationMapper.findMerchantForRecommendation(MERCHANT_ID)).thenReturn(null);
 
 		assertThatThrownBy(() -> recommendationService.getCardRecommendations(USER_ID, MERCHANT_ID))
-			.isInstanceOf(IllegalArgumentException.class)
+			.isInstanceOf(MerchantNotFoundException.class)
 			.hasMessage("존재하지 않는 매장입니다.");
 	}
 
