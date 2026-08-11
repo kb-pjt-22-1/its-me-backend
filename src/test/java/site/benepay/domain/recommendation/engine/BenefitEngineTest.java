@@ -10,14 +10,13 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * CsvProcessing/test_boundary.py의 65개 경계값 테스트 중 모드 1(즉시 할인)·모드 2(실적 채우기)
- * 관련 항목을 이식했다. 모드 3(우선순위 비교) 전용 테스트는 그 기능을 포팅할 때 같이 옮긴다.
+ * CsvProcessing/test_boundary.py의 65개 경계값 테스트 중 모드 3(우선순위 비교) 관련 항목을
+ * 이식했다 - 모드 1(즉시 할인)·모드 2(실적 채우기)는 삭제됐다(모드 3 하나로 대체).
  */
 class BenefitEngineTest {
 
 	private static final String CAFE = "5311";
-	private static final String MOVIE = "7832";
-	private static final String LEISURE = "7994";
+	private static final long TICKET = 10_000L;
 
 	private static final RecommendationParams TEST_PARAMS = new RecommendationParams(
 		Map.of(),
@@ -33,25 +32,17 @@ class BenefitEngineTest {
 
 	// ---------------------------------------------------------------- 헬퍼
 
-	private static Mode1Result evaluateNow(List<PerformanceTier> tiers, long prevMonthSpend, long typicalAmount) {
-		return evaluateNow(tiers, CAFE, prevMonthSpend, typicalAmount, Map.of());
-	}
-
-	private static Mode1Result evaluateNow(
-		List<PerformanceTier> tiers, long prevMonthSpend, long typicalAmount, Map<String, BenefitUsage> usage
+	private static Mode3Result evaluatePriority(
+		List<PerformanceTier> tiers, long currentMonthSpend, Map<String, Long> cardSpendHistory,
+		Map<String, Long> walletSpendHistory, LocalDate today, double beta
 	) {
-		return evaluateNow(tiers, CAFE, prevMonthSpend, typicalAmount, usage);
-	}
-
-	private static Mode1Result evaluateNow(
-		List<PerformanceTier> tiers, String categoryCode, long prevMonthSpend, long typicalAmount,
-		Map<String, BenefitUsage> usage
-	) {
-		return BenefitEngine.evaluateNow(tiers, prevMonthSpend, categoryCode, "카테고리", typicalAmount, usage, TEST_PARAMS);
-	}
-
-	private static Map<String, BenefitUsage> usageOf(String serviceName, long usedAmount) {
-		return Map.of(serviceName, new BenefitUsage(usedAmount, 0, 0));
+		long prevMonthSpend = cardSpendHistory.isEmpty()
+			? 0L
+			: cardSpendHistory.get(java.util.Collections.max(cardSpendHistory.keySet()));
+		return BenefitEngine.evaluatePriority(
+			tiers, prevMonthSpend, currentMonthSpend, CAFE, "카페", TICKET,
+			cardSpendHistory, walletSpendHistory, TEST_PARAMS, today, beta
+		);
 	}
 
 	/** 정률 혜택 하나짜리 카드. serviceName은 항상 "카페"(한도 소진 추적 키). */
@@ -70,220 +61,101 @@ class BenefitEngineTest {
 		return tiers;
 	}
 
-	private static List<PerformanceTier> countedCard(Integer annual, Integer monthly) {
-		BenefitNode b = new BenefitNode("정비 할인", "MERCHANT_BRAND", List.of(LEISURE), "CASHBACK_DISCOUNT",
-			0, 20_000L, 0L, 0L, 0, null, null, null, null, monthly, annual, List.of(), false, null);
-		return List.of(new PerformanceTier(null, null, 0, null, null, null, List.of(b)));
-	}
-
-	// ---------------------------------------------------------------- 구간 경계
-
-	@Test
-	void duplicateThresholdPicksTierWithBenefits() {
-		List<PerformanceTier> tiers = List.of(
-			new PerformanceTier(null, "빈 구간", 0, null, 0L, null, List.of()),
-			new PerformanceTier(null, "혜택 구간", 0, null, null, null,
-				List.of(rateBenefit(CAFE, 10, 5_000L, 0)))
+	private static List<PerformanceTier> twoTierCard(long secondThreshold, double rate1, double rate2) {
+		return List.of(
+			new PerformanceTier(null, "0구간", 0, null, null, null, List.of(rateBenefit(CAFE, rate1, null, 0))),
+			new PerformanceTier(null, "1구간", secondThreshold, null, null, null, List.of(rateBenefit(CAFE, rate2, null, 0)))
 		);
-		PerformanceTier active = BenefitEngine.activeTier(tiers, 500_000);
-		assertThat(active.tierName()).isEqualTo("혜택 구간");
+	}
+
+	// ---------------------------------------------------------------- 모드 3
+
+	/**
+	 * '혜택 높지만 실적 어려운 카드'(highHard) vs '혜택 낮지만 실적 쉬운 카드'(lowEasy).
+	 * 둘 다 0원 구간이 곧 지금 받는 혜택이라 activeTier는 항상 이 구간이다. highHard는
+	 * 다음 구간이 500만원 위(사실상 도달 불가), lowEasy는 5천원 위(거의 확실).
+	 */
+	private static List<PerformanceTier> highHardCard() {
+		return twoTierCard(5_000_000, 10, 12);
+	}
+
+	private static List<PerformanceTier> lowEasyCard() {
+		return twoTierCard(5_000, 2, 15);
+	}
+
+	// 두 gap 모두 못 넘는 값 -> P_이력 조건이 같아진다.
+	private static final Map<String, Long> SHARED_CARD_HISTORY = Map.of("202512", 3_000L);
+	private static final Map<String, Long> SHARED_WALLET_HISTORY = Map.of("202511", 600_000L, "202512", 600_000L);
+	private static final LocalDate TODAY = LocalDate.of(2025, 12, 1);
+
+	@Test
+	void priorityNowFavorsHighRate() {
+		Mode3Result a = evaluatePriority(highHardCard(), 0, SHARED_CARD_HISTORY, SHARED_WALLET_HISTORY, TODAY, 1.0);
+		Mode3Result b = evaluatePriority(lowEasyCard(), 0, SHARED_CARD_HISTORY, SHARED_WALLET_HISTORY, TODAY, 1.0);
+
+		assertThat(a.now()).isGreaterThan(b.now() * 3);
 	}
 
 	@Test
-	void tierBoundaryOpensExactlyAtThreshold() {
-		List<PerformanceTier> tiers = oneTierCard(300_000, 10, null, 0, null);
+	void priorityRouteFavorsEasyGap() {
+		Mode3Result a = evaluatePriority(highHardCard(), 0, SHARED_CARD_HISTORY, SHARED_WALLET_HISTORY, TODAY, 1.0);
+		Mode3Result b = evaluatePriority(lowEasyCard(), 0, SHARED_CARD_HISTORY, SHARED_WALLET_HISTORY, TODAY, 1.0);
 
-		assertThat(evaluateNow(tiers, 300_000, 10_000).status()).isEqualTo(BenefitStatus.IMMEDIATE_DISCOUNT);
-		assertThat(evaluateNow(tiers, 299_999, 10_000).status()).isEqualTo(BenefitStatus.PERFORMANCE_INSUFFICIENT);
-	}
-
-	// ---------------------------------------------------------------- 한도 경계
-
-	@Test
-	void capBoundaryClampsDiscountToRemainingLimit() {
-		List<PerformanceTier> tiers = oneTierCard(0, 10, 1_000L, 0, null);
-
-		assertThat(evaluateNow(tiers, 500_000, 10_000, usageOf("카페", 0)).discount()).isEqualTo(1_000);
-		assertThat(evaluateNow(tiers, 500_000, 10_000, usageOf("카페", 500)).discount()).isEqualTo(500);
-
-		Mode1Result empty = evaluateNow(tiers, 500_000, 10_000, usageOf("카페", 1_000));
-		assertThat(empty.status()).isEqualTo(BenefitStatus.LIMIT_EXHAUSTED);
-		assertThat(empty.discount()).isZero();
-
-		Mode1Result over = evaluateNow(tiers, 500_000, 10_000, usageOf("카페", 1_500));
-		assertThat(over.status()).isEqualTo(BenefitStatus.LIMIT_EXHAUSTED);
-		assertThat(over.discount()).isZero();
+		assertThat(b.pRoute()).isGreaterThan(a.pRoute() * 5);
 	}
 
 	@Test
-	void totalLimitZeroBlocksAllDiscount() {
-		List<PerformanceTier> tiers = oneTierCard(0, 10, 5_000L, 0, 0L);
-		assertThat(evaluateNow(tiers, 500_000, 10_000).discount()).isZero();
-	}
+	void priorityTotalFlipsTheRanking() {
+		// 당장의 할인만 보면 A(highHard)가 압도적인데도, 다음 달 기대치를 합치면 B(lowEasy)가 앞선다.
+		Mode3Result a = evaluatePriority(highHardCard(), 0, SHARED_CARD_HISTORY, SHARED_WALLET_HISTORY, TODAY, 1.0);
+		Mode3Result b = evaluatePriority(lowEasyCard(), 0, SHARED_CARD_HISTORY, SHARED_WALLET_HISTORY, TODAY, 1.0);
 
-	// ---------------------------------------------------------------- 건당 최소결제
-
-	@Test
-	void minPaymentBoundary() {
-		List<PerformanceTier> tiers = oneTierCard(0, 10, 10_000L, 10_000, null);
-
-		assertThat(evaluateNow(tiers, 500_000, 10_000).status()).isEqualTo(BenefitStatus.IMMEDIATE_DISCOUNT);
-
-		Mode1Result below = evaluateNow(tiers, 500_000, 9_999);
-		assertThat(below.status()).isEqualTo(BenefitStatus.CONDITIONAL_DISCOUNT);
-		assertThat(below.amount()).isEqualTo(10_000);
-		assertThat(below.rate()).isCloseTo(0.10, within(1e-9));
-
-		Mode1Result above = evaluateNow(tiers, 500_000, 50_000);
-		assertThat(above.amount()).isEqualTo(50_000);
-		assertThat(above.status()).isEqualTo(BenefitStatus.IMMEDIATE_DISCOUNT);
+		assertThat(a.now()).isGreaterThan(b.now());
+		assertThat(b.total()).isGreaterThan(a.total());
 	}
 
 	@Test
-	void fixedRefundRateIsHighestAtMinimumPayment() {
-		BenefitNode movie = new BenefitNode("영화 할인", "MERCHANT_BRAND", List.of(MOVIE), "CASHBACK_DISCOUNT",
-			0, 4_000L, 0L, 0L, 15_000, null, null, null, null, null, null, List.of(), false, null);
-		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, null, 0, null, null, null, List.of(movie)));
+	void priorityBetaZeroReducesToNow() {
+		// beta=0이면 미래 성분을 아예 안 보므로 now만으로 줄 세운 것과 같아야 한다.
+		Mode3Result a = evaluatePriority(highHardCard(), 0, SHARED_CARD_HISTORY, SHARED_WALLET_HISTORY, TODAY, 0.0);
+		Mode3Result b = evaluatePriority(lowEasyCard(), 0, SHARED_CARD_HISTORY, SHARED_WALLET_HISTORY, TODAY, 0.0);
 
-		Mode1Result low = evaluateNow(tiers, MOVIE, 500_000, 5_000, Map.of());
-		assertThat(low.rate()).isCloseTo(4_000.0 / 15_000, within(1e-4));
-
-		Mode1Result high = evaluateNow(tiers, MOVIE, 500_000, 60_000, Map.of());
-		assertThat(high.rate()).isCloseTo(4_000.0 / 60_000, within(1e-4));
+		assertThat(a.total()).isCloseTo(a.now(), within(1e-6));
+		assertThat(b.total()).isCloseTo(b.now(), within(1e-6));
+		assertThat(a.total()).isGreaterThan(b.total());
 	}
 
 	@Test
-	void monthlyCapLowersEffectiveRateAndFlagsCapped() {
-		List<PerformanceTier> tiers = oneTierCard(0, 10, 10_000L, 0, null);
+	void priorityMaxTierHasNoFuture() {
+		// 이미 최고 구간이면 future=0, total=now.
+		List<PerformanceTier> tiers = oneTierCard(0, 10, null, 0, null);
 
-		Mode1Result capped = evaluateNow(tiers, 500_000, 10_000, usageOf("카페", 9_600));
-		assertThat(capped.discount()).isEqualTo(400);
-		assertThat(capped.rate()).isCloseTo(0.04, within(1e-9));
-		assertThat(capped.nominalRate()).isCloseTo(0.10, within(1e-9));
-		assertThat(capped.capped()).isTrue();
+		Mode3Result r = evaluatePriority(
+			tiers, 0, Map.of("202512", 500_000L), Map.of("202511", 500_000L, "202512", 500_000L), TODAY, 1.0
+		);
 
-		assertThat(evaluateNow(tiers, 500_000, 10_000).capped()).isFalse();
+		assertThat(r.future()).isZero();
+		assertThat(r.total()).isCloseTo(r.now(), within(1e-6));
 	}
 
 	@Test
-	void limitExhaustionFlipsRanking() {
-		List<PerformanceTier> highRateLowCap = oneTierCard(0, 50, 10_000L, 0, null);
-		List<PerformanceTier> lowRateHighCap = oneTierCard(0, 10, 50_000L, 0, null);
+	void noBenefitAnywhereReturnsBlankResult() {
+		List<PerformanceTier> tiers = List.of(
+			new PerformanceTier(null, "0구간", 0, null, null, null, List.of())
+		);
 
-		Mode1Result high = evaluateNow(highRateLowCap, 500_000, 10_000, usageOf("카페", 9_600));
-		Mode1Result low = evaluateNow(lowRateHighCap, 500_000, 10_000);
+		Mode3Result r = evaluatePriority(tiers, 0, Map.of(), Map.of(), TODAY, 1.0);
 
-		assertThat(low.rate()).isGreaterThan(high.rate());
-		assertThat(high.nominalRate()).isGreaterThan(low.nominalRate());
+		assertThat(r.now()).isZero();
+		assertThat(r.total()).isZero();
+		assertThat(r.note()).contains("혜택 자체가 없음");
 	}
 
 	@Test
-	void perTransactionCapFlipsRanking() {
-		BenefitNode bigRateSmallCap = new BenefitNode("영화 할인", "MERCHANT_BRAND", List.of(MOVIE), "CASHBACK_DISCOUNT",
-			35, 0L, 0L, 0L, 0, 20_000L, 7_000L, null, null, null, null, List.of(), false, null);
-		List<PerformanceTier> bigTiers = List.of(new PerformanceTier(null, null, 0, null, null, null, List.of(bigRateSmallCap)));
-
-		BenefitNode flatRate = new BenefitNode("영화관", "MERCHANT_CATEGORY", List.of(MOVIE), "STATEMENT_DISCOUNT",
-			15, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
-		List<PerformanceTier> flatTiers = List.of(new PerformanceTier(null, null, 0, null, null, null, List.of(flatRate)));
-
-		Mode1Result big = evaluateNow(bigTiers, MOVIE, 500_000, 63_490, Map.of());
-		Mode1Result flat = evaluateNow(flatTiers, MOVIE, 500_000, 63_490, Map.of());
-
-		assertThat(flat.rate()).isGreaterThan(big.rate());
-		assertThat(big.rate()).isCloseTo(7_000.0 / 63_490, within(1e-4));
-	}
-
-	// ---------------------------------------------------------------- 횟수 한도
-
-	@Test
-	void annualCountLimitBlocksAfterExhausted() {
-		List<PerformanceTier> tiers = countedCard(1, null);
-
-		Mode1Result fresh = evaluateNow(tiers, LEISURE, 500_000, 50_000, Map.of());
-		assertThat(fresh.status()).isEqualTo(BenefitStatus.IMMEDIATE_DISCOUNT);
-		assertThat(fresh.note()).contains("1회 남음");
-
-		Mode1Result spent = evaluateNow(tiers, LEISURE, 500_000, 50_000, Map.of("정비 할인", new BenefitUsage(0, 0, 1)));
-		assertThat(spent.status()).isEqualTo(BenefitStatus.COUNT_EXHAUSTED);
-		assertThat(spent.discount()).isZero();
-	}
-
-	@Test
-	void monthlyCountLimitBlocksAfterExhausted() {
-		List<PerformanceTier> tiers = countedCard(null, 2);
-
-		Mode1Result oneUsed = evaluateNow(tiers, LEISURE, 500_000, 50_000, Map.of("정비 할인", new BenefitUsage(0, 1, 0)));
-		assertThat(oneUsed.status()).isEqualTo(BenefitStatus.IMMEDIATE_DISCOUNT);
-
-		Mode1Result twoUsed = evaluateNow(tiers, LEISURE, 500_000, 50_000, Map.of("정비 할인", new BenefitUsage(0, 2, 0)));
-		assertThat(twoUsed.status()).isEqualTo(BenefitStatus.COUNT_EXHAUSTED);
-	}
-
-	@Test
-	void tighterCountLimitWins() {
-		List<PerformanceTier> tiers = countedCard(2, 5);
-		Mode1Result r = evaluateNow(tiers, LEISURE, 500_000, 50_000, Map.of("정비 할인", new BenefitUsage(0, 0, 2)));
-		assertThat(r.status()).isEqualTo(BenefitStatus.COUNT_EXHAUSTED);
-	}
-
-	// ---------------------------------------------------------------- 해외 가맹점
-
-	@Test
-	void overseasBenefitExcludedFromRealBenefits() {
-		BenefitNode overseas = new BenefitNode("해외 가맹점 할인", "ALL_MERCHANTS", List.of(), "STATEMENT_DISCOUNT",
-			2.0, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, "OVERSEAS");
-		BenefitNode domestic = new BenefitNode("국내 가맹점 할인", "ALL_MERCHANTS", List.of(), "STATEMENT_DISCOUNT",
-			1.0, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, "DOMESTIC");
-		PerformanceTier tier = new PerformanceTier(null, "기본", 0, null, null, null, List.of(domestic, overseas));
-
-		assertThat(tier.realBenefits()).extracting(BenefitNode::serviceName).containsExactly("국내 가맹점 할인");
-
-		Mode1Result r = evaluateNow(List.of(tier), CAFE, 500_000, 10_000, Map.of());
-		assertThat(r.rate()).isCloseTo(0.01, within(1e-9));
-	}
-
-	// ---------------------------------------------------------------- 할인율 vs 할인액
-
-	@Test
-	void higherRateWinsEvenWithSmallerAbsoluteDiscount() {
-		List<PerformanceTier> lowRateBig = oneTierCard(0, 2, 100_000L, 0, null);
-		List<PerformanceTier> highRateSmall = oneTierCard(0, 20, 100_000L, 3_000, null);
-
-		Mode1Result low = evaluateNow(lowRateBig, 500_000, 10_000);
-		Mode1Result high = evaluateNow(highRateSmall, 500_000, 10_000);
-
-		assertThat(high.rate()).isGreaterThan(low.rate());
-		assertThat(high.discount()).isGreaterThan(low.discount());
-	}
-
-	// ==================================================================== 모드 2
-
-	@Test
-	void buildGapBoundaryReturnsTopTierSecuredAtOrOverThreshold() {
-		List<PerformanceTier> tiers = oneTierCard(300_000, 10, null, 0, null);
-		LocalDate today = LocalDate.of(2026, 8, 15);
-
-		Mode2Result atThreshold = BenefitEngine.evaluateBuild(
-			tiers, 300_000, CAFE, "카페", 10_000, Map.of(), TEST_PARAMS, today);
-		assertThat(atThreshold.status()).isEqualTo(BuildStatus.TOP_TIER_SECURED);
-
-		Mode2Result overThreshold = BenefitEngine.evaluateBuild(
-			tiers, 400_000, CAFE, "카페", 10_000, Map.of(), TEST_PARAMS, today);
-		assertThat(overThreshold.status()).isEqualTo(BuildStatus.TOP_TIER_SECURED);
-	}
-
-	@Test
-	void noRemainingDaysPushesFlowProbabilityToTheFloor() {
-		List<PerformanceTier> tiers = oneTierCard(300_000, 10, null, 0, null);
-		LocalDate lastDayOfMonth = LocalDate.of(2026, 8, 31);
-
-		Mode2Result r = BenefitEngine.evaluateBuild(
-			tiers, 100_000, CAFE, "카페", 10_000, Map.of(), TEST_PARAMS, lastDayOfMonth);
-
-		assertThat(r.pFlow()).isCloseTo(TEST_PARAMS.constants().pFlowMin(), within(1e-9));
-		assertThat(r.reachProbability()).isBetween(0.0, 1.0);
-		assertThat(r.status()).isEqualTo(BuildStatus.HARD_TO_REACH);
+	void gapZeroMeansFullCertainty() {
+		BenefitEngine.FillProbability r =
+			BenefitEngine.fillProbability(0, testConstants().defaultCv(), 10.0, 0, 12, 12, testConstants());
+		assertThat(r.pFill()).isCloseTo(1.0, within(1e-9));
 	}
 
 	@Test
@@ -302,8 +174,27 @@ class BenefitEngineTest {
 		BenefitEngine.FillProbability shortHistory =
 			BenefitEngine.fillProbability(0, c.defaultCv(), 10.0, 300_000, 1, 1, c);
 		assertThat(shortHistory.pHist()).isLessThan(always.pHist());
+	}
 
-		BenefitEngine.FillProbability gapZero = BenefitEngine.fillProbability(0, c.defaultCv(), 10.0, 0, 12, 12, c);
-		assertThat(gapZero.pFill()).isCloseTo(1.0, within(1e-9));
+	@Test
+	void duplicateThresholdPicksTierWithBenefits() {
+		List<PerformanceTier> tiers = List.of(
+			new PerformanceTier(null, "빈 구간", 0, null, 0L, null, List.of()),
+			new PerformanceTier(null, "혜택 구간", 0, null, null, null,
+				List.of(rateBenefit(CAFE, 10, 5_000L, 0)))
+		);
+		PerformanceTier active = BenefitEngine.activeTier(tiers, 500_000);
+		assertThat(active.tierName()).isEqualTo("혜택 구간");
+	}
+
+	@Test
+	void overseasBenefitExcludedFromRealBenefits() {
+		BenefitNode overseas = new BenefitNode("해외 가맹점 할인", "ALL_MERCHANTS", List.of(), "STATEMENT_DISCOUNT",
+			2.0, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, "OVERSEAS");
+		BenefitNode domestic = new BenefitNode("국내 가맹점 할인", "ALL_MERCHANTS", List.of(), "STATEMENT_DISCOUNT",
+			1.0, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, "DOMESTIC");
+		PerformanceTier tier = new PerformanceTier(null, "기본", 0, null, null, null, List.of(domestic, overseas));
+
+		assertThat(tier.realBenefits()).extracting(BenefitNode::serviceName).containsExactly("국내 가맹점 할인");
 	}
 }

@@ -38,10 +38,11 @@ public class RecommendationController {
 	}
 
 	/*
-	 * 카테고리 검색 + bounds 기반 매장 추천(구 GET /categories/{categoryName}/cards)은
-	 * 매장 도메인이 (유저 아이디, 위치정보) 진입점에서 이벤트로 위임하는 구조로 대체됐다 -
-	 * MerchantRecommendationEventListener 참고. 추천 도메인은 더 이상 이 흐름의 HTTP 진입점을
-	 * 갖지 않는다.
+	 * 카테고리/매장 검색 기반 매장 추천(구 GET /categories/{categoryName}/cards)은 매장 도메인
+	 * -> 카드 도메인 -> 추천 도메인 순으로 위임하는 Facade({기능명}ProcessFacade, 다른 팀원
+	 * 작업)가 RecommendationService.recommendMerchants(...)를 직접 호출하는 구조로 대체됐다.
+	 * 추천 도메인은 더 이상 이 흐름의 HTTP 진입점을 갖지 않는다 - Facade를 호출하는 컨트롤러는
+	 * 매장/파이프라인 담당 팀원이 별도로 둔다.
 	 */
 
 	private Long getAuthenticatedUserId() {

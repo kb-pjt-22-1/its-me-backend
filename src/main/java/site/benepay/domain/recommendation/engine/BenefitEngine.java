@@ -3,22 +3,21 @@ package site.benepay.domain.recommendation.engine;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * 모드 1(즉시 할인)·모드 2(실적 채우기) 계산 엔진. CsvProcessing/benefits.py +
- * category_search.py를 포팅한 것 - 모드 3(우선순위 비교)은 여기 없다(다음 단계).
+ * 모드 3(우선순위 비교) 계산 엔진. CsvProcessing/benefits.py + category_search.py의
+ * evaluate_priority()/compare_priority()를 포팅한 것 - 모드 1(즉시 할인)·모드 2(실적
+ * 채우기)는 삭제됐다(모드 3 하나로 대체).
  *
- * <p>모드 1은 혜택마다 건당 최소 결제액이 다르므로 각 혜택을 자기 하한가격에서 평가하고,
- * 금액이 달라도 <b>할인율</b>로 비교한다(README "4. 모드 1"). 모드 2는 카테고리 하나로
- * 스코프를 좁혀 포팅했다 - Python 원본의 지갑 전체 allocate()/segmentShare 콜드스타트
- * 추정 대신, 이미 카테고리가 고정된 호출 맥락(카테고리 검색)에 맞춰 그 카테고리를 커버하는
- * 혜택 중 하나만 고르고, 월 지출 추정치는 recommendation-params.json의 통상결제액
- * (typicalPaymentAmount) 1건을 그대로 쓴다 - 실제 월 총 지출 데이터가 없어서다.</p>
+ * <p>"이미 혜택을 받고 있는 카드 두 장 중 어디에 이번 달 남은 지출을 몰아줄까"에 답한다.
+ * 이번 달 확정 이득(now)과 다음 달 확률적 기대 이득(future)을 같은 화폐 단위(원/월)로
+ * beta 가중 합산해 total을 낸다 - 카드 랭킹은 이 total 내림차순이다. 모드 2와 달리
+ * P_흐름(다음 구간 도달 확률)의 기준이 "이 카드의 평소 습관 지출"이 아니라 "지갑 전체의
+ * 남은 지출 여력"이다 - 의도적으로 몰아준다는 전제이기 때문이다.</p>
  */
 public final class BenefitEngine {
 
@@ -53,208 +52,10 @@ public final class BenefitEngine {
 		return b.discountRate() / 100.0;
 	}
 
-	public static Long effectiveMonthlyCap(BenefitNode b, double fuelPricePerLiter) {
-		if (b.monthlyDiscountLimit() != null) {
-			return b.monthlyDiscountLimit();
-		}
-		if (b.monthlyEligibleLimit() != null) {
-			return Math.round(b.monthlyEligibleLimit() * effectiveRate(b, false, fuelPricePerLiter));
-		}
-		if (b.discountAmount() > 0 && b.monthlyCountLimit() != null) {
-			return b.discountAmount() * b.monthlyCountLimit();
-		}
-		return null;
-	}
-
-	public static long evaluationAmount(BenefitNode b, long typicalAmount) {
-		return Math.max(b.minimumPaymentAmount(), typicalAmount);
-	}
-
-	public static double nominalPaymentDiscount(BenefitNode b, long amount, boolean weekend, double fuelPricePerLiter) {
-		if (b.minimumPaymentAmount() > 0 && amount < b.minimumPaymentAmount()) {
-			return 0.0;
-		}
-		if (b.discountAmount() > 0) {
-			return b.discountAmount();
-		}
-		return amount * effectiveRate(b, weekend, fuelPricePerLiter);
-	}
-
-	public static double paymentDiscount(BenefitNode b, long amount, Double remainingCap, boolean weekend, double fuelPricePerLiter) {
-		if (b.minimumPaymentAmount() > 0 && amount < b.minimumPaymentAmount()) {
-			return 0.0;
-		}
-		double eligible = amount;
-		if (b.maximumEligiblePerTransaction() != null) {
-			eligible = Math.min(eligible, b.maximumEligiblePerTransaction());
-		}
-		double discount = b.discountAmount() > 0 ? b.discountAmount() : eligible * effectiveRate(b, weekend, fuelPricePerLiter);
-		if (b.maximumDiscountPerTransaction() != null) {
-			discount = Math.min(discount, b.maximumDiscountPerTransaction());
-		}
-		if (remainingCap != null) {
-			discount = Math.min(discount, Math.max(0.0, remainingCap));
-		}
-		return discount;
-	}
-
-	private static Long remainingCap(BenefitNode b, BenefitUsage usage, double fuelPricePerLiter) {
-		Long cap = effectiveMonthlyCap(b, fuelPricePerLiter);
-		return cap == null ? null : cap - usage.usedAmount();
-	}
-
-	private record RemainingUses(int remaining, String label) {
-	}
-
-	private static RemainingUses remainingUses(BenefitNode b, BenefitUsage usage) {
-		RemainingUses tightest = null;
-		if (b.annualCountLimit() != null) {
-			tightest = new RemainingUses(b.annualCountLimit() - usage.usedCountYear(), "연 " + b.annualCountLimit() + "회");
-		}
-		if (b.monthlyCountLimit() != null) {
-			RemainingUses monthly = new RemainingUses(b.monthlyCountLimit() - usage.usedCountMonth(), "월 " + b.monthlyCountLimit() + "회");
-			if (tightest == null || monthly.remaining() < tightest.remaining()) {
-				tightest = monthly;
-			}
-		}
-		return tightest;
-	}
+	// ==================================================================== 다음 구간 / 기준선
 
 	/**
-	 * 구간 통합한도 잔액. 통합한도 소진액은 별도로 저장하지 않고, 이 구간에서
-	 * 통합한도에 포함되는(integratedLimitExcluded가 아닌) 혜택들의 이번 달
-	 * 소진액을 합산해서 구한다.
-	 */
-	private static Long remainingTotalCap(PerformanceTier tier, Map<String, BenefitUsage> usageByServiceName) {
-		Long cap = tier.combinedCap();
-		if (cap == null) {
-			return null;
-		}
-		long usedTotal = tier.realBenefits().stream()
-			.filter(b -> !b.integratedLimitExcluded())
-			.mapToLong(b -> usageByServiceName.getOrDefault(b.serviceName(), BenefitUsage.NONE).usedAmount())
-			.sum();
-		return cap - usedTotal;
-	}
-
-	private record BestCandidate(
-		BenefitNode benefit, long amount, double discount, double rate, Long left, RemainingUses uses, double nominalRate
-	) {
-	}
-
-	private record Blocked(BenefitStatus status, String note) {
-	}
-
-	/**
-	 * 지금 이 결제에서 받는 할인. tiers는 이 카드의 전체 구간(오름차순), prevMonthSpend는
-	 * 전월 실적 - 이 값으로 활성 구간이 정해진다. categoryCode는 매칭용(merchant_categories
-	 * 기준), categoryName은 typicalPaymentAmount/통과율 조회용(params.json 키).
-	 */
-	public static Mode1Result evaluateNow(
-		List<PerformanceTier> tiers,
-		long prevMonthSpend,
-		String categoryCode,
-		String categoryName,
-		long typicalAmount,
-		Map<String, BenefitUsage> usageByServiceName,
-		RecommendationParams params
-	) {
-		PerformanceTier active = activeTier(tiers, prevMonthSpend);
-		List<BenefitNode> covering = active.benefitsForCategory(categoryCode);
-
-		boolean hasAnywhere = tiers.stream().anyMatch(t -> !t.benefitsForCategory(categoryCode).isEmpty());
-		if (!hasAnywhere) {
-			return Mode1Result.blank(BenefitStatus.NO_BENEFIT, typicalAmount, "이 카테고리 혜택 자체가 없음");
-		}
-		if (covering.isEmpty()) {
-			long need = tiers.stream()
-				.filter(t -> !t.benefitsForCategory(categoryCode).isEmpty())
-				.mapToLong(PerformanceTier::minimumSpending)
-				.min()
-				.orElse(0L);
-			return Mode1Result.blank(BenefitStatus.PERFORMANCE_INSUFFICIENT, typicalAmount,
-				String.format("전월 실적 %,d원 < %,d원 구간", prevMonthSpend, need));
-		}
-
-		double fuelPricePerLiter = params.constants().fuelPricePerLiter();
-		Long totalLeft = remainingTotalCap(active, usageByServiceName);
-
-		BestCandidate best = null;
-		List<Blocked> blocked = new ArrayList<>();
-
-		for (BenefitNode benefit : covering) {
-			BenefitUsage usage = usageByServiceName.getOrDefault(benefit.serviceName(), BenefitUsage.NONE);
-
-			RemainingUses uses = remainingUses(benefit, usage);
-			if (uses != null && uses.remaining() <= 0) {
-				blocked.add(new Blocked(BenefitStatus.COUNT_EXHAUSTED,
-					benefit.serviceName() + " " + uses.label() + " 모두 사용"));
-				continue;
-			}
-
-			Long left = remainingCap(benefit, usage, fuelPricePerLiter);
-			if (left != null && left <= 0) {
-				blocked.add(new Blocked(BenefitStatus.LIMIT_EXHAUSTED, benefit.serviceName() + " 한도 소진"));
-				continue;
-			}
-
-			long amount = evaluationAmount(benefit, typicalAmount);
-			double nominal = nominalPaymentDiscount(benefit, amount, false, fuelPricePerLiter);
-			double discount = paymentDiscount(benefit, amount, left == null ? null : left.doubleValue(), false, fuelPricePerLiter);
-			if (totalLeft != null) {
-				discount = Math.min(discount, Math.max(0.0, totalLeft));
-			}
-			if (discount <= 0) {
-				continue;
-			}
-
-			double rate = discount / amount;
-			if (best == null || rate > best.rate()) {
-				best = new BestCandidate(benefit, amount, discount, rate, left, uses, amount == 0 ? 0.0 : nominal / amount);
-			}
-		}
-
-		if (best == null) {
-			Blocked chosen = blocked.isEmpty() ? new Blocked(BenefitStatus.LIMIT_EXHAUSTED, "적용 가능한 혜택 없음") : blocked.get(0);
-			return Mode1Result.blank(chosen.status(), typicalAmount, chosen.note());
-		}
-
-		return buildResult(best, typicalAmount, categoryName, params);
-	}
-
-	private static Mode1Result buildResult(BestCandidate best, long typicalAmount, String categoryName, RecommendationParams params) {
-		BenefitNode benefit = best.benefit();
-		StringBuilder note = new StringBuilder(benefit.serviceName())
-			.append(" · 잔여한도 ")
-			.append(best.left() == null ? "무제한" : String.format("%,d원", best.left()));
-
-		boolean capped = best.nominalRate() - best.rate() > 1e-9;
-		if (capped) {
-			note.insert(0, String.format("명목 %.1f%% → 한도로 %.1f%% · ", best.nominalRate() * 100, best.rate() * 100));
-		}
-		if (best.uses() != null) {
-			note.append(String.format(" · %s 중 %d회 남음", best.uses().label(), best.uses().remaining()));
-		}
-		if (!benefit.merchantNote().isEmpty()) {
-			note.append(" · ").append(benefit.merchantNote());
-		}
-
-		boolean conditional = best.amount() > typicalAmount;
-		if (conditional) {
-			double share = params.ticketHistogram().passRate(categoryName, benefit.minimumPaymentAmount());
-			note.append(String.format(" · 최소 %,d원 필요 (통상 %,d원, 이 업종 결제의 %.0f%%)",
-				benefit.minimumPaymentAmount(), typicalAmount, share * 100));
-		}
-
-		BenefitStatus status = conditional ? BenefitStatus.CONDITIONAL_DISCOUNT : BenefitStatus.IMMEDIATE_DISCOUNT;
-		return new Mode1Result(status, best.rate(), best.nominalRate(), capped,
-			Math.round(best.discount()), best.amount(), benefit, note.toString());
-	}
-
-	// ==================================================================== 모드 2
-
-	/**
-	 * 이번 달이 지금 끝난다면 다음 달에 적용될 구간. 모드 2의 비교 기준선이다.
+	 * 이번 달이 지금 끝난다면 다음 달에 적용될 구간. 모드 3의 gain 기준선이다.
 	 * 전월 실적으로 정해지는 activeTier와 헷갈리면 안 된다 - 로직은 같고 기준 금액만 다르다.
 	 */
 	public static PerformanceTier baselineTier(List<PerformanceTier> tiers, long currentMonthSpend) {
@@ -272,6 +73,8 @@ public final class BenefitEngine {
 			.min(Comparator.comparingLong(PerformanceTier::minimumSpending))
 			.orElse(null);
 	}
+
+	// ==================================================================== 확률
 
 	private static double erf(double x) {
 		// Abramowitz-Stegun 7.1.26 근사. 최대오차 1.5e-7 - 확률 추정 용도로는 충분하다.
@@ -306,7 +109,7 @@ public final class BenefitEngine {
 		return YearMonth.of(year, month).lengthOfMonth();
 	}
 
-	/** 카드에 월별로 찍힌 일평균 실적의 평균. 이력이 없으면 0. */
+	/** 월별로 찍힌 일평균 실적의 평균. 이력이 없으면 0. 카드 이력·지갑 이력 양쪽에 다 쓴다. */
 	private static double dailyRate(Map<String, Long> spendHistory) {
 		if (spendHistory.isEmpty()) {
 			return 0.0;
@@ -360,14 +163,19 @@ public final class BenefitEngine {
 	}
 
 	// package-private(테스트 전용): CsvProcessing의 test_boundary.py가 fill_probability를
-	// evaluate_build와 별개로 직접 테스트하므로, 여기서도 같은 격리 테스트가 가능하도록 연다.
+	// evaluate_priority와 별개로 직접 테스트하므로, 여기서도 같은 격리 테스트가 가능하도록 연다.
 	record FillProbability(double pFill, double pFlow, double pHist, double expectedMore) {
 	}
 
 	/**
-	 * 이번 달 이 카테고리 구간을 채울 확률. 두 증거(평소 페이스로 남은 기간에 gap을 넘을
-	 * 확률 P_흐름, 이 카드로 그 구간을 실제 넘겨온 비율 P_이력)를 로그오즈에서 합친다.
-	 * gap이 이미 0 이하면(구간을 이미 넘었으면) 전부 확실(1.0)로 본다.
+	 * 이번 달 이 카테고리 구간을 채울 확률. 두 증거(남은 기간에 gap을 넘을 확률 P_흐름,
+	 * 이 구간을 실제 넘겨온 비율 P_이력)를 로그오즈에서 합친다. gap이 이미 0 이하면
+	 * (구간을 이미 넘었으면) 전부 확실(1.0)로 본다.
+	 *
+	 * <p>dailyRate/cv는 P_흐름의 기준 - 모드 2라면 이 카드의 평소 습관 지출, 모드 3이라면
+	 * "의도적으로 몰아준다"는 전제라 지갑 전체의 남은 지출 여력을 넘긴다. hits/months는
+	 * 항상 이 카드 자체의 이력 기준이다(모드 2/3 공통 - P_이력은 습관이 아니라 실제로
+	 * 그 카드로 구간을 넘겨온 이력이라 카드 습관 지출로 바뀌지 않는다).</p>
 	 */
 	static FillProbability fillProbability(
 		double dailyRate, double cv, double remainingFactor, long gap, int hits, int months,
@@ -434,7 +242,8 @@ public final class BenefitEngine {
 	/**
 	 * 이 구간이 이 카테고리에서 주는 월 할인액 추정치. 이 카테고리를 커버하는 혜택이 여럿이면
 	 * (Python의 allocate()를 카테고리 하나로 단순화해) 이 지출로 가장 큰 할인을 주는 혜택
-	 * 하나만 고른다 - 같은 지출이 여러 혜택에 중복 계상되지 않는다.
+	 * 하나만 고른다 - 같은 지출이 여러 혜택에 중복 계상되지 않는다. 모드 3의 now(활성 구간)와
+	 * gain(다음/기준 구간 차이) 양쪽에서 재사용한다.
 	 */
 	private static long tierDiscountForCategory(
 		PerformanceTier tier, String categoryCode, String categoryName, long ticket, RecommendationParams params
@@ -458,61 +267,83 @@ public final class BenefitEngine {
 		return bestDiscount;
 	}
 
+	// ==================================================================== 모드 3
+
 	/**
-	 * 이 카드로 이 카테고리의 다음 구간을 여는 데 얼마나 기여하는지. tiers는 이 카드의 전체
-	 * 구간, currentMonthSpend는 이번 달 누적 실적(모드 1의 전월 실적과 다르다),
-	 * monthlySpendEstimate는 이 카테고리의 월 지출 추정치(통상결제액 1건), spendHistory는
-	 * 연월(yyyyMM) -> 그 달 총 실적 Map(오래된 -> 최신 순서 상관없음). today는 남은 일수
-	 * 계산 기준일(호출부에서 LocalDate.now()를 넘긴다).
+	 * 이번 달 남은 지출을 이 카드에 몰아줬을 때의 기대 총 가치(원/월).
+	 *
+	 * <ul>
+	 *   <li>now - 이번 달 확정 구간(activeTier)에서 이 카테고리 지출 전체에 대한 예상 월
+	 *       할인 총액(tierDiscountForCategory 재사용 - 모드 2의 gain과 같은 재료).</li>
+	 *   <li>future - 다음 구간까지 gap을 채울 확률(walletSpendHistory 기준 P_흐름 × 이
+	 *       카드 자체 이력 기준 P_이력) × 구간이 열렸을 때 늘어나는 월 할인(gain).</li>
+	 *   <li>total - now + beta × future. beta=0이면 future를 아예 안 보므로 "이번 달
+	 *       확정 이득만으로 줄 세우기"(모드 1과 동일한 순위)로 되돌아간다.</li>
+	 * </ul>
+	 *
+	 * @param tiers 이 카드의 전체 구간(오름차순)
+	 * @param prevMonthSpend 전월 실적 - activeTier(now)를 정한다
+	 * @param currentMonthSpend 이번 달 누적 실적 - baselineTier/nextTier(gap, gain)를 정한다
+	 * @param categoryCode 매칭용(merchant_categories 기준)
+	 * @param categoryName typicalPaymentAmount/통과율 조회용(params.json 키)
+	 * @param typicalAmount 이 카테고리의 통상 결제액(ticket)
+	 * @param cardSpendHistory 이 카드의 과거 완료된 달 실적(yyyyMM -> 금액) - P_이력(hits/months)에 쓴다
+	 * @param walletSpendHistory 보유 카드 전체를 합산한 과거 완료된 달 실적 - P_흐름(daily_rate/cv)에 쓴다.
+	 *        "의도적으로 몰아준다"는 전제라 이 카드의 평소 습관이 아니라 지갑 전체 여력이 기준이다
+	 * @param today 남은 일수 계산 기준일(호출부에서 LocalDate.now()를 넘긴다)
+	 * @param beta 확정 이득과 확률적 기대 이득을 몇 대 몇으로 합산할지 정하는 가정값
 	 */
-	public static Mode2Result evaluateBuild(
+	public static Mode3Result evaluatePriority(
 		List<PerformanceTier> tiers,
+		long prevMonthSpend,
 		long currentMonthSpend,
 		String categoryCode,
 		String categoryName,
-		long monthlySpendEstimate,
-		Map<String, Long> spendHistory,
+		long typicalAmount,
+		Map<String, Long> cardSpendHistory,
+		Map<String, Long> walletSpendHistory,
 		RecommendationParams params,
-		LocalDate today
+		LocalDate today,
+		double beta
 	) {
 		boolean hasAnywhere = tiers.stream().anyMatch(t -> !t.benefitsForCategory(categoryCode).isEmpty());
 		if (!hasAnywhere) {
-			return Mode2Result.blank(BuildStatus.NO_BENEFIT, "이 카테고리 혜택 자체가 없음");
+			return Mode3Result.blank("이 카테고리 혜택 자체가 없음");
 		}
+
+		PerformanceTier active = activeTier(tiers, prevMonthSpend);
+		long now = tierDiscountForCategory(active, categoryCode, categoryName, typicalAmount, params);
 
 		PerformanceTier next = nextTier(tiers, currentMonthSpend, categoryCode);
 		if (next == null) {
-			return Mode2Result.blank(BuildStatus.TOP_TIER_SECURED, "이미 최고 구간이거나 더 열릴 구간이 없음");
+			return new Mode3Result(now, 0.0, 1.0, 1.0, 1.0, 0L, 0L, now,
+				"이미 최고 구간 확보 · 이번 달 확정 이득만 존재");
 		}
 
 		RecommendationParams.Constants constants = params.constants();
 		long gap = next.minimumSpending() - currentMonthSpend;
-		int months = spendHistory.size();
-		int hits = hits(spendHistory, next.minimumSpending());
+		double remainingFactor = remainingFactor(categoryName, params, today);
+		int hits = hits(cardSpendHistory, next.minimumSpending());
+		int months = cardSpendHistory.size();
 
 		FillProbability prob = fillProbability(
-			dailyRate(spendHistory), cv(spendHistory, constants), remainingFactor(categoryName, params, today),
-			gap, hits, months, constants
+			dailyRate(walletSpendHistory), cv(walletSpendHistory, constants), remainingFactor, gap, hits, months, constants
 		);
 
 		PerformanceTier baseline = baselineTier(tiers, currentMonthSpend);
-		long nextDiscount = tierDiscountForCategory(next, categoryCode, categoryName, monthlySpendEstimate, params);
+		long nextDiscount = tierDiscountForCategory(next, categoryCode, categoryName, typicalAmount, params);
 		long baselineDiscount =
-			tierDiscountForCategory(baseline, categoryCode, categoryName, monthlySpendEstimate, params);
+			tierDiscountForCategory(baseline, categoryCode, categoryName, typicalAmount, params);
 		long gain = nextDiscount - baselineDiscount;
 
-		double score = prob.pFill() * Math.max(0, gain);
-		BuildStatus status = prob.pFill() >= constants.buildReachThreshold()
-			? BuildStatus.TIER_UPGRADABLE
-			: BuildStatus.HARD_TO_REACH;
+		double future = prob.pFill() * Math.max(0, gain);
+		double total = now + beta * future;
 
-		String histLabel = months > 0 ? String.format("이력 %d/%d개월 충족", hits, months) : "이력 없음";
 		String note = String.format(
-			"%,d원까지 %,d원 부족 · 평소 페이스로 +%,.0f원 · 충족확률 %.0f%% · 열리면 월 %+,d원 · %s",
-			next.minimumSpending(), gap, prob.expectedMore(), prob.pFill() * 100, gain, histLabel
+			"이번 달 확정 %,d원 + 다음 달 기대 %,.0f원(성사확률 %.0f%% × 이득 %+,d원) = 총 %,.0f원",
+			now, future, prob.pFill() * 100, gain, total
 		);
 
-		return new Mode2Result(status, prob.pFill(), prob.pFlow(), prob.pHist(),
-			gap, gain, Math.round(score), hits, months, note);
+		return new Mode3Result(now, future, prob.pFill(), prob.pFlow(), prob.pHist(), gap, gain, total, note);
 	}
 }

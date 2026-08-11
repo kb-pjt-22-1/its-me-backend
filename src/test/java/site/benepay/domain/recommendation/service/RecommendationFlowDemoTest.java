@@ -1,13 +1,12 @@
 package site.benepay.domain.recommendation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,26 +16,26 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import site.benepay.common.event.MerchantRecommendationRequestedEvent;
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
 import site.benepay.domain.merchant.dto.NearbyMerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
-import site.benepay.domain.recommendation.listener.MerchantRecommendationEventListener;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 
 /**
- * 프론트 -> 백엔드 -> 프론트로 이어지는 추천 흐름을 실제 RecommendationServiceImpl +
- * MerchantRecommendationEventListener로 재현해서 눈으로 확인하기 위한 시나리오 테스트다.
+ * 프론트 -> 백엔드 -> 프론트로 이어지는 추천 흐름을 실제 RecommendationServiceImpl로 재현해서
+ * 눈으로 확인하기 위한 시나리오 테스트다.
  *
- * <p>"매장 도메인이 (유저 아이디 + 위치정보) 진입점에서 카드 도메인의 유저 보유 카드와 자신이
- * 조회한 위치 기반 매장 리스트를 모아 이벤트로 발행한다"는 것은 이 저장소 밖(다른 도메인)의
- * 일이라고 가정한다 - 여기서는 그 이벤트가 이미 만들어졌다고 보고, 추천 도메인의 리스너가 그
- * 이벤트를 받아서 "① BenefitEngine으로 매장마다 최적 카드 계산 -> ② 그 카드가 지금 당장
- * 혜택을 주는 매장만 필터링 -> ③ 결과를 이벤트에 채워 넣어(발행자가 이어서 프론트로 반환)"
- * 처리하는 부분만 격리해서 검증한다. 추천 파라미터는 실제 recommendation-params.json 원본을
+ * <p>"매장 도메인 -> 카드 도메인 -> 추천 도메인 순으로 위임하는 Facade({기능명}ProcessFacade)가
+ * 유저 정보 + 위치 기반 매장 리스트 + 카드 도메인의 유저 보유 카드(월별 실적 이력 포함)를 모아
+ * RecommendationService.recommendMerchants(...)를 직접 호출한다"는 파이프라인 자체(컨트롤러,
+ * Facade)는 다른 팀원 담당이라 이 저장소에서 만들지 않는다 - 여기서는 Facade가 그 데이터를
+ * 다 모아서 넘겨준 순간부터, 추천 도메인이 "① BenefitEngine.evaluatePriority()(모드 3: 결제
+ * 이력·지갑 전체 여력을 함께 고려)로 매장마다 최적 카드 계산 -> ② 총 기대 가치가 0보다 큰
+ * 매장만 benefitAvailable=true로 표시 -> ③ 매장을 걸러내지 않고 전달받은 매장 전부를 그대로
+ * 반환"하는 부분만 격리해서 검증한다. 추천 파라미터는 실제 recommendation-params.json 원본을
  * 그대로 읽어 쓴다(합성 데이터 아님) - 운영과 같은 통상결제액 기준으로 계산된다.
  */
 @ExtendWith(MockitoExtension.class)
@@ -52,15 +51,14 @@ class RecommendationFlowDemoTest {
 	@Mock
 	private MerchantCategoryService merchantCategoryService;
 
-	private MerchantRecommendationEventListener listener;
+	private RecommendationServiceImpl recommendationService;
 
 	@BeforeEach
 	void setUp() {
 		ObjectMapper objectMapper = new ObjectMapper();
-		RecommendationServiceImpl recommendationService = new RecommendationServiceImpl(
+		recommendationService = new RecommendationServiceImpl(
 			recommendationMapper, merchantCategoryService, objectMapper, realParamsLoader(objectMapper)
 		);
-		listener = new MerchantRecommendationEventListener(recommendationService);
 
 		when(merchantCategoryService.getCategoryList()).thenReturn(List.of(
 			MerchantCategoryResponseDto.builder().categoryCode(CAFE_CODE).categoryName("카페").build()
@@ -90,7 +88,8 @@ class RecommendationFlowDemoTest {
 		vo.setCardId(userCardId);
 		vo.setCardName(cardName);
 		vo.setCardImageUrl("https://cdn.benepay.com/cards/" + userCardId + ".png");
-		vo.setTotalSpendingAmount(420_000L);
+		vo.setSpendHistory(Map.of("202507", 420_000L));
+		vo.setCurrentMonthSpend(0L);
 		vo.setBenefitsInfo(String.format(
 			"{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
 				+ "{\"serviceName\":\"%s\",\"benefitType\":\"MERCHANT_CATEGORY\","
@@ -101,7 +100,7 @@ class RecommendationFlowDemoTest {
 		return vo;
 	}
 
-	/** 회원 42가 실제로 들고 있다고(카드 도메인 이벤트로 전달받았다고) 가정한 보유 카드 3장. */
+	/** 회원 42가 실제로 들고 있다고(카드 도메인이 Facade를 통해 전달했다고) 가정한 보유 카드 3장. */
 	private List<RecommendationCardCandidateVO> heldCards() {
 		return List.of(
 			card(1L, "청춘대로 톡톡카드", 50),
@@ -111,11 +110,11 @@ class RecommendationFlowDemoTest {
 	}
 
 	@Test
-	void merchantRecommendationRequestedFlow_eventDataToFrontendReadyResult() {
+	void facadeDelegatedFlow_userAndMerchantAndCardDataToFrontendReadyResult() {
 		System.out.println();
-		System.out.println("[1] (가정) 프론트 -> 매장 도메인: 유저 아이디 + 위치정보. 매장 도메인이 카드 도메인에게 "
-			+ "회원 " + USER_ID + "의 보유 카드를 받고, 자신은 위치 기반 매장 리스트를 조회한 뒤 "
-			+ "MerchantRecommendationRequestedEvent를 발행한다.");
+		System.out.println("[1] (가정) 프론트 -> 컨트롤러 -> {추천}ProcessFacade.processPipeline(request): "
+			+ "매장 도메인이 위치 기반 매장 리스트를 조회하고, 카드 도메인이 회원 " + USER_ID
+			+ "의 보유 카드 + 실적 정보를 붙여 추천 도메인에 한 번에 넘긴다.");
 		NearbyMerchantResponseDto cafeMerchant = NearbyMerchantResponseDto.builder()
 			.merchantId(501L)
 			.categoryCode(CAFE_CODE)
@@ -130,29 +129,34 @@ class RecommendationFlowDemoTest {
 			.latitude(BigDecimal.valueOf(37.557))
 			.longitude(BigDecimal.valueOf(126.926))
 			.build();
-		when(recommendationMapper.findYearlyBenefitUsage(anyLong(), anyInt())).thenReturn(List.of());
+		System.out.println("[2] 추천 도메인: Facade가 넘긴 유저 보유 카드 " + heldCards().size()
+			+ "장(월별 실적 이력 포함) + 매장 2개를 그대로 받는다 (직접 DB/다른 서비스 조회 없음)");
 
-		MerchantRecommendationRequestedEvent event = new MerchantRecommendationRequestedEvent(
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
 			USER_ID, heldCards(), List.of(cafeMerchant, otherCategoryMerchant)
 		);
 
-		System.out.println("[2] 추천 도메인 리스너: 이벤트에서 유저 보유 카드 " + heldCards().size()
-			+ "장 + 매장 " + event.getMerchants().size() + "개를 받는다 (직접 DB/다른 서비스 조회 없음)");
-
-		listener.handleMerchantRecommendationRequested(event);
-
-		System.out.println("[3] 리스너 -> RecommendationService.recommendMerchants: 매장마다 보유 카드 전체를 "
-			+ "BenefitEngine.evaluateNow()로 평가 -> 최적 카드가 즉시할인인 매장만 채택");
-		for (NearbyMerchantRecommendationResponseDto m : event.getResult()) {
-			System.out.printf("    - %-16s 추천카드=%-14s %s%n",
-				m.getMerchantName(), m.getRecommendedCardName(), m.getBenefitSummary());
+		System.out.println("[3] 추천 도메인: 매장마다 보유 카드 전체를 BenefitEngine.evaluatePriority()(모드 3)로 평가 -> "
+			+ "최적 카드의 총 기대 가치(이번 달 확정 + 다음 달 기대)가 0보다 크면 benefitAvailable=true로 표시 "
+			+ "(매장은 걸러내지 않고 전부 반환)");
+		for (NearbyMerchantRecommendationResponseDto m : result) {
+			System.out.printf("    - %-16s benefitAvailable=%-5s 추천카드=%-14s %s%n",
+				m.getMerchantName(), m.isBenefitAvailable(), m.getRecommendedCardName(), m.getBenefitSummary());
 		}
-		System.out.println("[4] 리스너: 계산 결과를 이벤트에 채워 넣는다 (event.completeWith) -> "
-			+ "발행한 매장 도메인이 이어서 프론트로 반환");
+		System.out.println("[4] 추천 도메인 -> Facade -> 프론트: 매장 리스트(추가 필드 benefitAvailable 포함)를 그대로 반환");
 
-		assertThat(event.getResult()).hasSize(1);
-		assertThat(event.getResult().get(0).getMerchantName()).isEqualTo("카페 트리 홍대점");
-		assertThat(event.getResult().get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
-		assertThat(event.getResult().get(0).getCategoryName()).isEqualTo("카페");
+		assertThat(result).hasSize(2);
+		assertThat(result).filteredOn(m -> m.getMerchantId().equals(501L))
+			.allSatisfy(m -> {
+				assertThat(m.getMerchantName()).isEqualTo("카페 트리 홍대점");
+				assertThat(m.isBenefitAvailable()).isTrue();
+				assertThat(m.getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
+				assertThat(m.getCategoryName()).isEqualTo("카페");
+			});
+		assertThat(result).filteredOn(m -> m.getMerchantId().equals(502L))
+			.allSatisfy(m -> {
+				assertThat(m.isBenefitAvailable()).isFalse();
+				assertThat(m.getRecommendedCardName()).isNull();
+			});
 	}
 }

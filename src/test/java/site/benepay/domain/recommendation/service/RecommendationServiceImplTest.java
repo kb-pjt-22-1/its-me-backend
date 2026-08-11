@@ -2,7 +2,6 @@ package site.benepay.domain.recommendation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -24,7 +23,6 @@ import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationRespon
 import site.benepay.domain.recommendation.engine.RecommendationParams;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
-import site.benepay.domain.recommendation.vo.BenefitUsageVO;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +32,7 @@ class RecommendationServiceImplTest {
 	private static final Long MERCHANT_ID = 100L;
 	private static final String CAFE_CODE = "5311";
 	private static final String CONVENIENCE_CODE = "5411";
+	private static final Map<String, Long> SOME_PAST_HISTORY = Map.of("202501", 100_000L);
 
 	@Mock
 	private RecommendationMapper recommendationMapper;
@@ -67,13 +66,20 @@ class RecommendationServiceImplTest {
 		return new RecommendationParams.Constants(1700.0, 0.35, 2.0, 0.25, 0.15, 0.05, 0.95, 0.2);
 	}
 
+	/** 단일 구간(다음 구간 없음) · 정률 혜택 하나짜리 카드. 다음 구간이 없어 future=0, total=now다. */
 	private static RecommendationCardCandidateVO candidate(Long userCardId, String cardName, String categoryCode, double rate) {
+		return candidate(userCardId, cardName, categoryCode, rate, SOME_PAST_HISTORY, 0L);
+	}
+
+	private static RecommendationCardCandidateVO candidate(
+		Long userCardId, String cardName, String categoryCode, double rate,
+		Map<String, Long> spendHistory, long currentMonthSpend
+	) {
 		RecommendationCardCandidateVO vo = new RecommendationCardCandidateVO();
 		vo.setUserCardId(userCardId);
 		vo.setCardId(userCardId);
 		vo.setCardName(cardName);
 		vo.setCardImageUrl("https://example.com/" + userCardId + ".png");
-		vo.setTotalSpendingAmount(500_000L);
 		vo.setBenefitsInfo(String.format(
 			"{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
 				+ "{\"serviceName\":\"%s\",\"benefitType\":\"MERCHANT_CATEGORY\","
@@ -81,25 +87,8 @@ class RecommendationServiceImplTest {
 				+ "\"discountRate\":%s,\"minimumPaymentAmount\":0}]}]}",
 			cardName, categoryCode, rate
 		));
-		return vo;
-	}
-
-	private static RecommendationCardCandidateVO candidateWithMinPayment(
-		Long userCardId, String cardName, String categoryCode, double rate, long minimumPaymentAmount
-	) {
-		RecommendationCardCandidateVO vo = new RecommendationCardCandidateVO();
-		vo.setUserCardId(userCardId);
-		vo.setCardId(userCardId);
-		vo.setCardName(cardName);
-		vo.setCardImageUrl("https://example.com/" + userCardId + ".png");
-		vo.setTotalSpendingAmount(500_000L);
-		vo.setBenefitsInfo(String.format(
-			"{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
-				+ "{\"serviceName\":\"%s\",\"benefitType\":\"MERCHANT_CATEGORY\","
-				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
-				+ "\"discountRate\":%s,\"minimumPaymentAmount\":%d}]}]}",
-			cardName, categoryCode, rate, minimumPaymentAmount
-		));
+		vo.setSpendHistory(spendHistory);
+		vo.setCurrentMonthSpend(currentMonthSpend);
 		return vo;
 	}
 
@@ -111,11 +100,6 @@ class RecommendationServiceImplTest {
 			.latitude(BigDecimal.valueOf(37.5))
 			.longitude(BigDecimal.valueOf(127.0))
 			.build();
-	}
-
-	private void stubNoUsage() {
-		when(recommendationMapper.findYearlyBenefitUsage(anyLong(), org.mockito.ArgumentMatchers.anyInt()))
-			.thenReturn(List.<BenefitUsageVO>of());
 	}
 
 	private void stubCafeCategory() {
@@ -132,10 +116,9 @@ class RecommendationServiceImplTest {
 	}
 
 	@Test
-	void includesMerchantWhenTheBestCardGivesAnImmediateDiscountNow() {
+	void includesMerchantWhenTheBestCardHasPositivePriorityValue() {
 		stubCafeCategory();
 		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
-		stubNoUsage();
 
 		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
 			USER_ID,
@@ -146,16 +129,16 @@ class RecommendationServiceImplTest {
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).getMerchantId()).isEqualTo(MERCHANT_ID);
 		assertThat(result.get(0).getCategoryName()).isEqualTo("카페");
+		assertThat(result.get(0).isBenefitAvailable()).isTrue();
 		assertThat(result.get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
 		assertThat(result.get(0).getBenefitSummary()).isNotBlank();
 		assertThat(result.get(0).getDistanceMeters()).isNull();
 	}
 
 	@Test
-	void picksTheHighestDiscountRateCardAmongMultipleHeldCards() {
+	void picksTheHighestTotalValueCardAmongMultipleHeldCards() {
 		stubCafeCategory();
 		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
-		stubNoUsage();
 
 		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
 			USER_ID,
@@ -172,43 +155,47 @@ class RecommendationServiceImplTest {
 	}
 
 	@Test
-	void excludesMerchantWhenTheBestCardOnlyOffersAConditionalDiscount() {
+	void marksMerchantUnavailableWhenNoCardHasAnyBenefitForTheCategory() {
 		stubCafeCategory();
 		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
-		stubNoUsage();
 
 		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
 			USER_ID,
-			List.of(candidateWithMinPayment(1L, "청춘대로 톡톡카드", CAFE_CODE, 50, 50_000L)),
+			List.of(candidate(1L, "전혀다른카드", "9999", 50)),
 			List.of(merchant(MERCHANT_ID, CAFE_CODE))
 		);
 
-		assertThat(result).isEmpty();
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).isBenefitAvailable()).isFalse();
+		assertThat(result.get(0).getRecommendedCardName()).isNull();
+		assertThat(result.get(0).getBenefitSummary()).isNull();
 	}
 
 	@Test
-	void excludesMerchantWhoseCategoryIsNotAnAnalyzedMajorCategory() {
+	void marksMerchantUnavailableWhenCategoryIsNotAnAnalyzedMajorCategory() {
 		stubCafeCategory();
 
 		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
 			USER_ID,
 			List.of(candidate(1L, "청춘대로 톡톡카드", CAFE_CODE, 50)),
-			List.of(merchant(MERCHANT_ID, "9999"))
+			List.of(merchant(MERCHANT_ID, "8888"))
 		);
 
-		assertThat(result).isEmpty();
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).isBenefitAvailable()).isFalse();
+		assertThat(result.get(0).getCategoryName()).isNull();
+		assertThat(result.get(0).getRecommendedCardName()).isNull();
 	}
 
 	@Test
 	void evaluatesEachMerchantAgainstItsOwnCategorySoOtherCategoriesAreNotHidden() {
-		// 지난 설계의 문제였던 "검색한 카테고리 밖 매장은 보이지 않음"이 해소됐는지 검증한다 -
-		// 카페 카드 하나, 편의점 카드 하나를 들고 있을 때 두 카테고리 매장이 bounds 안에 섞여
-		// 있으면 둘 다 각자의 카테고리 기준으로 평가되어 결과에 포함돼야 한다.
+		// 검색한 카테고리 밖 매장은 보이지 않던 지난 설계의 문제가 해소됐는지 검증한다 - 카페
+		// 카드 하나, 편의점 카드 하나를 들고 있을 때 두 카테고리 매장이 섞여 있으면 둘 다
+		// 각자의 카테고리 기준으로 평가되어 결과에 포함돼야 한다.
 		stubCafeAndConvenienceCategories();
 		when(recommendationParamsLoader.params()).thenReturn(
 			paramsWithTypicalAmounts(Map.of("카페", 10_000L, "편의점", 15_000L))
 		);
-		stubNoUsage();
 
 		Long cafeMerchantId = 501L;
 		Long convenienceMerchantId = 502L;
@@ -228,9 +215,11 @@ class RecommendationServiceImplTest {
 		assertThat(result).extracting(NearbyMerchantRecommendationResponseDto::getMerchantId)
 			.containsExactlyInAnyOrder(cafeMerchantId, convenienceMerchantId);
 		assertThat(result).filteredOn(m -> m.getMerchantId().equals(cafeMerchantId))
+			.allSatisfy(m -> assertThat(m.isBenefitAvailable()).isTrue())
 			.extracting(NearbyMerchantRecommendationResponseDto::getRecommendedCardName)
 			.containsExactly("카페카드");
 		assertThat(result).filteredOn(m -> m.getMerchantId().equals(convenienceMerchantId))
+			.allSatisfy(m -> assertThat(m.isBenefitAvailable()).isTrue())
 			.extracting(NearbyMerchantRecommendationResponseDto::getRecommendedCardName)
 			.containsExactly("편의점카드");
 	}
@@ -247,14 +236,19 @@ class RecommendationServiceImplTest {
 	}
 
 	@Test
-	void returnsEmptyListWhenUserHasNoHeldCards() {
+	void marksMerchantUnavailableWhenUserHasNoHeldCards() {
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
 		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
 			USER_ID,
 			List.of(),
 			List.of(merchant(MERCHANT_ID, CAFE_CODE))
 		);
 
-		assertThat(result).isEmpty();
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).isBenefitAvailable()).isFalse();
+		assertThat(result.get(0).getRecommendedCardName()).isNull();
 	}
 
 	@Test

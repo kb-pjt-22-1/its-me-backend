@@ -1,14 +1,11 @@
 package site.benepay.domain.recommendation.service;
 
-import java.time.Year;
-import java.time.YearMonth;
-import java.time.format.DateTimeFormatter;
+import java.time.LocalDate;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -25,13 +22,10 @@ import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponse
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.engine.BenefitEngine;
 import site.benepay.domain.recommendation.engine.BenefitJsonParser;
-import site.benepay.domain.recommendation.engine.BenefitStatus;
-import site.benepay.domain.recommendation.engine.BenefitUsage;
-import site.benepay.domain.recommendation.engine.Mode1Result;
+import site.benepay.domain.recommendation.engine.Mode3Result;
 import site.benepay.domain.recommendation.engine.PerformanceTier;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
-import site.benepay.domain.recommendation.vo.BenefitUsageVO;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 import site.benepay.domain.recommendation.vo.RecommendationMerchantVO;
 
@@ -40,8 +34,9 @@ import site.benepay.domain.recommendation.vo.RecommendationMerchantVO;
 @Transactional(readOnly = true)
 public class RecommendationServiceImpl implements RecommendationService {
 
-	private static final DateTimeFormatter YEAR_MONTH_FORMATTER =
-		DateTimeFormatter.ofPattern("yyyyMM");
+	// 이번 달 확정 이득(now)과 다음 달 확률적 기대 이득(future)을 1:1로 합산한다
+	// (CsvProcessing category_search.py의 evaluate_priority 기본값과 동일).
+	private static final double PRIORITY_BETA = 1.0;
 
 	private final RecommendationMapper recommendationMapper;
 	private final MerchantCategoryService merchantCategoryService;
@@ -77,15 +72,9 @@ public class RecommendationServiceImpl implements RecommendationService {
 		 * 팀원의 추천 알고리즘 구현이 완료되면
 		 * 아래와 같은 흐름으로 교체한다.
 		 *
-		 * List<RecommendationCardCandidateVO> candidates =
-		 *     recommendationMapper.findRecommendationCardCandidates(
-		 *         userId,
-		 *         getPreviousYearMonth()
-		 *     );
-		 *
 		 * List<CardBenefitComparisonResponseDto> cards =
 		 *     cardRecommendationAlgorithm.recommend(
-		 *         candidates,
+		 *         heldCards,
 		 *         merchant
 		 *     );
 		 *
@@ -112,7 +101,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 	) {
 		validateUserId(userId);
 
-		if (heldCards.isEmpty() || merchants.isEmpty()) {
+		if (merchants.isEmpty()) {
 			return Collections.emptyList();
 		}
 
@@ -124,130 +113,111 @@ public class RecommendationServiceImpl implements RecommendationService {
 				(first, ignored) -> first
 			));
 
+		// 지갑 전체 여력(P_흐름 기준) - 매장마다 다시 합산하지 않도록 한 번만 계산해 재사용한다.
+		Map<String, Long> walletSpendHistory = aggregateWalletSpendHistory(heldCards);
+
 		return merchants.stream()
-			.map(merchant -> toOptimalCardRecommendation(merchant, heldCards, categoryNames))
-			.flatMap(Optional::stream)
+			.map(merchant -> toOptimalCardRecommendation(merchant, heldCards, categoryNames, walletSpendHistory))
 			.collect(Collectors.toList());
 	}
 
 	/**
-	 * 매장 하나에 대해 사용자 보유 카드 중 최적 카드를 고르고(scoreAndRank 재사용), 그 카드가
-	 * 이 매장 카테고리에서 지금 당장(즉시할인) 혜택을 주는 경우에만 결과에 포함시킨다. 카테고리가
-	 * 추천 분석 대상(16개 대분류) 밖이면 이 매장은 건너뛴다. 전달받은 매장 리스트를 카테고리로
-	 * 미리 좁히지 않고 전부 평가하므로, 검색 카테고리 밖이라 혜택받을 수 있는 다른 매장을 놓치는
-	 * 문제가 없다. 위치 기반 조회라 거리 개념이 없어 distanceMeters는 항상 null이다.
+	 * 매장 하나에 대해 사용자 보유 카드 중 모드 3(우선순위) 기준 최적 카드를 고른다. 필터링해서
+	 * 매장을 걸러내지 않고 전달받은 매장 전부를 그대로 반환하되, 그 최적 카드의 total(이번 달
+	 * 확정 + beta × 다음 달 기대)이 0보다 큰 매장만 benefitAvailable=true로 표시하고
+	 * recommendedCardName/benefitSummary를 채운다 - 카테고리가 추천 분석 대상(16개 대분류)
+	 * 밖이거나 실질적 이득이 없으면 benefitAvailable=false로 나머지 필드는 비워 둔다. 전달받은
+	 * 매장 리스트를 카테고리로 미리 좁히지 않고 전부 평가하므로, 검색 카테고리 밖이라 혜택받을
+	 * 수 있는 다른 매장을 놓치는 문제가 없다. 위치 기반 조회라 거리 개념이 없어 distanceMeters는
+	 * 항상 null이다.
 	 */
-	private Optional<NearbyMerchantRecommendationResponseDto> toOptimalCardRecommendation(
+	private NearbyMerchantRecommendationResponseDto toOptimalCardRecommendation(
 		NearbyMerchantResponseDto merchant,
 		List<RecommendationCardCandidateVO> heldCards,
-		Map<String, String> categoryNames
+		Map<String, String> categoryNames,
+		Map<String, Long> walletSpendHistory
 	) {
 		String categoryName = categoryNames.get(merchant.getCategoryCode());
-		if (categoryName == null) {
-			return Optional.empty();
-		}
+		Map.Entry<RecommendationCardCandidateVO, Mode3Result> best = categoryName == null
+			? null
+			: findBestCard(heldCards, merchant.getCategoryCode(), categoryName, walletSpendHistory);
 
-		Long typicalAmount = recommendationParamsLoader.params().typicalPaymentAmount().get(categoryName);
-		if (typicalAmount == null) {
-			return Optional.empty();
-		}
+		boolean benefitAvailable = best != null && best.getValue().total() > 0;
 
-		List<Map.Entry<RecommendationCardCandidateVO, Mode1Result>> ranked =
-			scoreAndRank(heldCards, merchant.getCategoryCode(), categoryName, typicalAmount);
-
-		if (ranked.isEmpty()) {
-			return Optional.empty();
-		}
-
-		Map.Entry<RecommendationCardCandidateVO, Mode1Result> best = ranked.get(0);
-		if (best.getValue().status() != BenefitStatus.IMMEDIATE_DISCOUNT) {
-			return Optional.empty();
-		}
-
-		return Optional.of(
-			NearbyMerchantRecommendationResponseDto.builder()
-				.merchantId(merchant.getMerchantId())
-				.merchantName(merchant.getMerchantName())
-				.categoryName(categoryName)
-				.latitude(merchant.getLatitude() == null ? null : merchant.getLatitude().doubleValue())
-				.longitude(merchant.getLongitude() == null ? null : merchant.getLongitude().doubleValue())
-				.distanceMeters(null)
-				.benefitSummary(best.getValue().note())
-				.recommendedCardName(best.getKey().getCardName())
-				.build()
-		);
+		return NearbyMerchantRecommendationResponseDto.builder()
+			.merchantId(merchant.getMerchantId())
+			.merchantName(merchant.getMerchantName())
+			.categoryName(categoryName)
+			.latitude(merchant.getLatitude() == null ? null : merchant.getLatitude().doubleValue())
+			.longitude(merchant.getLongitude() == null ? null : merchant.getLongitude().doubleValue())
+			.distanceMeters(null)
+			.benefitAvailable(benefitAvailable)
+			.benefitSummary(benefitAvailable ? best.getValue().note() : null)
+			.recommendedCardName(benefitAvailable ? best.getKey().getCardName() : null)
+			.build();
 	}
 
-	/**
-	 * 카드 후보 전체를 이 카테고리 기준으로 평가해 상태(즉시할인 -> 조건부할인 -> ...) -> 할인율
-	 * 내림차순으로 정렬한다.
-	 */
-	private List<Map.Entry<RecommendationCardCandidateVO, Mode1Result>> scoreAndRank(
-		List<RecommendationCardCandidateVO> candidates,
+	private Map.Entry<RecommendationCardCandidateVO, Mode3Result> findBestCard(
+		List<RecommendationCardCandidateVO> heldCards,
 		String categoryCode,
 		String categoryName,
-		long typicalAmount
+		Map<String, Long> walletSpendHistory
 	) {
-		return candidates.stream()
-			.map(candidate -> Map.entry(candidate, scoreCandidate(candidate, categoryCode, categoryName, typicalAmount)))
-			.sorted(Comparator
-				.<Map.Entry<RecommendationCardCandidateVO, Mode1Result>>comparingInt(e -> e.getValue().status().ordinal())
-				.thenComparing(e -> -e.getValue().rate()))
-			.collect(Collectors.toList());
+		Long typicalAmount = recommendationParamsLoader.params().typicalPaymentAmount().get(categoryName);
+		if (typicalAmount == null || heldCards.isEmpty()) {
+			return null;
+		}
+
+		return heldCards.stream()
+			.map(candidate -> Map.entry(
+				candidate,
+				scorePriority(candidate, categoryCode, categoryName, typicalAmount, walletSpendHistory)
+			))
+			.max(Comparator.comparingDouble(e -> e.getValue().total()))
+			.orElse(null);
 	}
 
 	/**
-	 * 카드 한 장에 대해 모드 1을 평가한다.
+	 * 카드 한 장에 대해 모드 3을 평가한다. prevMonthSpend(activeTier 기준)는 이 카드
+	 * spendHistory의 가장 최신 달 값이고, currentMonthSpend(baselineTier/nextTier 기준)는
+	 * 진행 중인 이번 달 누적이다.
 	 */
-	private Mode1Result scoreCandidate(
+	private Mode3Result scorePriority(
 		RecommendationCardCandidateVO candidate,
 		String categoryCode,
 		String categoryName,
-		long typicalAmount
+		long typicalAmount,
+		Map<String, Long> walletSpendHistory
 	) {
 		List<PerformanceTier> tiers = BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper);
-		long prevMonthSpend = candidate.getTotalSpendingAmount() == null ? 0L : candidate.getTotalSpendingAmount();
-		Map<String, BenefitUsage> usage = loadBenefitUsage(candidate.getUserCardId());
+		Map<String, Long> spendHistory =
+			candidate.getSpendHistory() == null ? Collections.emptyMap() : candidate.getSpendHistory();
+		long prevMonthSpend = spendHistory.isEmpty() ? 0L : spendHistory.get(Collections.max(spendHistory.keySet()));
+		long currentMonthSpend = candidate.getCurrentMonthSpend() == null ? 0L : candidate.getCurrentMonthSpend();
 
-		return BenefitEngine.evaluateNow(
-			tiers, prevMonthSpend, categoryCode, categoryName, typicalAmount, usage, recommendationParamsLoader.params()
+		return BenefitEngine.evaluatePriority(
+			tiers, prevMonthSpend, currentMonthSpend, categoryCode, categoryName, typicalAmount,
+			spendHistory, walletSpendHistory, recommendationParamsLoader.params(), LocalDate.now(), PRIORITY_BETA
 		);
 	}
 
 	/**
-	 * 이 카드의 올해치 혜택 소진 현황을 조회해 이번 달(월 한도/월 횟수)·올해 누적(연 횟수)
-	 * 사용량으로 접는다. 지금은 결제 처리 기능이 없어 findYearlyBenefitUsage가 항상 빈
-	 * 리스트를 돌려주므로, 결과적으로 항상 "미사용"으로 계산된다(db/2026-08-07_card_benefit_monthly_usage.sql 참고).
+	 * 보유 카드 전체의 spendHistory를 월별로 합산해 "지갑 전체" 과거 실적 이력을 만든다.
+	 * 모드 3의 P_흐름(다음 구간 도달 확률)이 카드 습관이 아니라 지갑 전체 여력을 기준으로
+	 * 삼기 때문에 필요하다.
 	 */
-	private Map<String, BenefitUsage> loadBenefitUsage(Long userCardId) {
-		int year = Year.now().getValue();
-		String currentYearMonth = YearMonth.now().format(YEAR_MONTH_FORMATTER);
-
-		List<BenefitUsageVO> rows = recommendationMapper.findYearlyBenefitUsage(userCardId, year);
-		if (rows.isEmpty()) {
-			return Collections.emptyMap();
-		}
-
-		Map<String, Long> monthlyAmount = new HashMap<>();
-		Map<String, Integer> monthlyCount = new HashMap<>();
-		Map<String, Integer> yearlyCount = new HashMap<>();
-		for (BenefitUsageVO row : rows) {
-			yearlyCount.merge(row.getServiceName(), row.getUsedCount() == null ? 0 : row.getUsedCount(), Integer::sum);
-			if (currentYearMonth.equals(row.getTargetYearMonth())) {
-				monthlyAmount.put(row.getServiceName(), row.getUsedAmount() == null ? 0L : row.getUsedAmount());
-				monthlyCount.put(row.getServiceName(), row.getUsedCount() == null ? 0 : row.getUsedCount());
+	private Map<String, Long> aggregateWalletSpendHistory(List<RecommendationCardCandidateVO> heldCards) {
+		Map<String, Long> wallet = new HashMap<>();
+		for (RecommendationCardCandidateVO card : heldCards) {
+			Map<String, Long> history = card.getSpendHistory();
+			if (history == null) {
+				continue;
+			}
+			for (Map.Entry<String, Long> entry : history.entrySet()) {
+				wallet.merge(entry.getKey(), entry.getValue() == null ? 0L : entry.getValue(), Long::sum);
 			}
 		}
-
-		Map<String, BenefitUsage> usage = new HashMap<>();
-		for (String serviceName : yearlyCount.keySet()) {
-			usage.put(serviceName, new BenefitUsage(
-				monthlyAmount.getOrDefault(serviceName, 0L),
-				monthlyCount.getOrDefault(serviceName, 0),
-				yearlyCount.get(serviceName)
-			));
-		}
-		return usage;
+		return wallet;
 	}
 
 	private void validateUserId(Long userId) {

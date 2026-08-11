@@ -5,49 +5,6 @@
 
 <mapper namespace="site.benepay.domain.recommendation.mapper.RecommendationMapper">
 
-    <select id="findRecommendationCardCandidates"
-            resultType="site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO">
-
-        SELECT
-        uc.user_card_id AS userCardId,
-        c.card_id AS cardId,
-        c.card_name AS cardName,
-        c.card_image_url AS cardImageUrl,
-        c.benefits_info AS benefitsInfo,
-        cms.target_year_month AS targetYearMonth,
-        COALESCE(cms.total_spending_amount, 0)
-        AS totalSpendingAmount
-        FROM user_cards uc
-        INNER JOIN cards c
-        ON c.card_id = uc.card_id
-        LEFT JOIN card_monthly_status cms
-        ON cms.user_card_id = uc.user_card_id
-        AND cms.target_year_month = #{targetYearMonth}
-        WHERE uc.user_id = #{userId}
-        AND uc.status = 'ACTIVE'
-        AND uc.recommendation_enabled = TRUE
-        AND uc.deleted_at IS NULL
-        AND c.is_supported = TRUE
-
-    </select>
-    <select id="findSpendHistoryForUser"
-            resultType="site.benepay.domain.recommendation.vo.CardMonthlySpendVO">
-
-        SELECT
-        cms.user_card_id AS userCardId,
-        cms.target_year_month AS targetYearMonth,
-        cms.total_spending_amount AS totalSpendingAmount
-        FROM card_monthly_status cms
-        INNER JOIN user_cards uc
-        ON uc.user_card_id = cms.user_card_id
-        WHERE uc.user_id = #{userId}
-        AND uc.status = 'ACTIVE'
-        AND uc.recommendation_enabled = TRUE
-        AND uc.deleted_at IS NULL
-        AND cms.target_year_month &gt;= #{fromYearMonth}
-
-    </select>
-
     <select id="findMerchantForRecommendation"
             resultType="site.benepay.domain.recommendation.vo.RecommendationMerchantVO">
 
@@ -58,20 +15,6 @@
         m.brand_id AS brandId
         FROM merchants m
         WHERE m.merchant_id = #{merchantId}
-
-    </select>
-
-    <select id="findYearlyBenefitUsage"
-            resultType="site.benepay.domain.recommendation.vo.BenefitUsageVO">
-
-        SELECT
-        benefit_service_name AS serviceName,
-        target_year_month AS targetYearMonth,
-        used_amount AS usedAmount,
-        used_count AS usedCount
-        FROM card_benefit_monthly_usage
-        WHERE user_card_id = #{userCardId}
-        AND target_year = #{targetYear}
 
     </select>
 </mapper>
