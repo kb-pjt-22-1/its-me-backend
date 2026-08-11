@@ -2,6 +2,17 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="site.benepay.domain.payment.mapper.PaymentMapper">
 
+    <insert id="insertPayment" parameterType="site.benepay.domain.payment.vo.PaymentVO"
+            useGeneratedKeys="true" keyProperty="paymentId" keyColumn="payment_id">
+        INSERT INTO payments (
+            merchant_id, user_card_id, payment_time,
+            original_amount, discount_amount, final_amount, payment_status, payment_method
+        ) VALUES (
+                     #{merchantId}, #{userCardId}, #{paymentTime},
+                     #{originalAmount}, #{discountAmount}, #{finalAmount}, #{paymentStatus}, #{paymentMethod}
+                 )
+    </insert>
+
     <resultMap id="paymentHistoryResultMap" type="site.benepay.domain.payment.vo.PaymentHistoryVO">
         <id column="payment_id" property="paymentId" />
         <result column="merchant_name" property="merchantName" />
@@ -39,6 +50,44 @@
         <include refid="paymentHistoryJoins" />
         WHERE uc.user_id = #{userId}
         ORDER BY p.payment_time DESC
+    </select>
+
+    <resultMap id="userCardPaymentTokenResultMap" type="site.benepay.domain.payment.vo.UserCardPaymentTokenVO">
+        <id column="user_card_id" property="userCardId" />
+        <result column="payment_token" property="paymentToken" />
+        <result column="token_expiry_date" property="tokenExpiryDate" />
+    </resultMap>
+
+    <select id="findActiveCardPaymentToken" resultMap="userCardPaymentTokenResultMap">
+        SELECT user_card_id, payment_token, token_expiry_date
+        FROM user_cards
+        WHERE user_id = #{userId}
+          AND user_card_id = #{userCardId}
+          AND status = 'ACTIVE'
+          AND deleted_at IS NULL
+          AND token_expiry_date >= CURDATE()
+    </select>
+
+    <select id="findRandomMerchantId" resultType="java.lang.Long">
+        SELECT merchant_id
+        FROM merchants
+        ORDER BY RAND()
+            LIMIT 1
+    </select>
+
+    <update id="cancelApprovedPayment">
+        UPDATE payments p
+            JOIN user_cards uc ON uc.user_card_id = p.user_card_id
+            SET p.payment_status = 'CANCELED'
+        WHERE p.payment_id = #{paymentId}
+          AND uc.user_id = #{userId}
+          AND p.payment_status = 'APPROVED'
+    </update>
+
+    <select id="existsMerchant" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1 FROM merchants WHERE merchant_id = #{merchantId}
+        )
     </select>
 
 </mapper>

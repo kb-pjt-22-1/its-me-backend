@@ -1,10 +1,10 @@
 package site.benepay.domain.merchant.mapper;
 
-import site.benepay.domain.merchant.vo.MerchantBrand;
-
 import java.util.List;
+
+import site.benepay.domain.merchant.vo.MerchantBrand;
 
 public interface MerchantBrandMapper {
 
-    List<MerchantBrand> findAll();
+	List<MerchantBrand> findAll();
 }
