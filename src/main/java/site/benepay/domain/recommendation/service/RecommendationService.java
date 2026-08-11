@@ -2,7 +2,7 @@ package site.benepay.domain.recommendation.service;
 
 import java.util.List;
 
-import site.benepay.domain.merchant.dto.NearbyMerchantResponseDto;
+import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
@@ -40,6 +40,6 @@ public interface RecommendationService {
 	List<NearbyMerchantRecommendationResponseDto> recommendMerchants(
 		Long userId,
 		List<RecommendationCardCandidateVO> heldCards,
-		List<NearbyMerchantResponseDto> merchants
+		List<MerchantResponseDto> merchants
 	);
 }

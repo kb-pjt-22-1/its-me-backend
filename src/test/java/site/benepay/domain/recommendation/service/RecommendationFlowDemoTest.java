@@ -17,7 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
-import site.benepay.domain.merchant.dto.NearbyMerchantResponseDto;
+import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
@@ -115,14 +115,14 @@ class RecommendationFlowDemoTest {
 		System.out.println("[1] (가정) 프론트 -> 컨트롤러 -> {추천}ProcessFacade.processPipeline(request): "
 			+ "매장 도메인이 위치 기반 매장 리스트를 조회하고, 카드 도메인이 회원 " + USER_ID
 			+ "의 보유 카드 + 실적 정보를 붙여 추천 도메인에 한 번에 넘긴다.");
-		NearbyMerchantResponseDto cafeMerchant = NearbyMerchantResponseDto.builder()
+		MerchantResponseDto cafeMerchant = MerchantResponseDto.builder()
 			.merchantId(501L)
 			.categoryCode(CAFE_CODE)
 			.merchantName("카페 트리 홍대점")
 			.latitude(BigDecimal.valueOf(37.556))
 			.longitude(BigDecimal.valueOf(126.925))
 			.build();
-		NearbyMerchantResponseDto otherCategoryMerchant = NearbyMerchantResponseDto.builder()
+		MerchantResponseDto otherCategoryMerchant = MerchantResponseDto.builder()
 			.merchantId(502L)
 			.categoryCode("9999")
 			.merchantName("올리브영 홍대점")

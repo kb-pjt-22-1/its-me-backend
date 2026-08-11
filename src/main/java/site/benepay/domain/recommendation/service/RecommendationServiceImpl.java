@@ -16,7 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
-import site.benepay.domain.merchant.dto.NearbyMerchantResponseDto;
+import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
 import site.benepay.domain.recommendation.dto.CardBenefitComparisonResponseDto;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
@@ -95,7 +95,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 	public List<NearbyMerchantRecommendationResponseDto> recommendMerchants(
 		Long userId,
 		List<RecommendationCardCandidateVO> heldCards,
-		List<NearbyMerchantResponseDto> merchants
+		List<MerchantResponseDto> merchants
 	) {
 		validateUserId(userId);
 
@@ -130,7 +130,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 	 * 항상 null이다.
 	 */
 	private NearbyMerchantRecommendationResponseDto toOptimalCardRecommendation(
-		NearbyMerchantResponseDto merchant,
+		MerchantResponseDto merchant,
 		List<RecommendationCardCandidateVO> heldCards,
 		Map<String, String> categoryNames,
 		Map<String, Long> walletSpendHistory

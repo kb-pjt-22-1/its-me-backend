@@ -17,7 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
-import site.benepay.domain.merchant.dto.NearbyMerchantResponseDto;
+import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.engine.RecommendationParams;
@@ -92,8 +92,8 @@ class RecommendationServiceImplTest {
 		return vo;
 	}
 
-	private static NearbyMerchantResponseDto merchant(Long merchantId, String categoryCode) {
-		return NearbyMerchantResponseDto.builder()
+	private static MerchantResponseDto merchant(Long merchantId, String categoryCode) {
+		return MerchantResponseDto.builder()
 			.merchantId(merchantId)
 			.categoryCode(categoryCode)
 			.merchantName("스타벅스 강남점")
