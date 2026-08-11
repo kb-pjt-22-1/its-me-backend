@@ -13,6 +13,25 @@ sonar {
     property "sonar.projectKey", "kb-pjt-22-1_its-me-backend"
     property "sonar.organization", "kb-pjt-22-1"
     property "sonar.coverage.jacoco.xmlReportPaths", "${buildDir}/reports/jacoco/test/jacocoTestReport.xml"
+    // 로직 없이 필드/getter/builder만 있는 VO·DTO, MyBatis 매퍼 인터페이스(구현체는 XML),
+    // 단순 RuntimeException 서브클래스, 로깅/실행시간 측정용 AOP, 단순 이벤트 레코드,
+    // 분기 없는 Spring 부트스트랩/설정 클래스는 커버리지 대상에서 제외한다.
+    // (JacksonConfig/RedisConfig/WebConfig/SecurityConfig처럼 실제 로직이 있는 설정 클래스는 제외하지 않는다)
+    property "sonar.coverage.exclusions", [
+      "**/dto/**",
+      "**/vo/**",
+      "**/mapper/**",
+      "**/common/exception/*Exception.java",
+      "**/common/aop/**",
+      "**/common/event/**",
+      "**/common/config/DataSourceConfig.java",
+      "**/common/config/MyBatisConfig.java",
+      "**/common/config/RootConfig.java",
+      "**/common/config/WebAppInitializer.java",
+      "**/common/config/SecurityWebApplicationInitializer.java",
+      "**/common/config/PortOneProperties.java",
+      "**/auth/security/jwt/JwtProperties.java"
+    ].join(",")
   }
 }
 

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
+import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.mapper.MerchantMapper;
 
@@ -21,6 +22,14 @@ public class MerchantServiceImpl implements MerchantService {
 		return merchantMapper.findAll(categoryCode).stream()
 			.map(MerchantResponseDto::from)
 			.toList();
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public MerchantResponseDto getMerchant(Long merchantId) {
+		return merchantMapper.findByMerchantId(merchantId)
+			.map(MerchantResponseDto::from)
+			.orElseThrow(() -> new MerchantNotFoundException("존재하지 않는 매장입니다: " + merchantId));
 	}
 
 	@Override

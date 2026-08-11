@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.mapper.MerchantMapper;
 import site.benepay.domain.merchant.vo.Merchant;
@@ -72,6 +74,26 @@ class MerchantServiceImplTest {
 
 		assertThat(result).hasSize(1);
 		verify(merchantMapper).findAll("5812");
+	}
+
+	// ---- getMerchant(merchantId) ----
+
+	@Test
+	void getMerchantReturnsDtoWhenFound() {
+		when(merchantMapper.findByMerchantId(MERCHANT_ID)).thenReturn(Optional.of(existingMerchant("M001")));
+
+		MerchantResponseDto result = merchantService.getMerchant(MERCHANT_ID);
+
+		assertThat(result.getMerchantId()).isEqualTo(MERCHANT_ID);
+		assertThat(result.getMerchantCode()).isEqualTo("M001");
+	}
+
+	@Test
+	void getMerchantThrowsWhenNotFound() {
+		when(merchantMapper.findByMerchantId(MERCHANT_ID)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> merchantService.getMerchant(MERCHANT_ID))
+			.isInstanceOf(MerchantNotFoundException.class);
 	}
 
 	// ---- getMerchants(bounds, categoryCode) ----
