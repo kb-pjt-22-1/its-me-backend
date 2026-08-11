@@ -1,6 +1,7 @@
 package site.benepay.domain.recommendation.service;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -37,18 +38,15 @@ public class RecommendationServiceImpl implements RecommendationService {
 	// 이번 달 확정 이득(now)과 다음 달 확률적 기대 이득(future)을 1:1로 합산한다
 	// (CsvProcessing category_search.py의 evaluate_priority 기본값과 동일).
 	private static final double PRIORITY_BETA = 1.0;
+	// DB 커넥션의 serverTimezone(application.properties의 db.url)과 맞춘다 - UserServiceImpl과 동일 규약.
+	private static final ZoneId APP_ZONE = ZoneId.of("Asia/Seoul");
 
 	private final RecommendationMapper recommendationMapper;
 	private final MerchantCategoryService merchantCategoryService;
 	private final ObjectMapper objectMapper;
 	private final RecommendationParamsLoader recommendationParamsLoader;
 
-	/*
-	 * TODO: 다른 팀원의 카드 추천 알고리즘 구현이 완료되면 이 클래스에 주입한다.
-	 *
-	 * 예시:
-	 * private final CardBenefitRecommendationAlgorithm cardRecommendationAlgorithm;
-	 */
+	// TODO: 다른 팀원의 카드 추천 알고리즘 구현이 완료되면 이 클래스에 주입한다.
 
 	@Override
 	public MerchantCardRecommendationResponseDto getCardRecommendations(
@@ -118,7 +116,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 
 		return merchants.stream()
 			.map(merchant -> toOptimalCardRecommendation(merchant, heldCards, categoryNames, walletSpendHistory))
-			.collect(Collectors.toList());
+			.toList();
 	}
 
 	/**
@@ -197,7 +195,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 
 		return BenefitEngine.evaluatePriority(
 			tiers, prevMonthSpend, currentMonthSpend, categoryCode, categoryName, typicalAmount,
-			spendHistory, walletSpendHistory, recommendationParamsLoader.params(), LocalDate.now(), PRIORITY_BETA
+			spendHistory, walletSpendHistory, recommendationParamsLoader.params(), LocalDate.now(APP_ZONE),
+			PRIORITY_BETA
 		);
 	}
 
