@@ -10,6 +10,7 @@ import site.benepay.domain.card.vo.UserCardBenefitVO;
 import site.benepay.domain.card.vo.UserCardDetailVO;
 import site.benepay.domain.card.vo.UserCardListVO;
 import site.benepay.domain.card.vo.UserCardPerformanceVO;
+import site.benepay.domain.card.vo.UserCardVO;
 
 public interface CardMapper {
 
@@ -39,4 +40,14 @@ public interface CardMapper {
 	int addMonthlySpending(@Param("userCardId") Long userCardId, @Param("targetYearMonth") String targetYearMonth,
 		@Param("amount") BigDecimal amount
 	);
+
+	Optional<Long> findCardIdByIssuerProductCode(
+		@Param("issuerProductCode") String issuerProductCode
+	);
+
+	boolean existsPrimaryCardByUserId(
+		@Param("userId") Long userId
+	);
+
+	int insertUserCardIfAbsent(UserCardVO userCard);
 }
