@@ -19,6 +19,14 @@
         ORDER BY merchant_id DESC
     </select>
 
+    <!-- 매장 상세(핀 클릭) 조회 -->
+    <select id="findByMerchantId" resultType="site.benepay.domain.merchant.vo.Merchant">
+        SELECT
+        <include refid="merchantColumns"/>
+        FROM merchants
+        WHERE merchant_id = #{merchantId}
+    </select>
+
     <!-- 지도 화면(bounds) 사각형 범위 안의 매장만 반환 -->
     <select id="findWithinBounds" resultType="site.benepay.domain.merchant.vo.Merchant">
         SELECT

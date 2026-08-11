@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -21,6 +22,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import site.benepay.common.exception.GlobalExceptionHandler;
+import site.benepay.common.exception.MerchantNotFoundException;
+import site.benepay.common.facade.Facade;
+import site.benepay.domain.merchant.dto.MerchantRecommendationResponseDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantService;
 
@@ -28,16 +32,20 @@ import site.benepay.domain.merchant.service.MerchantService;
 class MerchantControllerTest {
 
 	private static final Long MERCHANT_ID = 7L;
+	private static final Long USER_ID = 1L;
 
 	@Mock
 	private MerchantService merchantService;
+
+	@Mock
+	private Facade facade;
 
 	private MockMvc mockMvc;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@BeforeEach
 	void setUp() {
-		mockMvc = MockMvcBuilders.standaloneSetup(new MerchantController(merchantService))
+		mockMvc = MockMvcBuilders.standaloneSetup(new MerchantController(merchantService, facade))
 			.setControllerAdvice(new GlobalExceptionHandler())
 			.build();
 	}
@@ -85,39 +93,45 @@ class MerchantControllerTest {
 		verify(merchantService).getMerchants("5812");
 	}
 
-	// ---- GET /api/v1/merchants/within-bounds ----
+	// ---- GET /api/v1/merchants/{merchantId} ----
 
 	@Test
-	void getMerchantsWithinBoundsReturnsOkWithBody() throws Exception {
-		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null))
-			.thenReturn(List.of(merchantResponse()));
+	void getMerchantReturnsOkWithBody() throws Exception {
+		when(merchantService.getMerchant(MERCHANT_ID)).thenReturn(merchantResponse());
 
-		MvcResult result = mockMvc.perform(get("/api/v1/merchants/within-bounds")
-				.param("swLat", "37.4")
-				.param("swLng", "127.0")
-				.param("neLat", "37.6")
-				.param("neLng", "127.2"))
+		MvcResult result = mockMvc.perform(get("/api/v1/merchants/{merchantId}", MERCHANT_ID))
 			.andExpect(status().isOk())
 			.andReturn();
 
 		JsonNode body = bodyOf(result);
-		assertThat(body.get(0).get("merchantId").asLong()).isEqualTo(MERCHANT_ID);
-		verify(merchantService).getMerchants(37.4, 127.0, 37.6, 127.2, null);
+		assertThat(body.get("merchantId").asLong()).isEqualTo(MERCHANT_ID);
 	}
 
 	@Test
-	void getMerchantsWithinBoundsPassesCategoryCodeWhenProvided() throws Exception {
-		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, "5812"))
-			.thenReturn(List.of(merchantResponse()));
+	void getMerchantReturnsNotFoundWhenMissing() throws Exception {
+		when(merchantService.getMerchant(MERCHANT_ID)).thenThrow(new MerchantNotFoundException("존재하지 않는 매장입니다: " + MERCHANT_ID));
 
-		mockMvc.perform(get("/api/v1/merchants/within-bounds")
-				.param("swLat", "37.4")
-				.param("swLng", "127.0")
-				.param("neLat", "37.6")
-				.param("neLng", "127.2")
-				.param("categoryCode", "5812"))
-			.andExpect(status().isOk());
+		mockMvc.perform(get("/api/v1/merchants/{merchantId}", MERCHANT_ID))
+			.andExpect(status().isNotFound());
+	}
 
-		verify(merchantService).getMerchants(37.4, 127.0, 37.6, 127.2, "5812");
+	// ---- GET /api/v1/merchants/recommendations ----
+	// standaloneSetup은 @AuthenticationPrincipal을 못 풀어주므로, 컨트롤러 메서드를 직접 호출한다
+	// (BookmarkControllerTest와 동일한 방식).
+
+	@Test
+	void getRecommendedMerchantsInBoundsAsksServiceThenFacadeAndReturnsFacadeResult() {
+		MerchantController controller = new MerchantController(merchantService, facade);
+		List<MerchantResponseDto> merchants = List.of(merchantResponse());
+		List<MerchantRecommendationResponseDto> recommended =
+			List.of(MerchantRecommendationResponseDto.from(merchantResponse()).toBuilder().recommended(true).build());
+		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null)).thenReturn(merchants);
+		when(facade.getRecommendedMerchants(USER_ID, merchants)).thenReturn(recommended);
+
+		ResponseEntity<List<MerchantRecommendationResponseDto>> response =
+			controller.getRecommendedMerchantsInBounds(USER_ID, 37.4, 127.0, 37.6, 127.2, null);
+
+		assertThat(response.getBody()).isEqualTo(recommended);
+		verify(facade).getRecommendedMerchants(USER_ID, merchants);
 	}
 }

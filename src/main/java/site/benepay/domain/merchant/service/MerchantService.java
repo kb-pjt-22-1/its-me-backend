@@ -8,5 +8,7 @@ public interface MerchantService {
 
 	List<MerchantResponseDto> getMerchants(String categoryCode);
 
+	MerchantResponseDto getMerchant(Long merchantId);
+
 	List<MerchantResponseDto> getMerchants(double swLat, double swLng, double neLat, double neLng, String categoryCode);
 }
