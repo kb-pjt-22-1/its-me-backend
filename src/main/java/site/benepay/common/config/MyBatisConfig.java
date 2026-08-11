@@ -15,7 +15,6 @@ import javax.sql.DataSource;
         "site.benepay.domain.user.mapper",
         "site.benepay.domain.card.mapper",
         "site.benepay.domain.merchant.mapper",
-        "site.benepay.domain.bookmark.mapper",
         "site.benepay.domain.payment.mapper",
         "site.benepay.domain.recommendation.mapper",
         "site.benepay.common.crypto.mapper"

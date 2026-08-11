@@ -3,70 +3,32 @@
 <mapper namespace="site.benepay.domain.merchant.mapper.MerchantMapper">
 
     <sql id="merchantColumns">
-        merchant_id, brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude, phone
+        merchant_id
+        , brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude, phone
     </sql>
 
-    <insert id="insert" parameterType="site.benepay.domain.merchant.vo.Merchant"
-            useGeneratedKeys="true" keyProperty="merchantId" keyColumn="merchant_id">
-        INSERT INTO merchants (brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude, phone)
-        VALUES (#{brandId}, #{categoryCode}, #{merchantCode}, #{merchantName}, #{address}, #{latitude}, #{longitude}, #{phone})
-    </insert>
-
-    <select id="findByMerchantId" resultType="site.benepay.domain.merchant.vo.Merchant">
-        SELECT <include refid="merchantColumns" />
-        FROM merchants
-        WHERE merchant_id = #{merchantId}
-    </select>
-
     <select id="findAll" resultType="site.benepay.domain.merchant.vo.Merchant">
-        SELECT <include refid="merchantColumns" />
+        SELECT
+        <include refid="merchantColumns"/>
         FROM merchants
+        <where>
+            <if test="categoryCode != null">
+                category_code = #{categoryCode}
+            </if>
+        </where>
         ORDER BY merchant_id DESC
     </select>
 
-    <!-- 반경 이내 매장만 가까운 순으로 반환 -->
-    <select id="findWithinRadius" resultType="site.benepay.domain.merchant.vo.MerchantNearbyVO">
-        SELECT merchant_id, brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude, phone, distance_meters
-        FROM (
-            SELECT <include refid="merchantColumns" />,
-                   6371000 * ACOS(
-                       COS(RADIANS(#{lat})) * COS(RADIANS(latitude)) * COS(RADIANS(longitude) - RADIANS(#{lng}))
-                       + SIN(RADIANS(#{lat})) * SIN(RADIANS(latitude))
-                   ) AS distance_meters
-            FROM merchants
-        ) AS merchants_with_distance
-        WHERE distance_meters &lt;= #{radiusMeters}
-        ORDER BY distance_meters ASC
-    </select>
-
-    <!-- 지도 화면 bounds(bbox) 안의 매장만 반환 - 거리 개념이 없어 distance_meters는 선택하지 않는다 -->
-    <select id="findWithinBounds" resultType="site.benepay.domain.merchant.vo.MerchantNearbyVO">
-        SELECT <include refid="merchantColumns" />
+    <!-- 지도 화면(bounds) 사각형 범위 안의 매장만 반환 -->
+    <select id="findWithinBounds" resultType="site.benepay.domain.merchant.vo.Merchant">
+        SELECT
+        <include refid="merchantColumns"/>
         FROM merchants
         WHERE latitude BETWEEN #{swLat} AND #{neLat}
-          AND longitude BETWEEN #{swLng} AND #{neLng}
-        ORDER BY merchant_name
+        AND longitude BETWEEN #{swLng} AND #{neLng}
+        <if test="categoryCode != null">
+            AND category_code = #{categoryCode}
+        </if>
     </select>
-
-    <select id="existsByMerchantCode" resultType="boolean">
-        SELECT EXISTS (SELECT 1 FROM merchants WHERE merchant_code = #{merchantCode})
-    </select>
-
-    <update id="update" parameterType="site.benepay.domain.merchant.vo.Merchant">
-        UPDATE merchants
-        SET brand_id = #{brandId},
-            category_code = #{categoryCode},
-            merchant_code = #{merchantCode},
-            merchant_name = #{merchantName},
-            address = #{address},
-            latitude = #{latitude},
-            longitude = #{longitude},
-            phone = #{phone}
-        WHERE merchant_id = #{merchantId}
-    </update>
-
-    <delete id="deleteByMerchantId">
-        DELETE FROM merchants WHERE merchant_id = #{merchantId}
-    </delete>
 
 </mapper>
