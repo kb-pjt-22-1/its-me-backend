@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -19,11 +20,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
+import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.engine.RecommendationParams;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
+import site.benepay.domain.recommendation.vo.RecommendationMerchantVO;
 
 @ExtendWith(MockitoExtension.class)
 class RecommendationServiceImplTest {
@@ -254,6 +257,126 @@ class RecommendationServiceImplTest {
 	@Test
 	void throwsWhenUserIdIsNull() {
 		assertThatThrownBy(() -> recommendationService.recommendMerchants(null, List.of(), List.of()))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("로그인 사용자 정보가 필요합니다.");
+	}
+
+	@Test
+	void includesMerchantsWithNullCoordinatesWithoutFailing() {
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+		MerchantResponseDto merchantWithoutCoordinates = MerchantResponseDto.builder()
+			.merchantId(MERCHANT_ID)
+			.categoryCode(CAFE_CODE)
+			.merchantName("좌표 없는 매장")
+			.build();
+
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(candidate(1L, "청춘대로 톡톡카드", CAFE_CODE, 50)),
+			List.of(merchantWithoutCoordinates)
+		);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getLatitude()).isNull();
+		assertThat(result.get(0).getLongitude()).isNull();
+	}
+
+	@Test
+	void treatsHeldCardWithNullSpendDataAsNoHistory() {
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+		RecommendationCardCandidateVO candidateWithoutSpendData =
+			candidate(1L, "청춘대로 톡톡카드", CAFE_CODE, 50, null, 0L);
+		candidateWithoutSpendData.setCurrentMonthSpend(null);
+
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(candidateWithoutSpendData),
+			List.of(merchant(MERCHANT_ID, CAFE_CODE))
+		);
+
+		// spendHistory/currentMonthSpend가 null이어도 0으로 취급해 예외 없이 단일 구간 카드의
+		// 즉시 혜택(전월 실적 0원이라도 0구간은 충족)을 정상적으로 계산해야 한다.
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).isBenefitAvailable()).isTrue();
+		assertThat(result.get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
+	}
+
+	@Test
+	void aggregatesWalletSpendHistorySkippingCardsWithNullHistoryAndNullMonthValues() {
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
+		RecommendationCardCandidateVO cardWithoutHistory = candidate(1L, "이력없는카드", CAFE_CODE, 5, null, 0L);
+		Map<String, Long> historyWithNullValue = new HashMap<>();
+		historyWithNullValue.put("202501", null);
+		historyWithNullValue.put("202502", 100_000L);
+		RecommendationCardCandidateVO cardWithNullMonthValue =
+			candidate(2L, "청춘대로 톡톡카드", CAFE_CODE, 50, historyWithNullValue, 0L);
+
+		// 지갑 합산 로직(aggregateWalletSpendHistory)이 null 이력·null 월값을 만나도 예외 없이
+		// 0원으로 처리하고 나머지 카드를 정상 평가하는지 검증한다.
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(cardWithoutHistory, cardWithNullMonthValue),
+			List.of(merchant(MERCHANT_ID, CAFE_CODE))
+		);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
+	}
+
+	@Test
+	void categoryNameLookupKeepsTheFirstEntryWhenCategoryCodesAreDuplicated() {
+		when(merchantCategoryService.getCategoryList()).thenReturn(List.of(
+			MerchantCategoryResponseDto.builder().categoryCode(CAFE_CODE).categoryName("카페").build(),
+			MerchantCategoryResponseDto.builder().categoryCode(CAFE_CODE).categoryName("카페(중복)").build()
+		));
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(candidate(1L, "청춘대로 톡톡카드", CAFE_CODE, 50)),
+			List.of(merchant(MERCHANT_ID, CAFE_CODE))
+		);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getCategoryName()).isEqualTo("카페");
+	}
+
+	@Test
+	void getCardRecommendationsThrowsWhenMerchantDoesNotExist() {
+		when(recommendationMapper.findMerchantForRecommendation(MERCHANT_ID)).thenReturn(null);
+
+		assertThatThrownBy(() -> recommendationService.getCardRecommendations(USER_ID, MERCHANT_ID))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("존재하지 않는 매장입니다.");
+	}
+
+	@Test
+	void getCardRecommendationsReturnsMerchantInfoWithEmptyCardsWhenMerchantExists() {
+		RecommendationMerchantVO merchant = new RecommendationMerchantVO();
+		merchant.setMerchantId(MERCHANT_ID);
+		merchant.setMerchantName("스타벅스 강남점");
+		merchant.setCategoryCode(CAFE_CODE);
+		merchant.setBrandId(9L);
+		when(recommendationMapper.findMerchantForRecommendation(MERCHANT_ID)).thenReturn(merchant);
+
+		MerchantCardRecommendationResponseDto response =
+			recommendationService.getCardRecommendations(USER_ID, MERCHANT_ID);
+
+		assertThat(response.getMerchantId()).isEqualTo(MERCHANT_ID);
+		assertThat(response.getMerchantName()).isEqualTo("스타벅스 강남점");
+		assertThat(response.getCategoryCode()).isEqualTo(CAFE_CODE);
+		assertThat(response.getBrandId()).isEqualTo(9L);
+		// 다른 팀원의 추천 알고리즘이 아직 연결되지 않아 카드 비교 결과는 항상 빈 목록이다.
+		assertThat(response.getCards()).isEmpty();
+	}
+
+	@Test
+	void getCardRecommendationsThrowsWhenUserIdIsNull() {
+		assertThatThrownBy(() -> recommendationService.getCardRecommendations(null, MERCHANT_ID))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("로그인 사용자 정보가 필요합니다.");
 	}
