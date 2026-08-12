@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import java.time.Year;
+import java.time.ZoneId;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +23,8 @@ class BenefitControllerTest {
 
 	private static final Long USER_ID = 1L;
 	private static final int BASE_YEAR = 2025;
+
+	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
 	@Mock
 	private BenefitService benefitService;
@@ -73,8 +76,7 @@ class BenefitControllerTest {
 
 	@Test
 	void getAnnualFeeBreakEvenDefaultsToTheCurrentYear() {
-		int currentYear =
-			Year.now().getValue();
+		int currentYear = Year.now(ZONE).getValue();
 
 		List<AnnualFeeBreakEvenResponseDto> serviceResult =
 			List.of();

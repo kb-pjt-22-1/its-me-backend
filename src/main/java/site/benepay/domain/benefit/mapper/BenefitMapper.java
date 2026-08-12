@@ -5,7 +5,7 @@ import java.util.List;
 
 import org.apache.ibatis.annotations.Param;
 
-import site.benepay.domain.benefit.vo.DailyBenefitAmountVO;
+import site.benepay.domain.benefit.dto.DailyBenefitAmountDto;
 import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
 
 public interface BenefitMapper {
@@ -18,7 +18,7 @@ public interface BenefitMapper {
 	 * @param endPaymentTime 조회 종료 시각, 해당 시각은 포함하지 않음
 	 * @return 카드별 일별 혜택 목록
 	 */
-	List<DailyBenefitAmountVO> findAnnualFeeBenefitsByUserId(
+	List<DailyBenefitAmountDto> findAnnualFeeBenefitsByUserId(
 		@Param("userId") Long userId,
 		@Param("startPaymentTime") LocalDateTime startPaymentTime,
 		@Param("endPaymentTime") LocalDateTime endPaymentTime

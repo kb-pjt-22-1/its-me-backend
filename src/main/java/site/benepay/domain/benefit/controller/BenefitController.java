@@ -1,6 +1,7 @@
 package site.benepay.domain.benefit.controller;
 
 import java.time.Year;
+import java.time.ZoneId;
 import java.util.List;
 
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,8 @@ public class BenefitController {
 
 	private final BenefitService benefitService;
 
+	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+
 	/**
 	 * 혜택 탭에서 사용할 카드별 연회비 본전 정보를 조회한다.
 	 *
@@ -35,9 +38,7 @@ public class BenefitController {
 		@RequestParam(required = false) Integer year
 	) {
 		int targetYear =
-			year == null
-				? Year.now().getValue()
-				: year;
+			year == null ? Year.now(ZONE).getValue() : year;
 
 		List<AnnualFeeBreakEvenResponseDto> response =
 			benefitService.getAnnualFeeBreakEven(

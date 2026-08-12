@@ -3,6 +3,7 @@ package site.benepay.domain.benefit.service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -14,12 +15,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
+import site.benepay.common.exception.InvalidBenefitPeriodException;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto.MonthlyBenefitDto;
+import site.benepay.domain.benefit.dto.DailyBenefitAmountDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto.CategoryBenefitDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
-import site.benepay.domain.benefit.vo.DailyBenefitAmountVO;
 import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
 
 @Service
@@ -29,12 +31,14 @@ public class BenefitServiceImpl implements BenefitService {
 
 	private final BenefitMapper benefitMapper;
 
+	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+
 	@Override
 	public List<AnnualFeeBreakEvenResponseDto> getAnnualFeeBreakEven(
 		Long userId,
 		int year
 	) {
-		LocalDateTime now = LocalDateTime.now();
+		LocalDateTime now = LocalDateTime.now(ZONE);
 
 		validateYear(year, now.getYear());
 
@@ -45,20 +49,20 @@ public class BenefitServiceImpl implements BenefitService {
 		LocalDateTime endPaymentTime =
 			calculateEndPaymentTime(year, now);
 
-		List<DailyBenefitAmountVO> rows =
+		List<DailyBenefitAmountDto> rows =
 			benefitMapper.findAnnualFeeBenefitsByUserId(
 				userId,
 				startPaymentTime,
 				endPaymentTime
 			);
 
-		Map<Long, List<DailyBenefitAmountVO>> rowsByUserCardId =
+		Map<Long, List<DailyBenefitAmountDto>> rowsByUserCardId =
 			groupByUserCardId(rows);
 
 		List<AnnualFeeBreakEvenResponseDto> responses =
 			new ArrayList<>();
 
-		for (List<DailyBenefitAmountVO> cardRows
+		for (List<DailyBenefitAmountDto> cardRows
 			: rowsByUserCardId.values()) {
 
 			responses.add(
@@ -79,13 +83,13 @@ public class BenefitServiceImpl implements BenefitService {
 	 * LinkedHashMap을 사용해 SQL에서 정렬한
 	 * 대표카드 우선순위를 그대로 유지한다.
 	 */
-	private Map<Long, List<DailyBenefitAmountVO>> groupByUserCardId(
-		List<DailyBenefitAmountVO> rows
+	private Map<Long, List<DailyBenefitAmountDto>> groupByUserCardId(
+		List<DailyBenefitAmountDto> rows
 	) {
-		Map<Long, List<DailyBenefitAmountVO>> groupedRows =
+		Map<Long, List<DailyBenefitAmountDto>> groupedRows =
 			new LinkedHashMap<>();
 
-		for (DailyBenefitAmountVO row : rows) {
+		for (DailyBenefitAmountDto row : rows) {
 			groupedRows
 				.computeIfAbsent(
 					row.getUserCardId(),
@@ -103,9 +107,9 @@ public class BenefitServiceImpl implements BenefitService {
 	private AnnualFeeBreakEvenResponseDto createResponse(
 		int year,
 		LocalDateTime now,
-		List<DailyBenefitAmountVO> cardRows
+		List<DailyBenefitAmountDto> cardRows
 	) {
-		DailyBenefitAmountVO card = cardRows.get(0);
+		DailyBenefitAmountDto card = cardRows.get(0);
 
 		long annualFee = card.getAnnualFee();
 		long accumulatedBenefit = 0L;
@@ -120,7 +124,7 @@ public class BenefitServiceImpl implements BenefitService {
 		 * 누적 혜택이 처음 연회비 이상이 된 날짜를
 		 * 본전 달성일로 사용할 수 있다.
 		 */
-		for (DailyBenefitAmountVO row : cardRows) {
+		for (DailyBenefitAmountDto row : cardRows) {
 			if (row.getBenefitDate() == null) {
 				continue;
 			}
@@ -248,12 +252,9 @@ public class BenefitServiceImpl implements BenefitService {
 	/**
 	 * 미래 연도나 지나치게 오래된 연도 조회를 막는다.
 	 */
-	private void validateYear(
-		int year,
-		int currentYear
-	) {
+	private void validateYear(int year, int currentYear) {
 		if (year < 2000 || year > currentYear) {
-			throw new IllegalArgumentException(
+			throw new InvalidBenefitPeriodException(
 				"year는 2000년부터 현재 연도 사이여야 합니다."
 			);
 		}

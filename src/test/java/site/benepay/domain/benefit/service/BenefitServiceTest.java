@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Year;
+import java.time.ZoneId;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -15,10 +16,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import site.benepay.common.exception.InvalidBenefitPeriodException;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto.MonthlyBenefitDto;
+import site.benepay.domain.benefit.dto.DailyBenefitAmountDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
-import site.benepay.domain.benefit.vo.DailyBenefitAmountVO;
 
 @ExtendWith(MockitoExtension.class)
 class BenefitServiceTest {
@@ -30,8 +32,8 @@ class BenefitServiceTest {
 	 * 현재 연도는 실행 시각에 따라 조회 종료 시각이 달라지므로,
 	 * 계산 테스트에서는 이전 연도를 사용한다.
 	 */
-	private static final int BASE_YEAR =
-		Year.now().getValue() - 1;
+	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+	private static final int BASE_YEAR = Year.now(ZONE).getValue() - 1;
 
 	@Mock
 	private BenefitMapper benefitMapper;
@@ -46,11 +48,11 @@ class BenefitServiceTest {
 	/**
 	 * 카드 한 장의 특정 날짜 혜택 조회 결과를 만든다.
 	 */
-	private DailyBenefitAmountVO benefitRow(
+	private DailyBenefitAmountDto benefitRow(
 		LocalDate benefitDate,
 		long dailyBenefitAmount
 	) {
-		DailyBenefitAmountVO row =
+		DailyBenefitAmountDto row =
 			createCardRow(USER_CARD_ID, 10_000L);
 
 		row.setBenefitDate(benefitDate);
@@ -64,12 +66,11 @@ class BenefitServiceTest {
 	/**
 	 * 공통 카드 정보를 가진 VO를 만든다.
 	 */
-	private DailyBenefitAmountVO createCardRow(
+	private DailyBenefitAmountDto createCardRow(
 		Long userCardId,
 		Long annualFee
 	) {
-		DailyBenefitAmountVO row =
-			new DailyBenefitAmountVO();
+		DailyBenefitAmountDto row = new DailyBenefitAmountDto();
 
 		row.setUserCardId(userCardId);
 		row.setCardId(userCardId + 1L);
@@ -93,7 +94,7 @@ class BenefitServiceTest {
 			LocalDate.of(BASE_YEAR + 1, 1, 1)
 				.atStartOfDay();
 
-		List<DailyBenefitAmountVO> rows = List.of(
+		List<DailyBenefitAmountDto> rows = List.of(
 			benefitRow(
 				LocalDate.of(BASE_YEAR, 1, 10),
 				4_000L
@@ -207,7 +208,7 @@ class BenefitServiceTest {
 			LocalDate.of(BASE_YEAR + 1, 1, 1)
 				.atStartOfDay();
 
-		List<DailyBenefitAmountVO> rows = List.of(
+		List<DailyBenefitAmountDto> rows = List.of(
 			benefitRow(
 				LocalDate.of(BASE_YEAR, 3, 10),
 				3_000L
@@ -254,7 +255,7 @@ class BenefitServiceTest {
 		 * LEFT JOIN 결과이므로 결제가 없는 카드도
 		 * 카드 정보가 담긴 한 행으로 조회될 수 있다.
 		 */
-		DailyBenefitAmountVO row =
+		DailyBenefitAmountDto row =
 			createCardRow(USER_CARD_ID, 10_000L);
 
 		row.setBenefitDate(null);
@@ -305,7 +306,7 @@ class BenefitServiceTest {
 			LocalDate.of(BASE_YEAR + 1, 1, 1)
 				.atStartOfDay();
 
-		DailyBenefitAmountVO firstCard =
+		DailyBenefitAmountDto firstCard =
 			createCardRow(100L, 10_000L);
 
 		firstCard.setBenefitDate(
@@ -315,7 +316,7 @@ class BenefitServiceTest {
 			BigDecimal.valueOf(2_000L)
 		);
 
-		DailyBenefitAmountVO secondCard =
+		DailyBenefitAmountDto secondCard =
 			createCardRow(200L, 15_000L);
 
 		secondCard.setBenefitDate(
@@ -388,7 +389,7 @@ class BenefitServiceTest {
 				1999
 			)
 		)
-			.isInstanceOf(IllegalArgumentException.class)
+			.isInstanceOf(InvalidBenefitPeriodException.class)
 			.hasMessage(
 				"year는 2000년부터 현재 연도 사이여야 합니다."
 			);
@@ -398,8 +399,7 @@ class BenefitServiceTest {
 
 	@Test
 	void getAnnualFeeBreakEvenThrowsWhenYearIsInTheFuture() {
-		int futureYear =
-			Year.now().getValue() + 1;
+		int futureYear = Year.now(ZONE).getValue() + 1;
 
 		assertThatThrownBy(
 			() -> benefitService.getAnnualFeeBreakEven(
@@ -407,7 +407,7 @@ class BenefitServiceTest {
 				futureYear
 			)
 		)
-			.isInstanceOf(IllegalArgumentException.class)
+			.isInstanceOf(InvalidBenefitPeriodException.class)
 			.hasMessage(
 				"year는 2000년부터 현재 연도 사이여야 합니다."
 			);

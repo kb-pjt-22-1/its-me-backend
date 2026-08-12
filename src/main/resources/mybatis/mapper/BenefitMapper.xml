@@ -6,7 +6,7 @@
 <mapper namespace="site.benepay.domain.benefit.mapper.BenefitMapper">
 
     <select id="findAnnualFeeBenefitsByUserId"
-            resultType="site.benepay.domain.benefit.vo.DailyBenefitAmountVO">
+            resultType="site.benepay.domain.benefit.dto.DailyBenefitAmountDto">
 
         SELECT uc.user_card_id AS userCardId,
         c.card_id AS cardId,

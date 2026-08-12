@@ -1,4 +1,4 @@
-package site.benepay.domain.benefit.vo;
+package site.benepay.domain.benefit.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -8,7 +8,7 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class DailyBenefitAmountVO {
+public class DailyBenefitAmountDto {
 
 	private Long userCardId;
 	private Long cardId;
