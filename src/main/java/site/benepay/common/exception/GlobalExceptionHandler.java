@@ -1,6 +1,11 @@
 package site.benepay.common.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+
+import javax.servlet.http.HttpServletRequest;
+
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -8,24 +13,22 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import javax.servlet.http.HttpServletRequest;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
-        String message = ex.getBindingResult().getFieldErrors().stream()
-            .findFirst()
-            .map(error -> error.getField() + ": " + error.getDefaultMessage())
-            .orElse("잘못된 요청입니다.");
-        return errorResponse(HttpStatus.BAD_REQUEST, message, request);
-    }
+	@ExceptionHandler(MethodArgumentNotValidException.class)
+	public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex,
+		HttpServletRequest request) {
+		String message = ex.getBindingResult().getFieldErrors().stream()
+			.findFirst()
+			.map(error -> error.getField() + ": " + error.getDefaultMessage())
+			.orElse("잘못된 요청입니다.");
+		return errorResponse(HttpStatus.BAD_REQUEST, message, request);
+	}
 
     @ExceptionHandler(DuplicateUserException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateUser(DuplicateUserException ex, HttpServletRequest request) {
@@ -57,20 +60,33 @@ public class GlobalExceptionHandler {
         return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
-    @ExceptionHandler(UserNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleUserNotFound(UserNotFoundException ex, HttpServletRequest request) {
-        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
-    }
+	@ExceptionHandler(UserNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handleUserNotFound(UserNotFoundException ex, HttpServletRequest request) {
+		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+	}
+
+	@ExceptionHandler(MerchantNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handleMerchantNotFound(MerchantNotFoundException ex,
+		HttpServletRequest request) {
+		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+	}
+
+	@ExceptionHandler(CategoryNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handleCategoryNotFound(CategoryNotFoundException ex,
+		HttpServletRequest request) {
+		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+	}
 
     @ExceptionHandler(PaymentNotFoundException.class)
     public ResponseEntity<ErrorResponse> handlePaymentNotFound(PaymentNotFoundException ex, HttpServletRequest request) {
         return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
-    @ExceptionHandler(PaymentTokenNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handlePaymentTokenNotFound(PaymentTokenNotFoundException ex, HttpServletRequest request) {
-        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
-    }
+	@ExceptionHandler(PaymentTokenNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handlePaymentTokenNotFound(PaymentTokenNotFoundException ex,
+		HttpServletRequest request) {
+		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+	}
 
     @ExceptionHandler(UserCardNotAvailableException.class)
     public ResponseEntity<ErrorResponse> handleUserCardNotAvailable(UserCardNotAvailableException ex, HttpServletRequest request) {
@@ -122,11 +138,6 @@ public class GlobalExceptionHandler {
         log.error("서버 오류", ex);
         return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "예상치 못한 서버 오류가 발생했습니다.", request);
     }
-
-	@ExceptionHandler(MerchantNotFoundException.class)
-	public ResponseEntity<ErrorResponse> handleMerchantNotFound(MerchantNotFoundException ex, HttpServletRequest request) {
-		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
-	}
 
     private static ResponseEntity<ErrorResponse> errorResponse(HttpStatus status, String message, HttpServletRequest request) {
         return ResponseEntity.status(status)
