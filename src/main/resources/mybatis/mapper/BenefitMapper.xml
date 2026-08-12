@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="site.benepay.domain.benefit.mapper.BenefitMapper">
+
+    <select id="findAnnualFeeBenefitsByUserId"
+            resultType="site.benepay.domain.benefit.vo.DailyBenefitAmountVO">
+
+        SELECT uc.user_card_id AS userCardId,
+        c.card_id AS cardId,
+        c.card_name AS cardName,
+        c.card_image_url AS cardImageUrl,
+        uc.pan_last4 AS panLast4,
+        c.annual_fee AS annualFee,
+        DATE(p.payment_time) AS benefitDate,
+        COALESCE(SUM(p.discount_amount), 0) AS dailyBenefitAmount
+        FROM user_cards uc
+        INNER JOIN cards c
+        ON c.card_id = uc.card_id
+        LEFT JOIN payments p
+        ON p.user_card_id = uc.user_card_id
+        AND p.payment_status = 'APPROVED'
+        AND p.payment_time &gt;= #{startPaymentTime}
+        AND p.payment_time &lt; #{endPaymentTime}
+        WHERE uc.user_id = #{userId}
+        AND uc.status = 'ACTIVE'
+        AND uc.deleted_at IS NULL
+        AND c.annual_fee &gt; 0
+        GROUP BY uc.user_card_id,
+        c.card_id,
+        c.card_name,
+        c.card_image_url,
+        uc.pan_last4,
+        c.annual_fee,
+        DATE(p.payment_time),
+        uc.is_primary,
+        uc.created_at
+        ORDER BY uc.is_primary DESC,
+        uc.created_at ASC,
+        benefitDate ASC
+
+    </select>
+
+</mapper>
