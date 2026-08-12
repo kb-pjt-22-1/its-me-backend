@@ -7,10 +7,13 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import site.benepay.common.exception.CardPerformanceUpdateException;
 import site.benepay.domain.card.mapper.CardMapper;
 import site.benepay.domain.payment.event.PaymentApprovedEvent;
 import site.benepay.domain.payment.event.PaymentCanceledEvent;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class CardPerformanceEventHandler {
@@ -22,8 +25,7 @@ public class CardPerformanceEventHandler {
 
 	@EventListener
 	public void handlePaymentApproved(PaymentApprovedEvent event) {
-		String targetYearMonth = event.approvedAt()
-			.format(YEAR_MONTH_FORMATTER);
+		String targetYearMonth = toYearMonth(event.approvedAt());
 
 		int affectedRows = cardMapper.addMonthlySpending(
 			event.userCardId(),
@@ -32,7 +34,7 @@ public class CardPerformanceEventHandler {
 		);
 
 		if (affectedRows < 1) {
-			throw new IllegalStateException("카드 실적 갱신에 실패했습니다.");
+			throw new CardPerformanceUpdateException();
 		}
 	}
 
@@ -46,12 +48,17 @@ public class CardPerformanceEventHandler {
 			event.performanceAmount()
 		);
 
-		if (affectedRows != 1) {
-			throw new IllegalStateException("카드 실적 차감에 실패했습니다.");
+		if (affectedRows < 1) {
+			log.warn(
+				"카드 실적 집계 행이 없어 차감을 건너뜁니다: paymentId={}, userCardId={}, month={}",
+				event.paymentId(),
+				event.userCardId(),
+				targetYearMonth
+			);
 		}
 	}
 
-	private String toYearMonth(LocalDateTime approvedAt) {
+	private static String toYearMonth(LocalDateTime approvedAt) {
 		return approvedAt.format(YEAR_MONTH_FORMATTER);
 	}
 

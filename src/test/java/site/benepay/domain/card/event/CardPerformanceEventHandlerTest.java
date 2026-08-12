@@ -13,6 +13,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import site.benepay.common.exception.CardPerformanceUpdateException;
 import site.benepay.domain.card.mapper.CardMapper;
 import site.benepay.domain.payment.event.PaymentApprovedEvent;
 import site.benepay.domain.payment.event.PaymentCanceledEvent;
@@ -87,7 +88,7 @@ class CardPerformanceEventHandlerTest {
 	}
 
 	@Test
-	@DisplayName("승인 실적 갱신에 실패하면 예외가 발생한다")
+	@DisplayName("승인 실적 갱신에 실패하면 카드 실적 갱신 예외가 발생한다")
 	void handlePaymentApproved_throwsExceptionWhenUpdateFails() {
 		// given
 		PaymentApprovedEvent event = new PaymentApprovedEvent(
@@ -107,14 +108,14 @@ class CardPerformanceEventHandlerTest {
 
 		// when & then
 		assertThrows(
-			IllegalStateException.class,
+			CardPerformanceUpdateException.class,
 			() -> eventHandler.handlePaymentApproved(event)
 		);
 	}
 
 	@Test
-	@DisplayName("취소 실적 차감에 실패하면 예외가 발생한다")
-	void handlePaymentCanceled_throwsExceptionWhenUpdateFails() {
+	@DisplayName("취소 실적 집계 행이 없어도 예외가 발생하지 않는다")
+	void handlePaymentCanceled_doesNotThrowWhenUpdateFails() {
 		// given
 		PaymentCanceledEvent event = new PaymentCanceledEvent(
 			100L,
@@ -132,9 +133,14 @@ class CardPerformanceEventHandlerTest {
 		)).thenReturn(0);
 
 		// when & then
-		assertThrows(
-			IllegalStateException.class,
+		assertDoesNotThrow(
 			() -> eventHandler.handlePaymentCanceled(event)
+		);
+
+		verify(cardMapper).subtractMonthlySpending(
+			7L,
+			"202607",
+			BigDecimal.valueOf(9000)
 		);
 	}
 }

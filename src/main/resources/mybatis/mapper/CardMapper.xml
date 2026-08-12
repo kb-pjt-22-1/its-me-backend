@@ -141,11 +141,11 @@
     <!--차감 쿼리 추가-->
     <update id="subtractMonthlySpending">
         UPDATE card_monthly_status
-        SET total_spending_amount = total_spending_amount - #{amount},
+        SET total_spending_amount =
+                GREATEST(total_spending_amount - #{amount}, 0),
             updated_at            = NOW()
         WHERE user_card_id = #{userCardId}
           AND target_year_month = #{targetYearMonth}
-          AND total_spending_amount >= #{amount}
     </update>
 
     <!--KB카드 상품 코드를 BenePay 내부 card_id로 변환한다.
