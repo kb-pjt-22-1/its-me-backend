@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="site.benepay.domain.benefit.mapper.BenefitMapper">
+
+    <select id="findAnnualFeeBenefitsByUserId"
+            resultType="site.benepay.domain.benefit.dto.DailyBenefitAmountDto">
+
+        SELECT uc.user_card_id AS userCardId,
+        c.card_id AS cardId,
+        c.card_name AS cardName,
+        c.card_image_url AS cardImageUrl,
+        uc.pan_last4 AS panLast4,
+        c.annual_fee AS annualFee,
+        DATE(p.payment_time) AS benefitDate,
+        COALESCE(SUM(p.discount_amount), 0) AS dailyBenefitAmount
+        FROM user_cards uc
+        INNER JOIN cards c
+        ON c.card_id = uc.card_id
+        LEFT JOIN payments p
+        ON p.user_card_id = uc.user_card_id
+        AND p.payment_status = 'APPROVED'
+        AND p.payment_time &gt;= #{startPaymentTime}
+        AND p.payment_time &lt; #{endPaymentTime}
+        WHERE uc.user_id = #{userId}
+        AND uc.status = 'ACTIVE'
+        AND uc.deleted_at IS NULL
+        AND c.annual_fee &gt; 0
+        GROUP BY uc.user_card_id,
+        c.card_id,
+        c.card_name,
+        c.card_image_url,
+        uc.pan_last4,
+        c.annual_fee,
+        DATE(p.payment_time),
+        uc.is_primary,
+        uc.created_at
+        ORDER BY uc.is_primary DESC,
+        uc.created_at ASC,
+        benefitDate ASC
+
+    </select>
+
+    <!--
+        월간 리포트(#47/#50) 전용. 연회비 유무와 상관없이 사용자가 보유한 모든 카드의 결제를
+        가맹점 카테고리별로 묶어 이번 달 혜택 합계를 구한다. 위 select와 달리 카드 단위가 아니라
+        전체 카드를 합산한 카테고리 단위 집계라 LEFT JOIN이 필요 없다 (결제가 없는 카테고리는
+        애초에 결과에 안 나오는 게 맞음).
+    -->
+    <select id="findMonthlyCategoryBenefitsByUserId"
+            resultType="site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO">
+
+        SELECT mc.category_code AS categoryCode,
+        mc.category_name AS categoryName,
+        SUM(p.discount_amount) AS categoryAmount
+        FROM payments p
+        INNER JOIN user_cards uc
+        ON uc.user_card_id = p.user_card_id
+        INNER JOIN merchants m
+        ON m.merchant_id = p.merchant_id
+        INNER JOIN merchant_categories mc
+        ON mc.category_code = m.category_code
+        WHERE uc.user_id = #{userId}
+        AND p.payment_status = 'APPROVED'
+        AND p.payment_time &gt;= #{startPaymentTime}
+        AND p.payment_time &lt; #{endPaymentTime}
+        GROUP BY mc.category_code,
+        mc.category_name
+        ORDER BY categoryAmount DESC
+
+    </select>
+
+</mapper>
