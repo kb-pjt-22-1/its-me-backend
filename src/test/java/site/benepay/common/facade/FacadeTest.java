@@ -1,46 +1,75 @@
 package site.benepay.common.facade;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-import java.math.BigDecimal;
 import java.util.List;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import site.benepay.domain.merchant.dto.MerchantRecommendationResponseDto;
+import site.benepay.domain.card.service.CardService;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
+import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
+import site.benepay.domain.recommendation.service.RecommendationService;
+import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 
+@ExtendWith(MockitoExtension.class)
 class FacadeTest {
 
 	private static final Long USER_ID = 1L;
 
-	private final Facade facade = new Facade();
+	@Mock
+	private CardService cardService;
+
+	@Mock
+	private RecommendationService recommendationService;
+
+	private Facade facade;
+
+	@BeforeEach
+	void setUp() {
+		facade = new Facade(cardService, recommendationService);
+	}
 
 	@Test
-	void getRecommendedMerchantsMapsEveryMerchantWithoutMarkingAnyAsRecommendedYet() {
+	void getRecommendedMerchantsAsksCardServiceForHeldCardsThenDelegatesToRecommendationService() {
 		MerchantResponseDto merchant = MerchantResponseDto.builder()
 			.merchantId(7L)
 			.categoryCode("5812")
 			.brandId(1L)
 			.merchantCode("M001")
 			.merchantName("테스트 식당")
-			.address("서울시 강남구")
-			.latitude(BigDecimal.valueOf(37.5))
-			.longitude(BigDecimal.valueOf(127.0))
-			.phone("02-000-0000")
 			.build();
+		List<MerchantResponseDto> merchants = List.of(merchant);
+		List<RecommendationCardCandidateVO> heldCards = List.of(new RecommendationCardCandidateVO());
+		List<NearbyMerchantRecommendationResponseDto> recommended = List.of(
+			NearbyMerchantRecommendationResponseDto.builder()
+				.merchantId(7L)
+				.merchantCode("M001")
+				.merchantName("테스트 식당")
+				.benefitAvailable(false)
+				.build()
+		);
 
-		List<MerchantRecommendationResponseDto> result =
-			facade.getRecommendedMerchants(USER_ID, List.of(merchant));
+		when(cardService.getRecommendationCandidates(USER_ID)).thenReturn(heldCards);
+		when(recommendationService.recommendMerchants(USER_ID, heldCards, merchants)).thenReturn(recommended);
 
-		assertThat(result).hasSize(1);
-		assertThat(result.get(0).getMerchantId()).isEqualTo(merchant.getMerchantId());
-		assertThat(result.get(0).getMerchantCode()).isEqualTo(merchant.getMerchantCode());
-		assertThat(result.get(0).isRecommended()).isFalse();
+		List<NearbyMerchantRecommendationResponseDto> result = facade.getRecommendedMerchants(USER_ID, merchants);
+
+		assertThat(result).isEqualTo(recommended);
+		verify(cardService).getRecommendationCandidates(USER_ID);
+		verify(recommendationService).recommendMerchants(USER_ID, heldCards, merchants);
 	}
 
 	@Test
 	void getRecommendedMerchantsReturnsEmptyListForEmptyInput() {
+		when(cardService.getRecommendationCandidates(USER_ID)).thenReturn(List.of());
+		when(recommendationService.recommendMerchants(USER_ID, List.of(), List.of())).thenReturn(List.of());
+
 		assertThat(facade.getRecommendedMerchants(USER_ID, List.of())).isEmpty();
 	}
 }

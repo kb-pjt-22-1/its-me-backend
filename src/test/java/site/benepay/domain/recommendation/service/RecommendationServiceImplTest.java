@@ -132,7 +132,7 @@ class RecommendationServiceImplTest {
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).getMerchantId()).isEqualTo(MERCHANT_ID);
-		assertThat(result.get(0).getCategoryName()).isEqualTo("카페");
+		assertThat(result.get(0).getCategoryCode()).isEqualTo(CAFE_CODE);
 		assertThat(result.get(0).isBenefitAvailable()).isTrue();
 		assertThat(result.get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
 		assertThat(result.get(0).getBenefitSummary()).isNotBlank();
@@ -187,7 +187,7 @@ class RecommendationServiceImplTest {
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).isBenefitAvailable()).isFalse();
-		assertThat(result.get(0).getCategoryName()).isNull();
+		assertThat(result.get(0).getCategoryCode()).isEqualTo("8888");
 		assertThat(result.get(0).getRecommendedCardName()).isNull();
 	}
 
@@ -330,6 +330,8 @@ class RecommendationServiceImplTest {
 
 	@Test
 	void categoryNameLookupKeepsTheFirstEntryWhenCategoryCodesAreDuplicated() {
+		// typicalPaymentAmount 맵에는 "카페"만 있고 "카페(중복)"은 없으므로, 룩업이 첫 항목("카페")을
+		// 쓰지 않고 두 번째 항목을 썼다면 typicalAmount를 못 찾아 benefitAvailable=false가 된다.
 		when(merchantCategoryService.getCategoryList()).thenReturn(List.of(
 			MerchantCategoryResponseDto.builder().categoryCode(CAFE_CODE).categoryName("카페").build(),
 			MerchantCategoryResponseDto.builder().categoryCode(CAFE_CODE).categoryName("카페(중복)").build()
@@ -343,7 +345,8 @@ class RecommendationServiceImplTest {
 		);
 
 		assertThat(result).hasSize(1);
-		assertThat(result.get(0).getCategoryName()).isEqualTo("카페");
+		assertThat(result.get(0).isBenefitAvailable()).isTrue();
+		assertThat(result.get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
 	}
 
 	@Test

@@ -126,7 +126,11 @@ class MerchantControllerTest {
 		List<MerchantResponseDto> merchants = List.of(merchantResponse());
 		List<NearbyMerchantRecommendationResponseDto> recommended =
 			List.of(
-				NearbyMerchantRecommendationResponseDto.from(merchantResponse()).toBuilder().recommended(true).build());
+				NearbyMerchantRecommendationResponseDto.builder()
+					.merchantId(MERCHANT_ID)
+					.merchantName(merchantResponse().getMerchantName())
+					.benefitAvailable(true)
+					.build());
 		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null)).thenReturn(merchants);
 		when(facade.getRecommendedMerchants(USER_ID, merchants)).thenReturn(recommended);
 
