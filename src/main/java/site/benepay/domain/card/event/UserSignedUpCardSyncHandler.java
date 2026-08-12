@@ -6,8 +6,8 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import site.benepay.common.event.UserSignedUpEvent;
 import site.benepay.domain.card.service.CardSyncService;
-import site.benepay.domain.user.event.UserSignedUpEvent;
 
 /**
  * 회원가입 트랜잭션이 정상 COMMIT된 뒤 기존 KB 보유 카드를 동기화한다.
@@ -30,13 +30,13 @@ public class UserSignedUpCardSyncHandler {
 	public void handle(UserSignedUpEvent event) {
 		try {
 			int insertedCount = cardSyncService.syncCards(
-				event.getUserId(),
-				event.getCiHash()
+				event.userId(),
+				event.ciHash()
 			);
 
 			log.info(
 				"KB 카드 자동 연동 완료. userId={}, insertedCount={}",
-				event.getUserId(),
+				event.userId(),
 				insertedCount
 			);
 		} catch (Exception e) {
@@ -46,7 +46,7 @@ public class UserSignedUpCardSyncHandler {
 			 */
 			log.error(
 				"KB 카드 자동 연동 실패. userId={}",
-				event.getUserId(),
+				event.userId(),
 				e
 			);
 		}
