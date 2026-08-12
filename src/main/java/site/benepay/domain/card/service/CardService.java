@@ -3,7 +3,9 @@ package site.benepay.domain.card.service;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -21,10 +23,13 @@ import site.benepay.domain.card.dto.CardPerformanceResponseDto;
 import site.benepay.domain.card.dto.CardRecommendationResponseDto;
 import site.benepay.domain.card.dto.CardRepresentativeResponseDto;
 import site.benepay.domain.card.mapper.CardMapper;
+import site.benepay.domain.card.vo.CardMonthlyStatusVO;
 import site.benepay.domain.card.vo.UserCardBenefitVO;
 import site.benepay.domain.card.vo.UserCardDetailVO;
 import site.benepay.domain.card.vo.UserCardListVO;
 import site.benepay.domain.card.vo.UserCardPerformanceVO;
+import site.benepay.domain.card.vo.UserCardRecommendationVO;
+import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 
 @Service
 @RequiredArgsConstructor
@@ -184,7 +189,7 @@ public class CardService {
 
 	@Transactional
 	public CardRepresentativeResponseDto setRepresentativeCard(Long userId, Long userCardId) {
-		
+
 		validateActiveOwnedCard(userId, userCardId);
 
 		// 기존 대표카드 해제
@@ -238,5 +243,112 @@ public class CardService {
 				"정상 사용 가능한 보유 카드를 찾을 수 없습니다."
 			);
 		}
+	}
+
+	/**
+	 * 추천 도메인에서 사용할 사용자의 보유 카드 정보를 조회한다.
+	 *
+	 * 추천이 활성화된 ACTIVE 카드만 대상으로 하며,
+	 * 각 카드에 혜택 JSON과 월별 실적 정보를 함께 구성한다.
+	 *
+	 * 과거 완료 월 실적은 spendHistory에,
+	 * 현재 월 누적 실적은 currentMonthSpend에 분리하여 전달한다.
+	 */
+	public List<RecommendationCardCandidateVO> getRecommendationCandidates(Long userId) {
+
+		List<UserCardRecommendationVO> cards =
+			cardMapper.findRecommendationCardsByUserId(userId);
+
+		if (cards.isEmpty()) {
+			return List.of();
+		}
+
+		List<CardMonthlyStatusVO> monthlyStatuses =
+			cardMapper.findMonthlyStatusByUserId(userId);
+
+		String currentYearMonth = YearMonth.now()
+			.format(DateTimeFormatter.ofPattern("yyyyMM"));
+
+		/*
+		 * userCardId별로 월별 실적을 묶는다.
+		 *
+		 * 예)
+		 * 1 -> [202606, 202607, 202608]
+		 * 2 -> [202606, 202607, 202608]
+		 */
+		Map<Long, List<CardMonthlyStatusVO>> monthlyStatusByCard =
+			monthlyStatuses.stream()
+				.collect(Collectors.groupingBy(
+					CardMonthlyStatusVO::getUserCardId
+				));
+
+		return cards.stream()
+			.map(card -> toRecommendationCandidate(
+				card,
+				monthlyStatusByCard.getOrDefault(
+					card.getUserCardId(),
+					List.of()
+				),
+				currentYearMonth
+			))
+			.collect(Collectors.toList());
+	}
+
+	/**
+	 * 카드 기본정보와 월별 실적 이력을
+	 * 추천 도메인에서 사용하는 RecommendationCardCandidateVO로 변환한다.
+	 */
+	private RecommendationCardCandidateVO toRecommendationCandidate(
+		UserCardRecommendationVO card,
+		List<CardMonthlyStatusVO> monthlyStatuses,
+		String currentYearMonth
+	) {
+
+		Map<String, Long> spendHistory = new HashMap<>();
+
+		long currentMonthSpend = 0L;
+
+		for (CardMonthlyStatusVO status : monthlyStatuses) {
+
+			String targetYearMonth = status.getTargetYearMonth();
+
+			long spendingAmount = status.getTotalSpendingAmount() == null ? 0L : status.getTotalSpendingAmount();
+
+			/*
+			 * 현재 월은 진행 중인 실적이므로
+			 * currentMonthSpend에 별도로 저장한다.
+			 */
+			if (currentYearMonth.equals(targetYearMonth)) {
+				currentMonthSpend = spendingAmount;
+				continue;
+			}
+
+			/*
+			 * 현재 월보다 이전인 완료된 월만
+			 * spendHistory에 포함한다.
+			 *
+			 * yyyyMM 형식이므로 문자열 비교로도
+			 * 연월의 선후 관계를 비교할 수 있다.
+			 */
+			if (targetYearMonth.compareTo(currentYearMonth) < 0) {
+				spendHistory.put(
+					targetYearMonth,
+					spendingAmount
+				);
+			}
+		}
+
+		RecommendationCardCandidateVO candidate = new RecommendationCardCandidateVO();
+
+		candidate.setUserCardId(card.getUserCardId());
+		candidate.setCardId(card.getCardId());
+		candidate.setCardName(card.getCardName());
+		candidate.setCardImageUrl(card.getCardImageUrl());
+		candidate.setBenefitsInfo(card.getBenefitsInfo());
+
+		candidate.setSpendHistory(spendHistory);
+		candidate.setCurrentMonthSpend(currentMonthSpend);
+
+		return candidate;
 	}
 }

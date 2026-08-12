@@ -24,9 +24,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import site.benepay.common.exception.GlobalExceptionHandler;
 import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.common.facade.Facade;
-import site.benepay.domain.merchant.dto.MerchantRecommendationResponseDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantService;
+import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 
 @ExtendWith(MockitoExtension.class)
 class MerchantControllerTest {
@@ -109,7 +109,8 @@ class MerchantControllerTest {
 
 	@Test
 	void getMerchantReturnsNotFoundWhenMissing() throws Exception {
-		when(merchantService.getMerchant(MERCHANT_ID)).thenThrow(new MerchantNotFoundException("존재하지 않는 매장입니다: " + MERCHANT_ID));
+		when(merchantService.getMerchant(MERCHANT_ID)).thenThrow(
+			new MerchantNotFoundException("존재하지 않는 매장입니다: " + MERCHANT_ID));
 
 		mockMvc.perform(get("/api/v1/merchants/{merchantId}", MERCHANT_ID))
 			.andExpect(status().isNotFound());
@@ -123,12 +124,13 @@ class MerchantControllerTest {
 	void getRecommendedMerchantsInBoundsAsksServiceThenFacadeAndReturnsFacadeResult() {
 		MerchantController controller = new MerchantController(merchantService, facade);
 		List<MerchantResponseDto> merchants = List.of(merchantResponse());
-		List<MerchantRecommendationResponseDto> recommended =
-			List.of(MerchantRecommendationResponseDto.from(merchantResponse()).toBuilder().recommended(true).build());
+		List<NearbyMerchantRecommendationResponseDto> recommended =
+			List.of(
+				NearbyMerchantRecommendationResponseDto.from(merchantResponse()).toBuilder().recommended(true).build());
 		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null)).thenReturn(merchants);
 		when(facade.getRecommendedMerchants(USER_ID, merchants)).thenReturn(recommended);
 
-		ResponseEntity<List<MerchantRecommendationResponseDto>> response =
+		ResponseEntity<List<NearbyMerchantRecommendationResponseDto>> response =
 			controller.getRecommendedMerchantsInBounds(USER_ID, 37.4, 127.0, 37.6, 127.2, null);
 
 		assertThat(response.getBody()).isEqualTo(recommended);
