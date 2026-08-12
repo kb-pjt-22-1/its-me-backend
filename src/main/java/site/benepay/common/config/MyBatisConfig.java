@@ -18,7 +18,8 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 	"site.benepay.domain.bookmark.mapper",
 	"site.benepay.domain.payment.mapper",
 	"site.benepay.domain.recommendation.mapper",
-	"site.benepay.common.crypto.mapper"
+	"site.benepay.common.crypto.mapper",
+	"site.benepay.domain.benefit.mapper"
 })
 public class MyBatisConfig {
 
