@@ -3,6 +3,8 @@ package site.benepay.domain.benefit.service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,8 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto.MonthlyBenefitDto;
+import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
+import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto.CategoryBenefitDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
 import site.benepay.domain.benefit.vo.DailyBenefitAmountVO;
+import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
 
 @Service
 @RequiredArgsConstructor
@@ -252,5 +257,106 @@ public class BenefitServiceImpl implements BenefitService {
 				"year는 2000년부터 현재 연도 사이여야 합니다."
 			);
 		}
+	}
+
+	// ---- 월간 리포트 (#47/#50) ----
+
+	private static final DateTimeFormatter YEAR_MONTH_FORMATTER =
+		DateTimeFormatter.ofPattern("yyyyMM");
+
+	@Override
+	public MonthlyBenefitReportResponseDto getMonthlyBenefitReport(
+		Long userId,
+		String yearMonth
+	) {
+		YearMonth targetYearMonth = parseYearMonth(yearMonth);
+		YearMonth previousYearMonth = targetYearMonth.minusMonths(1);
+
+		List<MonthlyCategoryBenefitVO> categoryRows =
+			benefitMapper.findMonthlyCategoryBenefitsByUserId(
+				userId,
+				startOfMonth(targetYearMonth),
+				startOfMonth(targetYearMonth.plusMonths(1))
+			);
+
+		long totalBenefitAmount = sumCategoryAmounts(categoryRows);
+		long previousTotalBenefitAmount = sumCategoryBenefits(userId, previousYearMonth);
+
+		return MonthlyBenefitReportResponseDto.builder()
+			.yearMonth(targetYearMonth.toString())
+			.totalBenefitAmount(totalBenefitAmount)
+			.deltaVsLastMonth(totalBenefitAmount - previousTotalBenefitAmount)
+			.categoryBreakdown(
+				createCategoryBreakdown(categoryRows, totalBenefitAmount)
+			)
+			.build();
+	}
+
+	private long sumCategoryBenefits(Long userId, YearMonth yearMonth) {
+		return sumCategoryAmounts(
+			benefitMapper.findMonthlyCategoryBenefitsByUserId(
+				userId,
+				startOfMonth(yearMonth),
+				startOfMonth(yearMonth.plusMonths(1))
+			)
+		);
+	}
+
+	private long sumCategoryAmounts(List<MonthlyCategoryBenefitVO> rows) {
+		return rows.stream()
+			.mapToLong(row -> row.getCategoryAmount() == null ? 0L : row.getCategoryAmount())
+			.sum();
+	}
+
+	private List<CategoryBenefitDto> createCategoryBreakdown(
+		List<MonthlyCategoryBenefitVO> rows,
+		long totalBenefitAmount
+	) {
+		List<CategoryBenefitDto> breakdown = new ArrayList<>();
+
+		for (MonthlyCategoryBenefitVO row : rows) {
+			long amount = row.getCategoryAmount() == null ? 0L : row.getCategoryAmount();
+			int percent = totalBenefitAmount <= 0
+				? 0
+				: Math.round((amount * 100f) / totalBenefitAmount);
+
+			breakdown.add(
+				CategoryBenefitDto.builder()
+					.categoryCode(row.getCategoryCode())
+					.categoryName(row.getCategoryName())
+					.amount(amount)
+					.percent(percent)
+					.build()
+			);
+		}
+
+		return breakdown;
+	}
+
+	private LocalDateTime startOfMonth(YearMonth yearMonth) {
+		return yearMonth.atDay(1).atStartOfDay();
+	}
+
+	/**
+	 * yyyyMM 문자열을 YearMonth로 변환한다. 비어있으면 이번 달로 처리하고,
+	 * 형식이 잘못됐거나 미래 달이면 예외를 던진다.
+	 */
+	private YearMonth parseYearMonth(String yearMonth) {
+		if (yearMonth == null || yearMonth.isBlank()) {
+			return YearMonth.now();
+		}
+
+		YearMonth parsed;
+		try {
+			parsed = YearMonth.parse(yearMonth, YEAR_MONTH_FORMATTER);
+		} catch (DateTimeParseException e) {
+			throw new IllegalArgumentException("yearMonth는 yyyyMM 형식이어야 합니다.");
+		}
+
+		if (parsed.isAfter(YearMonth.now())) {
+			throw new IllegalArgumentException("yearMonth는 이번 달보다 미래일 수 없습니다.");
+		}
+
+		return parsed;
 	}
 }

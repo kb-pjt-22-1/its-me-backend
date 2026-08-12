@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
+import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 import site.benepay.domain.benefit.service.BenefitService;
 
 @RestController
@@ -43,6 +44,22 @@ public class BenefitController {
 				userId,
 				targetYear
 			);
+
+		return ResponseEntity.ok(response);
+	}
+
+	/**
+	 * 이번 달(또는 지정한 달) 받은 혜택 총액과 카테고리별 리포트를 조회한다.
+	 * 명세서 #47(총액), #50(카테고리별 리포트)을 한 응답으로 합쳤다 -
+	 * 프론트 목업(혜택.vue)에서 총액/증감/카테고리 breakdown이 같은 카드 안에 함께 표시된다.
+	 */
+	@GetMapping("/report")
+	public ResponseEntity<MonthlyBenefitReportResponseDto> getMonthlyBenefitReport(
+		@AuthenticationPrincipal Long userId,
+		@RequestParam(required = false) String yearMonth
+	) {
+		MonthlyBenefitReportResponseDto response =
+			benefitService.getMonthlyBenefitReport(userId, yearMonth);
 
 		return ResponseEntity.ok(response);
 	}
