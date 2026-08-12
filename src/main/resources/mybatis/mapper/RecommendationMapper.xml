@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="site.benepay.domain.recommendation.mapper.RecommendationMapper">
+
+    <select id="findMerchantForRecommendation"
+            resultType="site.benepay.domain.recommendation.vo.RecommendationMerchantVO">
+
+        SELECT
+        m.merchant_id AS merchantId,
+        m.merchant_name AS merchantName,
+        m.category_code AS categoryCode,
+        m.brand_id AS brandId
+        FROM merchants m
+        WHERE m.merchant_id = #{merchantId}
+
+    </select>
+</mapper>
