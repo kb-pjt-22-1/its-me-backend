@@ -1,5 +1,7 @@
 package site.benepay.domain.card.service;
 
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,13 +20,17 @@ import site.benepay.domain.card.dto.CardPerformanceResponseDto;
 import site.benepay.domain.card.dto.CardRecommendationResponseDto;
 import site.benepay.domain.card.dto.CardRepresentativeResponseDto;
 import site.benepay.domain.card.mapper.CardMapper;
+import site.benepay.domain.card.vo.CardMonthlyStatusVO;
 import site.benepay.domain.card.vo.UserCardBenefitVO;
 import site.benepay.domain.card.vo.UserCardDetailVO;
 import site.benepay.domain.card.vo.UserCardListVO;
 import site.benepay.domain.card.vo.UserCardPerformanceVO;
+import site.benepay.domain.card.vo.UserCardRecommendationVO;
+import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -343,5 +349,106 @@ class CardServiceTest {
 		assertThatThrownBy(() -> cardService.updateRecommendation(USER_ID, USER_CARD_ID, false))
 			.isInstanceOf(IllegalStateException.class)
 			.hasMessage("카드 추천 설정 변경에 실패했습니다.");
+	}
+
+	// ---- getRecommendationCandidates ----
+
+	private static String currentYearMonth() {
+		return YearMonth.now().format(DateTimeFormatter.ofPattern("yyyyMM"));
+	}
+
+	private static String previousYearMonth() {
+		return YearMonth.now().minusMonths(1).format(DateTimeFormatter.ofPattern("yyyyMM"));
+	}
+
+	private UserCardRecommendationVO recommendationCard(Long userCardId, String cardName) {
+		UserCardRecommendationVO vo = new UserCardRecommendationVO();
+		vo.setUserCardId(userCardId);
+		vo.setCardId(userCardId);
+		vo.setCardName(cardName);
+		vo.setCardImageUrl("https://example.com/" + userCardId + ".png");
+		vo.setBenefitsInfo("{\"performanceTiers\":[]}");
+		return vo;
+	}
+
+	private CardMonthlyStatusVO monthlyStatus(Long userCardId, String targetYearMonth, Long totalSpendingAmount) {
+		CardMonthlyStatusVO vo = new CardMonthlyStatusVO();
+		vo.setUserCardId(userCardId);
+		vo.setTargetYearMonth(targetYearMonth);
+		vo.setTotalSpendingAmount(totalSpendingAmount);
+		return vo;
+	}
+
+	@Test
+	void getRecommendationCandidatesSplitsCurrentMonthFromPastSpendHistory() {
+		when(cardMapper.findRecommendationCardsByUserId(USER_ID))
+			.thenReturn(List.of(recommendationCard(USER_CARD_ID, "청춘대로 톡톡카드")));
+		when(cardMapper.findMonthlyStatusByUserId(USER_ID)).thenReturn(List.of(
+			monthlyStatus(USER_CARD_ID, previousYearMonth(), 50_000L),
+			monthlyStatus(USER_CARD_ID, currentYearMonth(), 12_000L)
+		));
+
+		List<RecommendationCardCandidateVO> result = cardService.getRecommendationCandidates(USER_ID);
+
+		assertThat(result).hasSize(1);
+		RecommendationCardCandidateVO candidate = result.get(0);
+		assertThat(candidate.getUserCardId()).isEqualTo(USER_CARD_ID);
+		assertThat(candidate.getCardName()).isEqualTo("청춘대로 톡톡카드");
+		assertThat(candidate.getSpendHistory()).containsEntry(previousYearMonth(), 50_000L);
+		assertThat(candidate.getSpendHistory()).doesNotContainKey(currentYearMonth());
+		assertThat(candidate.getCurrentMonthSpend()).isEqualTo(12_000L);
+	}
+
+	@Test
+	void getRecommendationCandidatesTreatsNullTotalSpendingAmountAsZero() {
+		when(cardMapper.findRecommendationCardsByUserId(USER_ID))
+			.thenReturn(List.of(recommendationCard(USER_CARD_ID, "청춘대로 톡톡카드")));
+		when(cardMapper.findMonthlyStatusByUserId(USER_ID)).thenReturn(List.of(
+			monthlyStatus(USER_CARD_ID, currentYearMonth(), null)
+		));
+
+		List<RecommendationCardCandidateVO> result = cardService.getRecommendationCandidates(USER_ID);
+
+		assertThat(result.get(0).getCurrentMonthSpend()).isEqualTo(0L);
+	}
+
+	@Test
+	void getRecommendationCandidatesReturnsZeroSpendWhenCardHasNoMonthlyStatus() {
+		when(cardMapper.findRecommendationCardsByUserId(USER_ID))
+			.thenReturn(List.of(recommendationCard(USER_CARD_ID, "청춘대로 톡톡카드")));
+		when(cardMapper.findMonthlyStatusByUserId(USER_ID)).thenReturn(List.of());
+
+		List<RecommendationCardCandidateVO> result = cardService.getRecommendationCandidates(USER_ID);
+
+		assertThat(result.get(0).getSpendHistory()).isEmpty();
+		assertThat(result.get(0).getCurrentMonthSpend()).isEqualTo(0L);
+	}
+
+	@Test
+	void getRecommendationCandidatesReturnsEmptyListWithoutQueryingMonthlyStatusWhenUserHasNoCards() {
+		when(cardMapper.findRecommendationCardsByUserId(USER_ID)).thenReturn(List.of());
+
+		assertThat(cardService.getRecommendationCandidates(USER_ID)).isEmpty();
+		verify(cardMapper, never()).findMonthlyStatusByUserId(USER_ID);
+	}
+
+	@Test
+	void getRecommendationCandidatesGroupsMonthlyStatusesPerCardWhenUserHasMultipleCards() {
+		when(cardMapper.findRecommendationCardsByUserId(USER_ID)).thenReturn(List.of(
+			recommendationCard(1L, "청춘대로 톡톡카드"),
+			recommendationCard(2L, "굿데이카드")
+		));
+		when(cardMapper.findMonthlyStatusByUserId(USER_ID)).thenReturn(List.of(
+			monthlyStatus(1L, previousYearMonth(), 10_000L),
+			monthlyStatus(2L, previousYearMonth(), 20_000L)
+		));
+
+		List<RecommendationCardCandidateVO> result = cardService.getRecommendationCandidates(USER_ID);
+
+		assertThat(result).hasSize(2);
+		assertThat(result).filteredOn(c -> c.getUserCardId().equals(1L))
+			.allSatisfy(c -> assertThat(c.getSpendHistory()).containsEntry(previousYearMonth(), 10_000L));
+		assertThat(result).filteredOn(c -> c.getUserCardId().equals(2L))
+			.allSatisfy(c -> assertThat(c.getSpendHistory()).containsEntry(previousYearMonth(), 20_000L));
 	}
 }
