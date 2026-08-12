@@ -409,7 +409,7 @@ class CardServiceTest {
 
 		List<RecommendationCardCandidateVO> result = cardService.getRecommendationCandidates(USER_ID);
 
-		assertThat(result.get(0).getCurrentMonthSpend()).isEqualTo(0L);
+		assertThat(result.get(0).getCurrentMonthSpend()).isZero();
 	}
 
 	@Test
@@ -421,7 +421,7 @@ class CardServiceTest {
 		List<RecommendationCardCandidateVO> result = cardService.getRecommendationCandidates(USER_ID);
 
 		assertThat(result.get(0).getSpendHistory()).isEmpty();
-		assertThat(result.get(0).getCurrentMonthSpend()).isEqualTo(0L);
+		assertThat(result.get(0).getCurrentMonthSpend()).isZero();
 	}
 
 	@Test
