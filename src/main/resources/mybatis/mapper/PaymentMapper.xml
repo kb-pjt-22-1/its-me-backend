@@ -15,7 +15,9 @@
 
     <resultMap id="paymentHistoryResultMap" type="site.benepay.domain.payment.vo.PaymentHistoryVO">
         <id column="payment_id" property="paymentId" />
+        <result column="user_card_id" property="userCardId" />
         <result column="merchant_name" property="merchantName" />
+        <result column="category_code" property="categoryCode" />
         <result column="card_name" property="cardName" />
         <result column="pan_last4" property="panLast4" />
         <result column="payment_time" property="paymentTime" />
@@ -27,7 +29,7 @@
     </resultMap>
 
     <sql id="paymentHistoryColumns">
-        p.payment_id, m.merchant_name, c.card_name, uc.pan_last4,
+        p.payment_id, p.user_card_id, m.merchant_name, m.category_code, c.card_name, uc.pan_last4,
         p.payment_time, p.original_amount, p.discount_amount, p.final_amount,
         p.payment_status, p.payment_method
     </sql>

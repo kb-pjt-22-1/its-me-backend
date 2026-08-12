@@ -24,7 +24,14 @@ public class PaymentHistoryVO {
 
 	private Long paymentId;
 	@NonNull
+	private Long userCardId;
+	@NonNull
 	private String merchantName;
+	// 결제 이벤트(PaymentApprovedEvent/PaymentCanceledEvent)에 실어 보내는 용도.
+	// benefit 도메인이 카테고리별 혜택 사용액(user_card_benefit_monthly_status)을
+	// 갱신할 때 필요하다.
+	@NonNull
+	private String categoryCode;
 	@NonNull
 	private String cardName;
 	// 카드 마스킹 표시용 (카드번호 자체가 아니라 user_cards.pan_last4)
