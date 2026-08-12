@@ -125,8 +125,15 @@ class MerchantControllerTest {
 		MerchantController controller = new MerchantController(merchantService, facade);
 		List<MerchantResponseDto> merchants = List.of(merchantResponse());
 		List<NearbyMerchantRecommendationResponseDto> recommended =
-			List.of(
-				NearbyMerchantRecommendationResponseDto.from(merchantResponse()).toBuilder().recommended(true).build());
+			List.of(NearbyMerchantRecommendationResponseDto.builder()
+				.merchantId(MERCHANT_ID)
+				.merchantName("테스트 식당")
+				.latitude(BigDecimal.valueOf(37.5))
+				.longitude(BigDecimal.valueOf(127.0))
+				.benefitAvailable(true)
+				.benefitSummary("즉시 할인")
+				.recommendedCardName("테스트 카드")
+				.build());
 		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null)).thenReturn(merchants);
 		when(facade.getRecommendedMerchants(USER_ID, merchants)).thenReturn(recommended);
 

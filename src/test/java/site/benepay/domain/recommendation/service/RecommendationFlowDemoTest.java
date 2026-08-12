@@ -151,7 +151,7 @@ class RecommendationFlowDemoTest {
 				assertThat(m.getMerchantName()).isEqualTo("카페 트리 홍대점");
 				assertThat(m.isBenefitAvailable()).isTrue();
 				assertThat(m.getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
-				assertThat(m.getCategoryName()).isEqualTo("카페");
+				assertThat(m.getCategoryCode()).isEqualTo(CAFE_CODE);
 			});
 		assertThat(result).filteredOn(m -> m.getMerchantId().equals(502L))
 			.allSatisfy(m -> {

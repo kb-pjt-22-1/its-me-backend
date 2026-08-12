@@ -1,20 +1,26 @@
 package site.benepay.common.facade;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import site.benepay.domain.merchant.dto.MerchantRecommendationResponseDto;
+import site.benepay.domain.card.service.CardService;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
+import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
+import site.benepay.domain.recommendation.service.RecommendationService;
+import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 
 class FacadeTest {
 
 	private static final Long USER_ID = 1L;
 
-	private final Facade facade = new Facade();
+	private final CardService cardService = mock(CardService.class);
+	private final RecommendationService recommendationService = mock(RecommendationService.class);
+	private final Facade facade = new Facade(cardService, recommendationService);
 
 	@Test
 	void getRecommendedMerchantsMapsEveryMerchantWithoutMarkingAnyAsRecommendedYet() {
@@ -30,17 +36,28 @@ class FacadeTest {
 			.phone("02-000-0000")
 			.build();
 
-		List<MerchantRecommendationResponseDto> result =
+		List<RecommendationCardCandidateVO> heldCards = List.of();
+		List<NearbyMerchantRecommendationResponseDto> recommendations = List.of(
+			NearbyMerchantRecommendationResponseDto.from(merchant));
+		when(cardService.getRecommendationCandidates(USER_ID)).thenReturn(heldCards);
+		when(recommendationService.recommendMerchants(USER_ID, heldCards, List.of(merchant)))
+			.thenReturn(recommendations);
+
+		List<NearbyMerchantRecommendationResponseDto> result =
 			facade.getRecommendedMerchants(USER_ID, List.of(merchant));
 
-		assertThat(result).hasSize(1);
+		assertThat(result).isEqualTo(recommendations);
 		assertThat(result.get(0).getMerchantId()).isEqualTo(merchant.getMerchantId());
-		assertThat(result.get(0).getMerchantCode()).isEqualTo(merchant.getMerchantCode());
-		assertThat(result.get(0).isRecommended()).isFalse();
+		assertThat(result.get(0).isBenefitAvailable()).isFalse();
+		verify(cardService).getRecommendationCandidates(USER_ID);
+		verify(recommendationService).recommendMerchants(USER_ID, heldCards, List.of(merchant));
 	}
 
 	@Test
 	void getRecommendedMerchantsReturnsEmptyListForEmptyInput() {
+		when(cardService.getRecommendationCandidates(USER_ID)).thenReturn(List.of());
+		when(recommendationService.recommendMerchants(USER_ID, List.of(), List.of())).thenReturn(List.of());
+
 		assertThat(facade.getRecommendedMerchants(USER_ID, List.of())).isEmpty();
 	}
 }

@@ -1,6 +1,7 @@
 package site.benepay.domain.card.service;
 
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.HashMap;
@@ -35,6 +36,9 @@ import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class CardService {
+
+	// DB 커넥션의 serverTimezone(application.properties의 db.url)과 맞춘다 - UserServiceImpl과 동일 규약.
+	private static final ZoneId APP_ZONE = ZoneId.of("Asia/Seoul");
 
 	private final CardMapper cardMapper;
 	private final ObjectMapper objectMapper;
@@ -266,7 +270,7 @@ public class CardService {
 		List<CardMonthlyStatusVO> monthlyStatuses =
 			cardMapper.findMonthlyStatusByUserId(userId);
 
-		String currentYearMonth = YearMonth.now()
+		String currentYearMonth = YearMonth.now(APP_ZONE)
 			.format(DateTimeFormatter.ofPattern("yyyyMM"));
 
 		/*
