@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.concurrent.ThreadLocalRandom;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,7 +16,9 @@ import site.benepay.common.exception.PaymentTokenNotUsableException;
 import site.benepay.common.exception.UserCardNotAvailableException;
 import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
 import site.benepay.domain.payment.dto.PaymentTokenResponseDto;
+import site.benepay.domain.payment.event.PaymentApprovedEvent;
 import site.benepay.domain.payment.mapper.PaymentMapper;
+import site.benepay.domain.payment.vo.PaymentHistoryVO;
 import site.benepay.domain.payment.vo.PaymentTokenVO;
 import site.benepay.domain.payment.vo.PaymentVO;
 import site.benepay.domain.payment.vo.UserCardPaymentTokenVO;
@@ -36,6 +39,7 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 
 	private final PaymentTokenStore paymentTokenStore;
 	private final PaymentMapper paymentMapper;
+	private final ApplicationEventPublisher eventPublisher;
 
 	@Override
 	public PaymentTokenResponseDto issueToken(Long userId, Long userCardId, Long merchantId) {
@@ -55,7 +59,7 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 	@Override
 	public PaymentTokenResponseDto getTokenStatus(String paymentTokenId) {
 		PaymentTokenVO token = paymentTokenStore.find(paymentTokenId)
-			.orElseThrow(() -> new PaymentTokenNotFoundException("결제 토큰이 없거나 만료되었습니다."));
+			.orElseThrow(() -> new PaymentTokenNotFoundException("결제 토큰을 찾을 수 없거나 만료되었습니다."));
 
 		return PaymentTokenResponseDto.from(token);
 	}
@@ -64,7 +68,7 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 	@Transactional
 	public PaymentHistoryResponseDto completeToken(String paymentTokenId) {
 		PaymentTokenVO token = paymentTokenStore.find(paymentTokenId)
-			.orElseThrow(() -> new PaymentTokenNotFoundException("결제 토큰이 없거나 만료되었습니다."));
+			.orElseThrow(() -> new PaymentTokenNotFoundException("결제 토큰을 찾을 수 없거나 만료되었습니다."));
 
 		if (!PaymentTokenStore.STATUS_ISSUED.equals(token.getStatus())) {
 			throw new PaymentTokenNotUsableException("이미 처리되었거나 완료할 수 없는 결제 토큰입니다.");
@@ -93,9 +97,19 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 
 		paymentMapper.insertPayment(payment);
 
-		return paymentMapper.findByPaymentId(payment.getPaymentId())
-			.map(PaymentHistoryResponseDto::from)
+		PaymentHistoryVO insertedPayment = paymentMapper.findByPaymentId(payment.getPaymentId())
 			.orElseThrow(() -> new IllegalStateException("결제 생성 직후 조회에 실패했습니다."));
+
+		eventPublisher.publishEvent(new PaymentApprovedEvent(
+			insertedPayment.getPaymentId(),
+			insertedPayment.getUserCardId(),
+			insertedPayment.getCategoryCode(),
+			insertedPayment.getPaymentTime(),
+			insertedPayment.getFinalAmount(),
+			insertedPayment.getDiscountAmount()
+		));
+
+		return PaymentHistoryResponseDto.from(insertedPayment);
 	}
 
 	private Long randomMerchantId() {
