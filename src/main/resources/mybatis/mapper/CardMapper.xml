@@ -191,4 +191,39 @@
                           WHERE user_id = #{userId}
                             AND issuer_card_reference_id = #{issuerCardReferenceId})
     </insert>
+
+    <select id="findRecommendationCardsByUserId" resultType="site.benepay.domain.card.vo.UserCardRecommendationVO">
+
+        SELECT uc.user_card_id  AS userCardId,
+               c.card_id        AS cardId,
+               c.card_name      AS cardName,
+               c.card_image_url AS cardImageUrl,
+               c.benefits_info  AS benefitsInfo
+        FROM user_cards uc
+                 INNER JOIN cards c
+                            ON uc.card_id = c.card_id
+        WHERE uc.user_id = #{userId}
+          AND uc.status = 'ACTIVE'
+          AND uc.recommendation_enabled = 1
+          AND uc.deleted_at IS NULL
+        ORDER BY uc.is_primary DESC,
+                 uc.created_at DESC
+    </select>
+
+    <select id="findMonthlyStatusByUserId" resultType="site.benepay.domain.card.vo.CardMonthlyStatusVO">
+        SELECT cms.card_monthly_status_id AS cardMonthlyStatusId,
+               cms.user_card_id           AS userCardId,
+               cms.target_year_month      AS targetYearMonth,
+               cms.total_spending_amount  AS totalSpendingAmount,
+               cms.updated_at             AS updatedAt
+        FROM card_monthly_status cms
+                 INNER JOIN user_cards uc
+                            ON cms.user_card_id = uc.user_card_id
+        WHERE uc.user_id = #{userId}
+          AND uc.status = 'ACTIVE'
+          AND uc.recommendation_enabled = 1
+          AND uc.deleted_at IS NULL
+        ORDER BY cms.user_card_id,
+                 cms.target_year_month
+    </select>
 </mapper>
