@@ -38,8 +38,13 @@ public interface CardMapper {
 	int updateRecommendationEnabled(@Param("userId") Long userId, @Param("userCardId") Long userCardId,
 		@Param("recommendationEnabled") Boolean recommendationEnabled);
 
-	// 카드 실적 갱신
+	// 결제 승인 후 카드 실적 갱신
 	int addMonthlySpending(@Param("userCardId") Long userCardId, @Param("targetYearMonth") String targetYearMonth,
+		@Param("amount") BigDecimal amount
+	);
+
+	// 결제 취소 후 실적 차감 구현
+	int subtractMonthlySpending(@Param("userCardId") Long userCardId, @Param("targetYearMonth") String targetYearMonth,
 		@Param("amount") BigDecimal amount
 	);
 
