@@ -7,7 +7,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Year;
+import java.time.YearMonth;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -20,7 +22,10 @@ import site.benepay.common.exception.InvalidBenefitPeriodException;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto.MonthlyBenefitDto;
 import site.benepay.domain.benefit.dto.DailyBenefitAmountDto;
+import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
+import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto.CategoryBenefitDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
+import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
 
 @ExtendWith(MockitoExtension.class)
 class BenefitServiceTest {
@@ -28,12 +33,18 @@ class BenefitServiceTest {
 	private static final Long USER_ID = 1L;
 	private static final Long USER_CARD_ID = 100L;
 
+	private static final ZoneId ZONE =
+		ZoneId.of("Asia/Seoul");
+
 	/*
 	 * 현재 연도는 실행 시각에 따라 조회 종료 시각이 달라지므로,
-	 * 계산 테스트에서는 이전 연도를 사용한다.
+	 * 일반 계산 테스트에서는 이전 연도를 사용한다.
 	 */
-	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
-	private static final int BASE_YEAR = Year.now(ZONE).getValue() - 1;
+	private static final int BASE_YEAR =
+		Year.now(ZONE).getValue() - 1;
+
+	private static final DateTimeFormatter YEAR_MONTH_FORMATTER =
+		DateTimeFormatter.ofPattern("uuuuMM");
 
 	@Mock
 	private BenefitMapper benefitMapper;
@@ -42,18 +53,19 @@ class BenefitServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		benefitService = new BenefitServiceImpl(benefitMapper);
+		benefitService =
+			new BenefitServiceImpl(benefitMapper);
 	}
 
-	/**
-	 * 카드 한 장의 특정 날짜 혜택 조회 결과를 만든다.
-	 */
 	private DailyBenefitAmountDto benefitRow(
 		LocalDate benefitDate,
 		long dailyBenefitAmount
 	) {
 		DailyBenefitAmountDto row =
-			createCardRow(USER_CARD_ID, 10_000L);
+			createCardRow(
+				USER_CARD_ID,
+				10_000L
+			);
 
 		row.setBenefitDate(benefitDate);
 		row.setDailyBenefitAmount(
@@ -63,14 +75,12 @@ class BenefitServiceTest {
 		return row;
 	}
 
-	/**
-	 * 공통 카드 정보를 가진 VO를 만든다.
-	 */
 	private DailyBenefitAmountDto createCardRow(
 		Long userCardId,
 		Long annualFee
 	) {
-		DailyBenefitAmountDto row = new DailyBenefitAmountDto();
+		DailyBenefitAmountDto row =
+			new DailyBenefitAmountDto();
 
 		row.setUserCardId(userCardId);
 		row.setCardId(userCardId + 1L);
@@ -80,6 +90,33 @@ class BenefitServiceTest {
 		);
 		row.setPanLast4("1234");
 		row.setAnnualFee(annualFee);
+
+		return row;
+	}
+
+	/*
+	 * VO의 생성자 및 setter 구성에 영향을 받지 않도록
+	 * Mockito 객체로 테스트 데이터를 만든다.
+	 */
+	private MonthlyCategoryBenefitVO categoryRow(
+		String categoryCode,
+		String categoryName,
+		Long categoryAmount
+	) {
+		MonthlyCategoryBenefitVO row =
+			mock(MonthlyCategoryBenefitVO.class);
+
+		lenient()
+			.when(row.getCategoryCode())
+			.thenReturn(categoryCode);
+
+		lenient()
+			.when(row.getCategoryName())
+			.thenReturn(categoryName);
+
+		lenient()
+			.when(row.getCategoryAmount())
+			.thenReturn(categoryAmount);
 
 		return row;
 	}
@@ -130,21 +167,22 @@ class BenefitServiceTest {
 
 		assertThat(response.getUserCardId())
 			.isEqualTo(USER_CARD_ID);
+
 		assertThat(response.getAnnualFee())
 			.isEqualTo(10_000L);
+
 		assertThat(response.getAccumulatedBenefit())
 			.isEqualTo(12_000L);
+
 		assertThat(response.getNetBenefit())
 			.isEqualTo(2_000L);
+
 		assertThat(response.getRemainingAmount())
 			.isEqualTo(0L);
+
 		assertThat(response.getBreakEvenAchieved())
 			.isTrue();
 
-		/*
-		 * 1월 4,000원 + 2월 3,000원 + 5,000원으로
-		 * 2월 20일에 누적 금액이 연회비를 넘는다.
-		 */
 		assertThat(response.getBreakEvenDate())
 			.isEqualTo(
 				LocalDate.of(BASE_YEAR, 2, 20)
@@ -153,10 +191,6 @@ class BenefitServiceTest {
 		List<MonthlyBenefitDto> monthlyBenefits =
 			response.getMonthlyBenefits();
 
-		/*
-		 * 과거 연도를 조회했기 때문에
-		 * 1월부터 12월까지 반환한다.
-		 */
 		assertThat(monthlyBenefits).hasSize(12);
 
 		MonthlyBenefitDto january =
@@ -164,8 +198,10 @@ class BenefitServiceTest {
 
 		assertThat(january.getYearMonth())
 			.isEqualTo(BASE_YEAR + "-01");
+
 		assertThat(january.getMonthlyBenefitAmount())
 			.isEqualTo(4_000L);
+
 		assertThat(january.getAccumulatedBenefitAmount())
 			.isEqualTo(4_000L);
 
@@ -174,19 +210,19 @@ class BenefitServiceTest {
 
 		assertThat(february.getYearMonth())
 			.isEqualTo(BASE_YEAR + "-02");
+
 		assertThat(february.getMonthlyBenefitAmount())
 			.isEqualTo(8_000L);
+
 		assertThat(february.getAccumulatedBenefitAmount())
 			.isEqualTo(12_000L);
 
-		/*
-		 * 혜택이 없는 3월 이후에도 누적 금액은 유지된다.
-		 */
 		MonthlyBenefitDto december =
 			monthlyBenefits.get(11);
 
 		assertThat(december.getMonthlyBenefitAmount())
 			.isEqualTo(0L);
+
 		assertThat(december.getAccumulatedBenefitAmount())
 			.isEqualTo(12_000L);
 
@@ -231,12 +267,16 @@ class BenefitServiceTest {
 
 		assertThat(response.getAccumulatedBenefit())
 			.isEqualTo(3_000L);
+
 		assertThat(response.getNetBenefit())
 			.isEqualTo(-7_000L);
+
 		assertThat(response.getRemainingAmount())
 			.isEqualTo(7_000L);
+
 		assertThat(response.getBreakEvenAchieved())
 			.isFalse();
+
 		assertThat(response.getBreakEvenDate())
 			.isNull();
 	}
@@ -251,12 +291,11 @@ class BenefitServiceTest {
 			LocalDate.of(BASE_YEAR + 1, 1, 1)
 				.atStartOfDay();
 
-		/*
-		 * LEFT JOIN 결과이므로 결제가 없는 카드도
-		 * 카드 정보가 담긴 한 행으로 조회될 수 있다.
-		 */
 		DailyBenefitAmountDto row =
-			createCardRow(USER_CARD_ID, 10_000L);
+			createCardRow(
+				USER_CARD_ID,
+				10_000L
+			);
 
 		row.setBenefitDate(null);
 		row.setDailyBenefitAmount(BigDecimal.ZERO);
@@ -277,22 +316,29 @@ class BenefitServiceTest {
 
 		assertThat(response.getAccumulatedBenefit())
 			.isEqualTo(0L);
+
 		assertThat(response.getNetBenefit())
 			.isEqualTo(-10_000L);
+
 		assertThat(response.getRemainingAmount())
 			.isEqualTo(10_000L);
+
 		assertThat(response.getBreakEvenAchieved())
 			.isFalse();
+
 		assertThat(response.getBreakEvenDate())
 			.isNull();
 
 		assertThat(response.getMonthlyBenefits())
 			.hasSize(12)
 			.allSatisfy(month -> {
-				assertThat(month.getMonthlyBenefitAmount())
-					.isEqualTo(0L);
-				assertThat(month.getAccumulatedBenefitAmount())
-					.isEqualTo(0L);
+				assertThat(
+					month.getMonthlyBenefitAmount()
+				).isEqualTo(0L);
+
+				assertThat(
+					month.getAccumulatedBenefitAmount()
+				).isEqualTo(0L);
 			});
 	}
 
@@ -312,6 +358,7 @@ class BenefitServiceTest {
 		firstCard.setBenefitDate(
 			LocalDate.of(BASE_YEAR, 1, 10)
 		);
+
 		firstCard.setDailyBenefitAmount(
 			BigDecimal.valueOf(2_000L)
 		);
@@ -322,6 +369,7 @@ class BenefitServiceTest {
 		secondCard.setBenefitDate(
 			LocalDate.of(BASE_YEAR, 1, 15)
 		);
+
 		secondCard.setDailyBenefitAmount(
 			BigDecimal.valueOf(5_000L)
 		);
@@ -349,10 +397,13 @@ class BenefitServiceTest {
 			)
 			.containsExactly(100L, 200L);
 
-		assertThat(responses.get(0).getAccumulatedBenefit())
-			.isEqualTo(2_000L);
-		assertThat(responses.get(1).getAccumulatedBenefit())
-			.isEqualTo(5_000L);
+		assertThat(
+			responses.get(0).getAccumulatedBenefit()
+		).isEqualTo(2_000L);
+
+		assertThat(
+			responses.get(1).getAccumulatedBenefit()
+		).isEqualTo(5_000L);
 	}
 
 	@Test
@@ -389,7 +440,9 @@ class BenefitServiceTest {
 				1999
 			)
 		)
-			.isInstanceOf(InvalidBenefitPeriodException.class)
+			.isInstanceOf(
+				InvalidBenefitPeriodException.class
+			)
 			.hasMessage(
 				"year는 2000년부터 현재 연도 사이여야 합니다."
 			);
@@ -399,7 +452,8 @@ class BenefitServiceTest {
 
 	@Test
 	void getAnnualFeeBreakEvenThrowsWhenYearIsInTheFuture() {
-		int futureYear = Year.now(ZONE).getValue() + 1;
+		int futureYear =
+			Year.now(ZONE).getValue() + 1;
 
 		assertThatThrownBy(
 			() -> benefitService.getAnnualFeeBreakEven(
@@ -407,9 +461,334 @@ class BenefitServiceTest {
 				futureYear
 			)
 		)
-			.isInstanceOf(InvalidBenefitPeriodException.class)
+			.isInstanceOf(
+				InvalidBenefitPeriodException.class
+			)
 			.hasMessage(
 				"year는 2000년부터 현재 연도 사이여야 합니다."
+			);
+
+		verifyNoInteractions(benefitMapper);
+	}
+
+	@Test
+	void getAnnualFeeBreakEvenReturnsMonthsUntilCurrentMonth() {
+		int currentYear =
+			Year.now(ZONE).getValue();
+
+		DailyBenefitAmountDto row =
+			createCardRow(
+				USER_CARD_ID,
+				10_000L
+			);
+
+		row.setBenefitDate(
+			LocalDate.of(currentYear, 1, 1)
+		);
+
+		/*
+		 * 일별 혜택 금액이 null인 경우의 분기도 검증한다.
+		 */
+		row.setDailyBenefitAmount(null);
+
+		when(
+			benefitMapper.findAnnualFeeBenefitsByUserId(
+				eq(USER_ID),
+				eq(
+					LocalDate.of(currentYear, 1, 1)
+						.atStartOfDay()
+				),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(List.of(row));
+
+		AnnualFeeBreakEvenResponseDto response =
+			benefitService.getAnnualFeeBreakEven(
+				USER_ID,
+				currentYear
+			).get(0);
+
+		assertThat(response.getAccumulatedBenefit())
+			.isEqualTo(0L);
+
+		assertThat(response.getMonthlyBenefits())
+			.hasSize(
+				YearMonth.now(ZONE).getMonthValue()
+			);
+	}
+
+	@Test
+	void getMonthlyBenefitReportCalculatesTotalDeltaAndPercentage() {
+		YearMonth targetYearMonth =
+			YearMonth.of(BASE_YEAR, 5);
+
+		YearMonth previousYearMonth =
+			targetYearMonth.minusMonths(1);
+
+		MonthlyCategoryBenefitVO food =
+			categoryRow(
+				"5812",
+				"음식점",
+				6_000L
+			);
+
+		MonthlyCategoryBenefitVO cafe =
+			categoryRow(
+				"5813",
+				"카페",
+				4_000L
+			);
+
+		MonthlyCategoryBenefitVO previous =
+			categoryRow(
+				"5812",
+				"음식점",
+				7_000L
+			);
+
+		when(
+			benefitMapper.findMonthlyCategoryBenefitsByUserId(
+				USER_ID,
+				targetYearMonth
+					.atDay(1)
+					.atStartOfDay(),
+				targetYearMonth
+					.plusMonths(1)
+					.atDay(1)
+					.atStartOfDay()
+			)
+		).thenReturn(
+			List.of(food, cafe)
+		);
+
+		when(
+			benefitMapper.findMonthlyCategoryBenefitsByUserId(
+				USER_ID,
+				previousYearMonth
+					.atDay(1)
+					.atStartOfDay(),
+				previousYearMonth
+					.plusMonths(1)
+					.atDay(1)
+					.atStartOfDay()
+			)
+		).thenReturn(
+			List.of(previous)
+		);
+
+		MonthlyBenefitReportResponseDto response =
+			benefitService.getMonthlyBenefitReport(
+				USER_ID,
+				targetYearMonth.format(
+					YEAR_MONTH_FORMATTER
+				)
+			);
+
+		assertThat(response.getYearMonth())
+			.isEqualTo(targetYearMonth.toString());
+
+		assertThat(response.getTotalBenefitAmount())
+			.isEqualTo(10_000L);
+
+		assertThat(response.getDeltaVsLastMonth())
+			.isEqualTo(3_000L);
+
+		assertThat(response.getCategoryBreakdown())
+			.hasSize(2);
+
+		CategoryBenefitDto foodBenefit =
+			response.getCategoryBreakdown().get(0);
+
+		assertThat(foodBenefit.getCategoryCode())
+			.isEqualTo("5812");
+
+		assertThat(foodBenefit.getCategoryName())
+			.isEqualTo("음식점");
+
+		assertThat(foodBenefit.getAmount())
+			.isEqualTo(6_000L);
+
+		assertThat(foodBenefit.getPercent())
+			.isEqualTo(60);
+
+		CategoryBenefitDto cafeBenefit =
+			response.getCategoryBreakdown().get(1);
+
+		assertThat(cafeBenefit.getCategoryCode())
+			.isEqualTo("5813");
+
+		assertThat(cafeBenefit.getCategoryName())
+			.isEqualTo("카페");
+
+		assertThat(cafeBenefit.getAmount())
+			.isEqualTo(4_000L);
+
+		assertThat(cafeBenefit.getPercent())
+			.isEqualTo(40);
+
+		verify(benefitMapper)
+			.findMonthlyCategoryBenefitsByUserId(
+				USER_ID,
+				targetYearMonth
+					.atDay(1)
+					.atStartOfDay(),
+				targetYearMonth
+					.plusMonths(1)
+					.atDay(1)
+					.atStartOfDay()
+			);
+
+		verify(benefitMapper)
+			.findMonthlyCategoryBenefitsByUserId(
+				USER_ID,
+				previousYearMonth
+					.atDay(1)
+					.atStartOfDay(),
+				previousYearMonth
+					.plusMonths(1)
+					.atDay(1)
+					.atStartOfDay()
+			);
+	}
+
+	@Test
+	void getMonthlyBenefitReportTreatsNullAmountAsZero() {
+		YearMonth targetYearMonth =
+			YearMonth.of(BASE_YEAR, 6);
+
+		MonthlyCategoryBenefitVO row =
+			categoryRow(
+				"5813",
+				"카페",
+				null
+			);
+
+		when(
+			benefitMapper.findMonthlyCategoryBenefitsByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(
+			List.of(row),
+			List.of()
+		);
+
+		MonthlyBenefitReportResponseDto response =
+			benefitService.getMonthlyBenefitReport(
+				USER_ID,
+				targetYearMonth.format(
+					YEAR_MONTH_FORMATTER
+				)
+			);
+
+		assertThat(response.getTotalBenefitAmount())
+			.isEqualTo(0L);
+
+		assertThat(response.getDeltaVsLastMonth())
+			.isEqualTo(0L);
+
+		assertThat(response.getCategoryBreakdown())
+			.hasSize(1);
+
+		CategoryBenefitDto category =
+			response.getCategoryBreakdown().get(0);
+
+		assertThat(category.getAmount())
+			.isEqualTo(0L);
+
+		assertThat(category.getPercent())
+			.isEqualTo(0);
+	}
+
+	@Test
+	void getMonthlyBenefitReportUsesCurrentMonthWhenYearMonthIsNull() {
+		YearMonth currentYearMonth =
+			YearMonth.now(ZONE);
+
+		when(
+			benefitMapper.findMonthlyCategoryBenefitsByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(List.of());
+
+		MonthlyBenefitReportResponseDto response =
+			benefitService.getMonthlyBenefitReport(
+				USER_ID,
+				null
+			);
+
+		assertThat(response.getYearMonth())
+			.isEqualTo(currentYearMonth.toString());
+
+		verify(benefitMapper, times(2))
+			.findMonthlyCategoryBenefitsByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			);
+	}
+
+	@Test
+	void getMonthlyBenefitReportUsesCurrentMonthWhenYearMonthIsBlank() {
+		when(
+			benefitMapper.findMonthlyCategoryBenefitsByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(List.of());
+
+		MonthlyBenefitReportResponseDto response =
+			benefitService.getMonthlyBenefitReport(
+				USER_ID,
+				" "
+			);
+
+		assertThat(response.getYearMonth())
+			.isEqualTo(
+				YearMonth.now(ZONE).toString()
+			);
+	}
+
+	@Test
+	void getMonthlyBenefitReportThrowsWhenYearMonthFormatIsInvalid() {
+		assertThatThrownBy(
+			() -> benefitService.getMonthlyBenefitReport(
+				USER_ID,
+				"2026-08"
+			)
+		)
+			.isInstanceOf(
+				InvalidBenefitPeriodException.class
+			)
+			.hasMessage(
+				"yearMonth는 yyyyMM 형식이어야 합니다."
+			);
+
+		verifyNoInteractions(benefitMapper);
+	}
+
+	@Test
+	void getMonthlyBenefitReportThrowsWhenYearMonthIsInTheFuture() {
+		YearMonth futureYearMonth =
+			YearMonth.now(ZONE).plusMonths(1);
+
+		assertThatThrownBy(
+			() -> benefitService.getMonthlyBenefitReport(
+				USER_ID,
+				futureYearMonth.format(
+					YEAR_MONTH_FORMATTER
+				)
+			)
+		)
+			.isInstanceOf(
+				InvalidBenefitPeriodException.class
+			)
+			.hasMessage(
+				"yearMonth는 이번 달보다 미래일 수 없습니다."
 			);
 
 		verifyNoInteractions(benefitMapper);

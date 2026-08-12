@@ -29,22 +29,27 @@ import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
 @Transactional(readOnly = true)
 public class BenefitServiceImpl implements BenefitService {
 
-	private final BenefitMapper benefitMapper;
+	private static final ZoneId ZONE =
+		ZoneId.of("Asia/Seoul");
 
-	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+	private static final DateTimeFormatter YEAR_MONTH_FORMATTER =
+		DateTimeFormatter.ofPattern("uuuuMM");
+
+	private final BenefitMapper benefitMapper;
 
 	@Override
 	public List<AnnualFeeBreakEvenResponseDto> getAnnualFeeBreakEven(
 		Long userId,
 		int year
 	) {
-		LocalDateTime now = LocalDateTime.now(ZONE);
+		LocalDateTime now =
+			LocalDateTime.now(ZONE);
 
 		validateYear(year, now.getYear());
 
-		LocalDateTime startPaymentTime = LocalDate
-			.of(year, 1, 1)
-			.atStartOfDay();
+		LocalDateTime startPaymentTime =
+			LocalDate.of(year, 1, 1)
+				.atStartOfDay();
 
 		LocalDateTime endPaymentTime =
 			calculateEndPaymentTime(year, now);
@@ -80,8 +85,8 @@ public class BenefitServiceImpl implements BenefitService {
 	/**
 	 * 조회 결과를 사용자 보유 카드 단위로 묶는다.
 	 *
-	 * LinkedHashMap을 사용해 SQL에서 정렬한
-	 * 대표카드 우선순위를 그대로 유지한다.
+	 * <p>LinkedHashMap을 사용해 SQL에서 정렬한
+	 * 대표카드 우선순위를 그대로 유지한다.</p>
 	 */
 	private Map<Long, List<DailyBenefitAmountDto>> groupByUserCardId(
 		List<DailyBenefitAmountDto> rows
@@ -109,11 +114,13 @@ public class BenefitServiceImpl implements BenefitService {
 		LocalDateTime now,
 		List<DailyBenefitAmountDto> cardRows
 	) {
-		DailyBenefitAmountDto card = cardRows.get(0);
+		DailyBenefitAmountDto card =
+			cardRows.get(0);
 
-		long annualFee = card.getAnnualFee();
+		long annualFee =
+			card.getAnnualFee();
+
 		long accumulatedBenefit = 0L;
-
 		LocalDate breakEvenDate = null;
 
 		Map<YearMonth, Long> monthlyBenefitAmounts =
@@ -148,7 +155,8 @@ public class BenefitServiceImpl implements BenefitService {
 			if (breakEvenDate == null
 				&& accumulatedBenefit >= annualFee) {
 
-				breakEvenDate = row.getBenefitDate();
+				breakEvenDate =
+					row.getBenefitDate();
 			}
 		}
 
@@ -156,7 +164,10 @@ public class BenefitServiceImpl implements BenefitService {
 			accumulatedBenefit - annualFee;
 
 		long remainingAmount =
-			Math.max(annualFee - accumulatedBenefit, 0L);
+			Math.max(
+				annualFee - accumulatedBenefit,
+				0L
+			);
 
 		return AnnualFeeBreakEvenResponseDto.builder()
 			.userCardId(card.getUserCardId())
@@ -184,8 +195,8 @@ public class BenefitServiceImpl implements BenefitService {
 	/**
 	 * 그래프에서 사용할 월별 혜택과 누적 혜택을 생성한다.
 	 *
-	 * 현재 연도는 현재 월까지만 반환하고,
-	 * 과거 연도는 12월까지 반환한다.
+	 * <p>현재 연도는 현재 월까지만 반환하고,
+	 * 과거 연도는 12월까지 반환한다.</p>
 	 */
 	private List<MonthlyBenefitDto> createMonthlyBenefits(
 		int year,
@@ -231,10 +242,10 @@ public class BenefitServiceImpl implements BenefitService {
 	/**
 	 * 현재 연도는 현재 시각까지만 조회한다.
 	 *
-	 * 이를 통해 현재 날짜보다 미래인 seed 결제가
-	 * 혜택 금액에 포함되는 것을 막는다.
+	 * <p>현재 날짜보다 미래인 결제 데이터가
+	 * 혜택 금액에 포함되는 것을 막는다.</p>
 	 *
-	 * 과거 연도는 다음 연도 1월 1일 전까지 조회한다.
+	 * <p>과거 연도는 다음 연도 1월 1일 전까지 조회한다.</p>
 	 */
 	private LocalDateTime calculateEndPaymentTime(
 		int year,
@@ -244,15 +255,17 @@ public class BenefitServiceImpl implements BenefitService {
 			return now;
 		}
 
-		return LocalDate
-			.of(year + 1, 1, 1)
+		return LocalDate.of(year + 1, 1, 1)
 			.atStartOfDay();
 	}
 
 	/**
 	 * 미래 연도나 지나치게 오래된 연도 조회를 막는다.
 	 */
-	private void validateYear(int year, int currentYear) {
+	private void validateYear(
+		int year,
+		int currentYear
+	) {
 		if (year < 2000 || year > currentYear) {
 			throw new InvalidBenefitPeriodException(
 				"year는 2000년부터 현재 연도 사이여야 합니다."
@@ -260,52 +273,76 @@ public class BenefitServiceImpl implements BenefitService {
 		}
 	}
 
-	// ---- 월간 리포트 (#47/#50) ----
-
-	private static final DateTimeFormatter YEAR_MONTH_FORMATTER =
-		DateTimeFormatter.ofPattern("yyyyMM");
-
 	@Override
 	public MonthlyBenefitReportResponseDto getMonthlyBenefitReport(
 		Long userId,
 		String yearMonth
 	) {
-		YearMonth targetYearMonth = parseYearMonth(yearMonth);
-		YearMonth previousYearMonth = targetYearMonth.minusMonths(1);
+		YearMonth targetYearMonth =
+			parseYearMonth(yearMonth);
+
+		YearMonth previousYearMonth =
+			targetYearMonth.minusMonths(1);
 
 		List<MonthlyCategoryBenefitVO> categoryRows =
 			benefitMapper.findMonthlyCategoryBenefitsByUserId(
 				userId,
 				startOfMonth(targetYearMonth),
-				startOfMonth(targetYearMonth.plusMonths(1))
+				startOfMonth(
+					targetYearMonth.plusMonths(1)
+				)
 			);
 
-		long totalBenefitAmount = sumCategoryAmounts(categoryRows);
-		long previousTotalBenefitAmount = sumCategoryBenefits(userId, previousYearMonth);
+		long totalBenefitAmount =
+			sumCategoryAmounts(categoryRows);
+
+		long previousTotalBenefitAmount =
+			sumCategoryBenefits(
+				userId,
+				previousYearMonth
+			);
 
 		return MonthlyBenefitReportResponseDto.builder()
 			.yearMonth(targetYearMonth.toString())
 			.totalBenefitAmount(totalBenefitAmount)
-			.deltaVsLastMonth(totalBenefitAmount - previousTotalBenefitAmount)
+			.deltaVsLastMonth(
+				totalBenefitAmount
+					- previousTotalBenefitAmount
+			)
 			.categoryBreakdown(
-				createCategoryBreakdown(categoryRows, totalBenefitAmount)
+				createCategoryBreakdown(
+					categoryRows,
+					totalBenefitAmount
+				)
 			)
 			.build();
 	}
 
-	private long sumCategoryBenefits(Long userId, YearMonth yearMonth) {
-		return sumCategoryAmounts(
+	private long sumCategoryBenefits(
+		Long userId,
+		YearMonth yearMonth
+	) {
+		List<MonthlyCategoryBenefitVO> rows =
 			benefitMapper.findMonthlyCategoryBenefitsByUserId(
 				userId,
 				startOfMonth(yearMonth),
-				startOfMonth(yearMonth.plusMonths(1))
-			)
-		);
+				startOfMonth(
+					yearMonth.plusMonths(1)
+				)
+			);
+
+		return sumCategoryAmounts(rows);
 	}
 
-	private long sumCategoryAmounts(List<MonthlyCategoryBenefitVO> rows) {
+	private long sumCategoryAmounts(
+		List<MonthlyCategoryBenefitVO> rows
+	) {
 		return rows.stream()
-			.mapToLong(row -> row.getCategoryAmount() == null ? 0L : row.getCategoryAmount())
+			.mapToLong(
+				row -> row.getCategoryAmount() == null
+					? 0L
+					: row.getCategoryAmount()
+			)
 			.sum();
 	}
 
@@ -313,18 +350,31 @@ public class BenefitServiceImpl implements BenefitService {
 		List<MonthlyCategoryBenefitVO> rows,
 		long totalBenefitAmount
 	) {
-		List<CategoryBenefitDto> breakdown = new ArrayList<>();
+		List<CategoryBenefitDto> breakdown =
+			new ArrayList<>();
 
 		for (MonthlyCategoryBenefitVO row : rows) {
-			long amount = row.getCategoryAmount() == null ? 0L : row.getCategoryAmount();
-			int percent = totalBenefitAmount <= 0
-				? 0
-				: Math.round((amount * 100f) / totalBenefitAmount);
+			long amount =
+				row.getCategoryAmount() == null
+					? 0L
+					: row.getCategoryAmount();
+
+			int percent =
+				totalBenefitAmount <= 0
+					? 0
+					: Math.round(
+					(amount * 100f)
+						/ totalBenefitAmount
+				);
 
 			breakdown.add(
 				CategoryBenefitDto.builder()
-					.categoryCode(row.getCategoryCode())
-					.categoryName(row.getCategoryName())
+					.categoryCode(
+						row.getCategoryCode()
+					)
+					.categoryName(
+						row.getCategoryName()
+					)
 					.amount(amount)
 					.percent(percent)
 					.build()
@@ -334,28 +384,44 @@ public class BenefitServiceImpl implements BenefitService {
 		return breakdown;
 	}
 
-	private LocalDateTime startOfMonth(YearMonth yearMonth) {
-		return yearMonth.atDay(1).atStartOfDay();
+	private LocalDateTime startOfMonth(
+		YearMonth yearMonth
+	) {
+		return yearMonth
+			.atDay(1)
+			.atStartOfDay();
 	}
 
 	/**
-	 * yyyyMM 문자열을 YearMonth로 변환한다. 비어있으면 이번 달로 처리하고,
-	 * 형식이 잘못됐거나 미래 달이면 예외를 던진다.
+	 * yyyyMM 문자열을 YearMonth로 변환한다.
+	 *
+	 * <p>값이 비어 있으면 KST 기준 이번 달을 사용한다.
+	 * 형식이 잘못됐거나 미래 달이면 예외가 발생한다.</p>
 	 */
-	private YearMonth parseYearMonth(String yearMonth) {
+	private YearMonth parseYearMonth(
+		String yearMonth
+	) {
 		if (yearMonth == null || yearMonth.isBlank()) {
-			return YearMonth.now();
+			return YearMonth.now(ZONE);
 		}
 
 		YearMonth parsed;
+
 		try {
-			parsed = YearMonth.parse(yearMonth, YEAR_MONTH_FORMATTER);
+			parsed = YearMonth.parse(
+				yearMonth,
+				YEAR_MONTH_FORMATTER
+			);
 		} catch (DateTimeParseException e) {
-			throw new IllegalArgumentException("yearMonth는 yyyyMM 형식이어야 합니다.");
+			throw new InvalidBenefitPeriodException(
+				"yearMonth는 yyyyMM 형식이어야 합니다."
+			);
 		}
 
-		if (parsed.isAfter(YearMonth.now())) {
-			throw new IllegalArgumentException("yearMonth는 이번 달보다 미래일 수 없습니다.");
+		if (parsed.isAfter(YearMonth.now(ZONE))) {
+			throw new InvalidBenefitPeriodException(
+				"yearMonth는 이번 달보다 미래일 수 없습니다."
+			);
 		}
 
 		return parsed;
