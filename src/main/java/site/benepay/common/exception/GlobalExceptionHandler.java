@@ -156,4 +156,10 @@ public class GlobalExceptionHandler {
 		return ResponseEntity.status(status)
 			.body(new ErrorResponse(status.value(), message, request.getRequestURI(), LocalDateTime.now(ZONE)));
 	}
+
+	@ExceptionHandler(InvalidBenefitPeriodException.class)
+	public ResponseEntity<ErrorResponse> handleInvalidBenefitPeriod(HttpServletRequest request,
+		InvalidBenefitPeriodException ex) {
+		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+	}
 }

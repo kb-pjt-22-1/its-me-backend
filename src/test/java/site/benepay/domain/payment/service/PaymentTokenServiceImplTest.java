@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import site.benepay.common.exception.PaymentTokenNotFoundException;
 import site.benepay.common.exception.MerchantNotFoundException;
@@ -18,6 +19,7 @@ import site.benepay.common.exception.PaymentTokenNotUsableException;
 import site.benepay.common.exception.UserCardNotAvailableException;
 import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
 import site.benepay.domain.payment.dto.PaymentTokenResponseDto;
+import site.benepay.domain.payment.event.PaymentApprovedEvent;
 import site.benepay.domain.payment.mapper.PaymentMapper;
 import site.benepay.domain.payment.vo.PaymentHistoryVO;
 import site.benepay.domain.payment.vo.PaymentTokenVO;
@@ -48,11 +50,14 @@ class PaymentTokenServiceImplTest {
 	@Mock
 	private PaymentMapper paymentMapper;
 
+	@Mock
+	private ApplicationEventPublisher eventPublisher;
+
 	private PaymentTokenService paymentTokenService;
 
 	@BeforeEach
 	void setUp() {
-		paymentTokenService = new PaymentTokenServiceImpl(paymentTokenStore, paymentMapper);
+		paymentTokenService = new PaymentTokenServiceImpl(paymentTokenStore, paymentMapper, eventPublisher);
 	}
 
 	private PaymentTokenVO token(Long merchantId, String status) {
@@ -67,7 +72,9 @@ class PaymentTokenServiceImplTest {
 	private PaymentHistoryVO historyRow() {
 		return PaymentHistoryVO.builder()
 			.paymentId(PAYMENT_ID)
+			.userCardId(USER_CARD_ID)
 			.merchantName("스타벅스 강남점")
+			.categoryCode("5813")
 			.cardName("노리 체크카드")
 			.panLast4("1234")
 			.paymentTime(LocalDateTime.now())
@@ -166,6 +173,13 @@ class PaymentTokenServiceImplTest {
 		verify(paymentMapper).insertPayment(captor.capture());
 		assertThat(captor.getValue().getMerchantId()).isEqualTo(MERCHANT_ID);
 		verify(paymentMapper, never()).findRandomMerchantId();
+
+		ArgumentCaptor<PaymentApprovedEvent> eventCaptor = ArgumentCaptor.forClass(PaymentApprovedEvent.class);
+		verify(eventPublisher).publishEvent(eventCaptor.capture());
+		PaymentApprovedEvent event = eventCaptor.getValue();
+		assertThat(event.userCardId()).isEqualTo(USER_CARD_ID);
+		assertThat(event.categoryCode()).isEqualTo("5813");
+		assertThat(event.discountAmount()).isEqualByComparingTo(BigDecimal.ZERO);
 	}
 
 	@Test
@@ -200,6 +214,7 @@ class PaymentTokenServiceImplTest {
 			.isInstanceOf(PaymentTokenNotFoundException.class);
 
 		verify(paymentMapper, never()).insertPayment(any());
+		verify(eventPublisher, never()).publishEvent(any());
 	}
 
 	@Test
@@ -210,6 +225,7 @@ class PaymentTokenServiceImplTest {
 			.isInstanceOf(PaymentTokenNotUsableException.class);
 
 		verify(paymentMapper, never()).insertPayment(any());
+		verify(eventPublisher, never()).publishEvent(any());
 	}
 
 	@Test
@@ -221,6 +237,7 @@ class PaymentTokenServiceImplTest {
 			.isInstanceOf(PaymentTokenNotUsableException.class);
 
 		verify(paymentMapper, never()).insertPayment(any());
+		verify(eventPublisher, never()).publishEvent(any());
 	}
 
 	// ---- cancelToken ----
