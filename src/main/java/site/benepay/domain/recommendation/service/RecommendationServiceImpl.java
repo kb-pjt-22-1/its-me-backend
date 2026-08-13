@@ -22,6 +22,7 @@ import site.benepay.domain.merchant.service.MerchantCategoryService;
 import site.benepay.domain.recommendation.dto.CardBenefitComparisonResponseDto;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
+import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
 import site.benepay.domain.recommendation.engine.BenefitEngine;
 import site.benepay.domain.recommendation.engine.BenefitJsonParser;
 import site.benepay.domain.recommendation.engine.Mode3Result;
@@ -39,6 +40,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 	// 이번 달 확정 이득(now)과 다음 달 확률적 기대 이득(future)을 1:1로 합산한다
 	// (CsvProcessing category_search.py의 evaluate_priority 기본값과 동일).
 	private static final double PRIORITY_BETA = 1.0;
+	// 매장 하나당 추천 카드는 총 기대 가치 상위 3장까지만 보여준다.
+	private static final int TOP_CARD_LIMIT = 3;
 	// DB 커넥션의 serverTimezone(application.properties의 db.url)과 맞춘다 - UserServiceImpl과 동일 규약.
 	private static final ZoneId APP_ZONE = ZoneId.of("Asia/Seoul");
 
@@ -130,14 +133,14 @@ public class RecommendationServiceImpl implements RecommendationService {
 	}
 
 	/**
-	 * 매장 하나에 대해 사용자 보유 카드 중 모드 3(우선순위) 기준 최적 카드를 고른다. 필터링해서
-	 * 매장을 걸러내지 않고 전달받은 매장 전부를 그대로 반환하되, 그 최적 카드의 total(이번 달
-	 * 확정 + beta × 다음 달 기대)이 0보다 큰 매장만 benefitAvailable=true로 표시하고
-	 * recommendedCardName/benefitSummary를 채운다 - 카테고리가 추천 분석 대상(16개 대분류)
-	 * 밖이거나 실질적 이득이 없으면 benefitAvailable=false로 나머지 필드는 비워 둔다. 전달받은
-	 * 매장 리스트를 카테고리로 미리 좁히지 않고 전부 평가하므로, 검색 카테고리 밖이라 혜택받을
-	 * 수 있는 다른 매장을 놓치는 문제가 없다. 위치 기반 조회라 거리 개념이 없어 distanceMeters는
-	 * 항상 null이다.
+	 * 매장 하나에 대해 사용자 보유 카드 중 모드 3(우선순위) 기준 total(이번 달 확정 + beta ×
+	 * 다음 달 기대)이 0보다 큰 카드를 total 내림차순으로 최대 {@value #TOP_CARD_LIMIT}장까지
+	 * 골라 recommendedCards에 채운다. 필터링해서 매장을 걸러내지 않고 전달받은 매장 전부를
+	 * 그대로 반환하되, 그런 카드가 하나라도 있는 매장만 benefitAvailable=true로 표시한다 -
+	 * 카테고리가 추천 분석 대상(16개 대분류) 밖이거나 실질적 이득이 있는 카드가 없으면
+	 * benefitAvailable=false로 recommendedCards는 빈 리스트다. 전달받은 매장 리스트를
+	 * 카테고리로 미리 좁히지 않고 전부 평가하므로, 검색 카테고리 밖이라 혜택받을 수 있는 다른
+	 * 매장을 놓치는 문제가 없다. 위치 기반 조회라 거리 개념이 없어 distanceMeters는 항상 null이다.
 	 */
 	private NearbyMerchantRecommendationResponseDto toOptimalCardRecommendation(
 		MerchantResponseDto merchant,
@@ -147,11 +150,16 @@ public class RecommendationServiceImpl implements RecommendationService {
 		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers
 	) {
 		String categoryName = categoryNames.get(merchant.getCategoryCode());
-		Map.Entry<RecommendationCardCandidateVO, Mode3Result> best = categoryName == null
-			? null
-			: findBestCard(heldCards, merchant.getCategoryCode(), categoryName, walletSpendHistory, parsedTiers);
+		List<Map.Entry<RecommendationCardCandidateVO, Mode3Result>> topCards = categoryName == null
+			? List.of()
+			: findTopCards(heldCards, merchant.getCategoryCode(), categoryName, walletSpendHistory, parsedTiers);
 
-		boolean benefitAvailable = best != null && best.getValue().total() > 0;
+		List<RecommendedCardResponseDto> recommendedCards = topCards.stream()
+			.map(entry -> RecommendedCardResponseDto.builder()
+				.cardName(entry.getKey().getCardName())
+				.benefitSummary(entry.getValue().note())
+				.build())
+			.toList();
 
 		return NearbyMerchantRecommendationResponseDto.builder()
 			.merchantId(merchant.getMerchantId())
@@ -164,13 +172,12 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.longitude(merchant.getLongitude())
 			.distanceMeters(null)
 			.phone(merchant.getPhone())
-			.benefitAvailable(benefitAvailable)
-			.benefitSummary(benefitAvailable ? best.getValue().note() : null)
-			.recommendedCardName(benefitAvailable ? best.getKey().getCardName() : null)
+			.benefitAvailable(!recommendedCards.isEmpty())
+			.recommendedCards(recommendedCards)
 			.build();
 	}
 
-	private Map.Entry<RecommendationCardCandidateVO, Mode3Result> findBestCard(
+	private List<Map.Entry<RecommendationCardCandidateVO, Mode3Result>> findTopCards(
 		List<RecommendationCardCandidateVO> heldCards,
 		String categoryCode,
 		String categoryName,
@@ -179,7 +186,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 	) {
 		Long typicalAmount = recommendationParamsLoader.params().typicalPaymentAmount().get(categoryName);
 		if (typicalAmount == null || heldCards.isEmpty()) {
-			return null;
+			return List.of();
 		}
 
 		return heldCards.stream()
@@ -188,8 +195,11 @@ public class RecommendationServiceImpl implements RecommendationService {
 				scorePriority(candidate, categoryCode, categoryName, typicalAmount, walletSpendHistory,
 					parsedTiers.get(candidate))
 			))
-			.max(Comparator.comparingDouble(e -> e.getValue().total()))
-			.orElse(null);
+			.filter(entry -> entry.getValue().total() > 0)
+			.sorted(Comparator.<Map.Entry<RecommendationCardCandidateVO, Mode3Result>>comparingDouble(
+				e -> e.getValue().total()).reversed())
+			.limit(TOP_CARD_LIMIT)
+			.toList();
 	}
 
 	/**
