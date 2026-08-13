@@ -6,6 +6,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import lombok.RequiredArgsConstructor;
+import site.benepay.common.exception.KbCardIntegrationException;
 import site.benepay.integration.kbcard.dto.KbCardResponseDto;
 import site.benepay.integration.kbcard.dto.KbCustomerCardsResponseDto;
 
@@ -28,8 +29,7 @@ public class KbCardClient {
 	 * CI 해시로 고객의 전체 보유 카드를 조회한다.
 	 */
 	public KbCustomerCardsResponseDto findCardsByCiHash(String ciHash) {
-		String url = baseUrl
-			+ "/api/v1/customers/cards?ciHash={ciHash}";
+		String url = baseUrl + "/api/v1/customers/cards?ciHash={ciHash}";
 
 		try {
 			KbCustomerCardsResponseDto response = restTemplate.getForObject(
@@ -42,7 +42,7 @@ public class KbCardClient {
 				? new KbCustomerCardsResponseDto()
 				: response;
 		} catch (RestClientException e) {
-			throw new IllegalStateException(
+			throw new KbCardIntegrationException(
 				"KB카드 Mock Server 보유 카드 조회에 실패했습니다.",
 				e
 			);
@@ -54,17 +54,25 @@ public class KbCardClient {
 	 * 카드의 최신 상세 정보를 다시 조회할 때 사용한다.
 	 */
 	public KbCardResponseDto findCardByReferenceId(String cardReferenceId) {
-		String url = baseUrl
-			+ "/api/v1/cards/{cardReferenceId}";
+		String url = baseUrl + "/api/v1/cards/{cardReferenceId}";
 
 		try {
-			return restTemplate.getForObject(
+			KbCardResponseDto response = restTemplate.getForObject(
 				url,
 				KbCardResponseDto.class,
 				cardReferenceId
 			);
+
+			if (response == null) {
+				throw new KbCardIntegrationException(
+					"KB카드 상세 정보 응답이 비어 있습니다."
+				);
+			}
+
+			return response;
+
 		} catch (RestClientException e) {
-			throw new IllegalStateException(
+			throw new KbCardIntegrationException(
 				"KB카드 상세 정보 조회에 실패했습니다.",
 				e
 			);

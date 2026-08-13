@@ -14,6 +14,8 @@ public interface UserMapper {
 
 	Optional<User> findByLoginId(String loginId);
 
+	Optional<User> findByCiHash(@Param("ciHash") String ciHash);
+
 	boolean existsByLoginId(String loginId);
 
 	boolean existsByDiHash(String diHash);
