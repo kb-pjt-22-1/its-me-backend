@@ -13,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
+import site.benepay.common.exception.InvalidYearMonthException;
 import site.benepay.common.exception.PaymentNotCancelableException;
 import site.benepay.common.exception.PaymentNotFoundException;
 import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
@@ -90,10 +91,10 @@ class PaymentServiceImplTest {
 
 	@Test
 	void getPaymentHistoryReturnsTheEnrichedListForTheUser() {
-		when(paymentMapper.findPaymentHistoryByUserId(USER_ID))
+		when(paymentMapper.findPaymentHistoryByUserId(USER_ID, null))
 			.thenReturn(List.of(row("APPROVED"), row("CANCELED")));
 
-		List<PaymentHistoryResponseDto> history = paymentService.getPaymentHistory(USER_ID);
+		List<PaymentHistoryResponseDto> history = paymentService.getPaymentHistory(USER_ID, null);
 
 		assertThat(history).hasSize(2);
 		assertThat(history.get(0).getPaymentStatus()).isEqualTo("APPROVED");
@@ -102,9 +103,34 @@ class PaymentServiceImplTest {
 
 	@Test
 	void getPaymentHistoryReturnsAnEmptyListWhenTheUserHasNoPayments() {
-		when(paymentMapper.findPaymentHistoryByUserId(USER_ID)).thenReturn(List.of());
+		when(paymentMapper.findPaymentHistoryByUserId(USER_ID, null)).thenReturn(List.of());
 
-		assertThat(paymentService.getPaymentHistory(USER_ID)).isEmpty();
+		assertThat(paymentService.getPaymentHistory(USER_ID, null)).isEmpty();
+	}
+
+	@Test
+	void getPaymentHistoryPassesAValidYearMonthThroughToTheMapper() {
+		when(paymentMapper.findPaymentHistoryByUserId(USER_ID, "202608"))
+			.thenReturn(List.of(row("APPROVED")));
+
+		List<PaymentHistoryResponseDto> history = paymentService.getPaymentHistory(USER_ID, "202608");
+
+		assertThat(history).hasSize(1);
+	}
+
+	@Test
+	void getPaymentHistoryTreatsABlankYearMonthAsNoFilter() {
+		when(paymentMapper.findPaymentHistoryByUserId(USER_ID, null)).thenReturn(List.of());
+
+		assertThat(paymentService.getPaymentHistory(USER_ID, "  ")).isEmpty();
+	}
+
+	@Test
+	void getPaymentHistoryThrowsOnMalformedYearMonth() {
+		assertThatThrownBy(() -> paymentService.getPaymentHistory(USER_ID, "2026-08"))
+			.isInstanceOf(InvalidYearMonthException.class);
+
+		verify(paymentMapper, never()).findPaymentHistoryByUserId(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
 	}
 
 	// ---- cancelPayment ----
