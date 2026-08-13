@@ -20,6 +20,7 @@ import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
+import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
@@ -140,23 +141,28 @@ class RecommendationFlowDemoTest {
 			+ "최적 카드의 총 기대 가치(이번 달 확정 + 다음 달 기대)가 0보다 크면 benefitAvailable=true로 표시 "
 			+ "(매장은 걸러내지 않고 전부 반환)");
 		for (NearbyMerchantRecommendationResponseDto m : result) {
-			System.out.printf("    - %-16s benefitAvailable=%-5s 추천카드=%-14s %s%n",
-				m.getMerchantName(), m.isBenefitAvailable(), m.getRecommendedCardName(), m.getBenefitSummary());
+			String cardNames = m.getRecommendedCards().stream()
+				.map(RecommendedCardResponseDto::getCardName)
+				.reduce((a, b) -> a + ", " + b)
+				.orElse("");
+			System.out.printf("    - %-16s benefitAvailable=%-5s 추천카드(최대 3장)=%s%n",
+				m.getMerchantName(), m.isBenefitAvailable(), cardNames);
 		}
-		System.out.println("[4] 추천 도메인 -> Facade -> 프론트: 매장 리스트(추가 필드 benefitAvailable 포함)를 그대로 반환");
+		System.out.println("[4] 추천 도메인 -> Facade -> 프론트: 매장 리스트(추가 필드 benefitAvailable/recommendedCards 포함)를 그대로 반환");
 
 		assertThat(result).hasSize(2);
 		assertThat(result).filteredOn(m -> m.getMerchantId().equals(501L))
 			.allSatisfy(m -> {
 				assertThat(m.getMerchantName()).isEqualTo("카페 트리 홍대점");
 				assertThat(m.isBenefitAvailable()).isTrue();
-				assertThat(m.getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
+				assertThat(m.getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
+					.containsExactly("청춘대로 톡톡카드", "굿데이카드", "ALL카드");
 				assertThat(m.getCategoryCode()).isEqualTo(CAFE_CODE);
 			});
 		assertThat(result).filteredOn(m -> m.getMerchantId().equals(502L))
 			.allSatisfy(m -> {
 				assertThat(m.isBenefitAvailable()).isFalse();
-				assertThat(m.getRecommendedCardName()).isNull();
+				assertThat(m.getRecommendedCards()).isEmpty();
 			});
 	}
 }

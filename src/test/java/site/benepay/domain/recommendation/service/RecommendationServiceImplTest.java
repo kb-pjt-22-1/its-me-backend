@@ -22,6 +22,7 @@ import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
+import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
 import site.benepay.domain.recommendation.engine.RecommendationParams;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
@@ -134,13 +135,14 @@ class RecommendationServiceImplTest {
 		assertThat(result.get(0).getMerchantId()).isEqualTo(MERCHANT_ID);
 		assertThat(result.get(0).getCategoryCode()).isEqualTo(CAFE_CODE);
 		assertThat(result.get(0).isBenefitAvailable()).isTrue();
-		assertThat(result.get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
-		assertThat(result.get(0).getBenefitSummary()).isNotBlank();
+		assertThat(result.get(0).getRecommendedCards()).hasSize(1);
+		assertThat(result.get(0).getRecommendedCards().get(0).getCardName()).isEqualTo("청춘대로 톡톡카드");
+		assertThat(result.get(0).getRecommendedCards().get(0).getBenefitSummary()).isNotBlank();
 		assertThat(result.get(0).getDistanceMeters()).isNull();
 	}
 
 	@Test
-	void picksTheHighestTotalValueCardAmongMultipleHeldCards() {
+	void ranksHeldCardsByTotalValueUpToTopThree() {
 		stubCafeCategory();
 		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
 
@@ -155,7 +157,29 @@ class RecommendationServiceImplTest {
 		);
 
 		assertThat(result).hasSize(1);
-		assertThat(result.get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
+		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
+			.containsExactly("청춘대로 톡톡카드", "굿데이카드", "ALL카드");
+	}
+
+	@Test
+	void limitsRecommendedCardsToTopThreeWhenMoreThanThreeCardsQualify() {
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(
+				candidate(1L, "1위카드", CAFE_CODE, 90),
+				candidate(2L, "2위카드", CAFE_CODE, 70),
+				candidate(3L, "3위카드", CAFE_CODE, 50),
+				candidate(4L, "4위카드", CAFE_CODE, 30)
+			),
+			List.of(merchant(MERCHANT_ID, CAFE_CODE))
+		);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
+			.containsExactly("1위카드", "2위카드", "3위카드");
 	}
 
 	@Test
@@ -171,8 +195,7 @@ class RecommendationServiceImplTest {
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).isBenefitAvailable()).isFalse();
-		assertThat(result.get(0).getRecommendedCardName()).isNull();
-		assertThat(result.get(0).getBenefitSummary()).isNull();
+		assertThat(result.get(0).getRecommendedCards()).isEmpty();
 	}
 
 	@Test
@@ -188,7 +211,7 @@ class RecommendationServiceImplTest {
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).isBenefitAvailable()).isFalse();
 		assertThat(result.get(0).getCategoryCode()).isEqualTo("8888");
-		assertThat(result.get(0).getRecommendedCardName()).isNull();
+		assertThat(result.get(0).getRecommendedCards()).isEmpty();
 	}
 
 	@Test
@@ -219,13 +242,17 @@ class RecommendationServiceImplTest {
 		assertThat(result).extracting(NearbyMerchantRecommendationResponseDto::getMerchantId)
 			.containsExactlyInAnyOrder(cafeMerchantId, convenienceMerchantId);
 		assertThat(result).filteredOn(m -> m.getMerchantId().equals(cafeMerchantId))
-			.allSatisfy(m -> assertThat(m.isBenefitAvailable()).isTrue())
-			.extracting(NearbyMerchantRecommendationResponseDto::getRecommendedCardName)
-			.containsExactly("카페카드");
+			.allSatisfy(m -> {
+				assertThat(m.isBenefitAvailable()).isTrue();
+				assertThat(m.getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
+					.containsExactly("카페카드");
+			});
 		assertThat(result).filteredOn(m -> m.getMerchantId().equals(convenienceMerchantId))
-			.allSatisfy(m -> assertThat(m.isBenefitAvailable()).isTrue())
-			.extracting(NearbyMerchantRecommendationResponseDto::getRecommendedCardName)
-			.containsExactly("편의점카드");
+			.allSatisfy(m -> {
+				assertThat(m.isBenefitAvailable()).isTrue();
+				assertThat(m.getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
+					.containsExactly("편의점카드");
+			});
 	}
 
 	@Test
@@ -252,7 +279,7 @@ class RecommendationServiceImplTest {
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).isBenefitAvailable()).isFalse();
-		assertThat(result.get(0).getRecommendedCardName()).isNull();
+		assertThat(result.get(0).getRecommendedCards()).isEmpty();
 	}
 
 	@Test
@@ -301,7 +328,8 @@ class RecommendationServiceImplTest {
 		// 즉시 혜택(전월 실적 0원이라도 0구간은 충족)을 정상적으로 계산해야 한다.
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).isBenefitAvailable()).isTrue();
-		assertThat(result.get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
+		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
+			.containsExactly("청춘대로 톡톡카드");
 	}
 
 	@Test
@@ -325,7 +353,9 @@ class RecommendationServiceImplTest {
 		);
 
 		assertThat(result).hasSize(1);
-		assertThat(result.get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
+		// 이력없는카드(5%)도 total>0이라 함께 뽑히지만, 청춘대로 톡톡카드(50%)가 더 높아 먼저 온다.
+		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
+			.containsExactly("청춘대로 톡톡카드", "이력없는카드");
 	}
 
 	@Test
@@ -346,7 +376,8 @@ class RecommendationServiceImplTest {
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).isBenefitAvailable()).isTrue();
-		assertThat(result.get(0).getRecommendedCardName()).isEqualTo("청춘대로 톡톡카드");
+		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
+			.containsExactly("청춘대로 톡톡카드");
 	}
 
 	@Test
