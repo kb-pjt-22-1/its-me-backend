@@ -11,4 +11,6 @@ public interface MerchantService {
 	MerchantResponseDto getMerchant(Long merchantId);
 
 	List<MerchantResponseDto> getMerchants(double swLat, double swLng, double neLat, double neLng, String categoryCode);
+
+	List<MerchantResponseDto> getNearbyMerchants(double lat, double lng, String categoryCode, int limit);
 }

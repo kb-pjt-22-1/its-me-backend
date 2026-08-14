@@ -21,6 +21,10 @@ import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationRespon
 @RequiredArgsConstructor
 public class MerchantController {
 
+	// 오늘의 추천 후보 풀 크기 - 가까운 순 20곳을 전부 혜택 평가한 뒤 상위 TODAY_RECOMMENDATION_LIMIT개만 추린다.
+	private static final int TODAY_RECOMMENDATION_CANDIDATE_POOL = 20;
+	private static final int TODAY_RECOMMENDATION_LIMIT = 2;
+
 	private final MerchantService merchantService;
 	private final Facade facade;
 
@@ -66,5 +70,24 @@ public class MerchantController {
 	) {
 		List<MerchantResponseDto> merchants = merchantService.getMerchants(swLat, swLng, neLat, neLng, categoryCode);
 		return ResponseEntity.ok(facade.getRecommendedMerchants(userId, merchants));
+	}
+
+	/**
+	 * 홈 화면 "오늘의 추천": 사용자 현재 위치에서 가까운 매장 후보 중, 지금 당장 보유 카드로
+	 * 혜택 받을 수 있는 매장을 우선으로 최대 {@value #TODAY_RECOMMENDATION_LIMIT}곳을 반환한다.
+	 * @param lat 사용자 위도
+	 * @param lng 사용자 경도
+	 * @param categoryCode 카테고리 코드. 없으면 전체 카테고리
+	 */
+	@GetMapping("/today-recommendation")
+	public ResponseEntity<List<NearbyMerchantRecommendationResponseDto>> getTodayRecommendation(
+		@AuthenticationPrincipal Long userId,
+		@RequestParam double lat,
+		@RequestParam double lng,
+		@RequestParam(required = false) String categoryCode
+	) {
+		List<MerchantResponseDto> candidates =
+			merchantService.getNearbyMerchants(lat, lng, categoryCode, TODAY_RECOMMENDATION_CANDIDATE_POOL);
+		return ResponseEntity.ok(facade.getTodayRecommendedMerchants(userId, candidates, TODAY_RECOMMENDATION_LIMIT));
 	}
 }

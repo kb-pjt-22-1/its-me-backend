@@ -140,7 +140,9 @@ public class RecommendationServiceImpl implements RecommendationService {
 	 * 카테고리가 추천 분석 대상(16개 대분류) 밖이거나 실질적 이득이 있는 카드가 없으면
 	 * benefitAvailable=false로 recommendedCards는 빈 리스트다. 전달받은 매장 리스트를
 	 * 카테고리로 미리 좁히지 않고 전부 평가하므로, 검색 카테고리 밖이라 혜택받을 수 있는 다른
-	 * 매장을 놓치는 문제가 없다. 위치 기반 조회라 거리 개념이 없어 distanceMeters는 항상 null이다.
+	 * 매장을 놓치는 문제가 없다. distanceMeters는 입력 merchant에 이미 계산되어 있으면(위치
+	 * 기반 조회, 예: 오늘의 추천) 그대로 넘기고, bounds 조회처럼 거리 개념이 없으면 null을
+	 * 그대로 넘긴다.
 	 */
 	private NearbyMerchantRecommendationResponseDto toOptimalCardRecommendation(
 		MerchantResponseDto merchant,
@@ -170,7 +172,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.address(merchant.getAddress())
 			.latitude(merchant.getLatitude())
 			.longitude(merchant.getLongitude())
-			.distanceMeters(null)
+			.distanceMeters(merchant.getDistanceMeters())
 			.phone(merchant.getPhone())
 			.benefitAvailable(!recommendedCards.isEmpty())
 			.recommendedCards(recommendedCards)
