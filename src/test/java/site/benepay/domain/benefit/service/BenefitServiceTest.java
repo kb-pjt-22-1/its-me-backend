@@ -18,6 +18,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import site.benepay.common.exception.InvalidBenefitPeriodException;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto.MonthlyBenefitDto;
@@ -26,6 +28,7 @@ import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto.CategoryBenefitDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
 import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
+import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 
 @ExtendWith(MockitoExtension.class)
 class BenefitServiceTest {
@@ -49,12 +52,26 @@ class BenefitServiceTest {
 	@Mock
 	private BenefitMapper benefitMapper;
 
+	@Mock
+	private ObjectMapper objectMapper;
+
+	@Mock
+	private RecommendationParamsLoader recommendationParamsLoader;
+
+	@Mock
+	private OpenAiClient openAiClient;
+
 	private BenefitServiceImpl benefitService;
 
 	@BeforeEach
 	void setUp() {
 		benefitService =
-			new BenefitServiceImpl(benefitMapper);
+			new BenefitServiceImpl(
+				benefitMapper,
+				objectMapper,
+				recommendationParamsLoader,
+				openAiClient
+			);
 	}
 
 	private DailyBenefitAmountDto benefitRow(

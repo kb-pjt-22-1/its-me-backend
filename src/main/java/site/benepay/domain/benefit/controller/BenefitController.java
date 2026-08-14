@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
+import site.benepay.domain.benefit.dto.BenefitCoachResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 import site.benepay.domain.benefit.service.BenefitService;
 
@@ -21,9 +22,9 @@ import site.benepay.domain.benefit.service.BenefitService;
 @RequestMapping("/api/v1/benefits")
 public class BenefitController {
 
-	private final BenefitService benefitService;
-
 	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+
+	private final BenefitService benefitService;
 
 	/**
 	 * 혜택 탭에서 사용할 카드별 연회비 본전 정보를 조회한다.
@@ -61,6 +62,20 @@ public class BenefitController {
 	) {
 		MonthlyBenefitReportResponseDto response =
 			benefitService.getMonthlyBenefitReport(userId, yearMonth);
+
+		return ResponseEntity.ok(response);
+	}
+
+	/**
+	 * 최근 3개월 결제 패턴과 보유 카드 혜택을 분석하여
+	 * AI 혜택 코칭 결과를 반환한다.
+	 */
+	@GetMapping("/coaching")
+	public ResponseEntity<BenefitCoachResponseDto> getBenefitCoaching(
+		@AuthenticationPrincipal Long userId
+	) {
+		BenefitCoachResponseDto response =
+			benefitService.getBenefitCoaching(userId);
 
 		return ResponseEntity.ok(response);
 	}
