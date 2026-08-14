@@ -12,9 +12,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import site.benepay.common.facade.Facade;
-import site.benepay.domain.merchant.dto.MerchantRecommendationResponseDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantService;
+import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 
 @RestController
 @RequestMapping("/api/v1/merchants")
@@ -56,7 +56,7 @@ public class MerchantController {
 	 * @param categoryCode 카테고리 코드. 없으면 전체 카테고리
 	 */
 	@GetMapping("/recommendations")
-	public ResponseEntity<List<MerchantRecommendationResponseDto>> getRecommendedMerchantsInBounds(
+	public ResponseEntity<List<NearbyMerchantRecommendationResponseDto>> getRecommendedMerchantsInBounds(
 		@AuthenticationPrincipal Long userId,
 		@RequestParam double swLat,
 		@RequestParam double swLng,

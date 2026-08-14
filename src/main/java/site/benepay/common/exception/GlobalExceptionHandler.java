@@ -145,6 +145,20 @@ public class GlobalExceptionHandler {
 		return errorResponse(HttpStatus.BAD_REQUEST, "요청에 유효하지 않거나 존재하지 않는 참조 값이 있습니다.", request);
 	}
 
+	@ExceptionHandler(CardPerformanceUpdateException.class)
+	public ResponseEntity<ErrorResponse> handleCardPerformanceUpdate(
+		CardPerformanceUpdateException ex,
+		HttpServletRequest request
+	) {
+		log.error("카드 실적 갱신 실패: {}", ex.getMessage(), ex);
+
+		return errorResponse(
+			HttpStatus.INTERNAL_SERVER_ERROR,
+			ex.getMessage(),
+			request
+		);
+	}
+
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) {
 		log.error("서버 오류", ex);
