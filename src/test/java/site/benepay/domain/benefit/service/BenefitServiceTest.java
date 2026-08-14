@@ -18,14 +18,21 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import site.benepay.common.exception.InvalidBenefitPeriodException;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto.MonthlyBenefitDto;
+import site.benepay.domain.benefit.dto.CategoryBenefitStatusResponseDto;
 import site.benepay.domain.benefit.dto.DailyBenefitAmountDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto.CategoryBenefitDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
+import site.benepay.domain.benefit.vo.CategoryBenefitUsageVO;
+import site.benepay.domain.benefit.vo.HeldCardBenefitVO;
 import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
+import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
+import site.benepay.domain.merchant.service.MerchantCategoryService;
 
 @ExtendWith(MockitoExtension.class)
 class BenefitServiceTest {
@@ -49,12 +56,15 @@ class BenefitServiceTest {
 	@Mock
 	private BenefitMapper benefitMapper;
 
+	@Mock
+	private MerchantCategoryService merchantCategoryService;
+
 	private BenefitServiceImpl benefitService;
 
 	@BeforeEach
 	void setUp() {
 		benefitService =
-			new BenefitServiceImpl(benefitMapper);
+			new BenefitServiceImpl(benefitMapper, merchantCategoryService, new ObjectMapper());
 	}
 
 	private DailyBenefitAmountDto benefitRow(
@@ -792,5 +802,487 @@ class BenefitServiceTest {
 			);
 
 		verifyNoInteractions(benefitMapper);
+	}
+
+	// ---- getCategoryBenefitStatus ----
+
+	private HeldCardBenefitVO heldCard(
+		Long userCardId,
+		String benefitsInfo,
+		Long previousMonthSpendingAmount
+	) {
+		HeldCardBenefitVO card =
+			new HeldCardBenefitVO();
+
+		card.setUserCardId(userCardId);
+		card.setCardId(userCardId + 1L);
+		card.setCardName("청춘대로 톡톡카드");
+		card.setCardImageUrl("https://example.com/card.png");
+		card.setBenefitsInfo(benefitsInfo);
+		card.setPreviousMonthSpendingAmount(previousMonthSpendingAmount);
+
+		return card;
+	}
+
+	private String singleTierBenefitsInfo(
+		String serviceName,
+		String categoryCode,
+		Long monthlyDiscountLimit,
+		Integer monthlyCountLimit
+	) {
+		return String.format(
+			"{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
+				+ "{\"serviceName\":\"%s\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":10,\"minimumPaymentAmount\":0,"
+				+ "\"maximumDiscountAmountPerMonth\":%s,\"monthlyCountLimit\":%s}]}]}",
+			serviceName,
+			categoryCode,
+			monthlyDiscountLimit == null ? "null" : monthlyDiscountLimit,
+			monthlyCountLimit == null ? "null" : monthlyCountLimit
+		);
+	}
+
+	private String twoTierBenefitsInfo(
+		String categoryCode
+	) {
+		return String.format(
+			"{\"performanceTiers\":["
+				+ "{\"minimumSpending\":0,\"benefits\":["
+				+ "{\"serviceName\":\"기본 할인\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":5,\"minimumPaymentAmount\":0,"
+				+ "\"maximumDiscountAmountPerMonth\":10000,\"monthlyCountLimit\":2}]},"
+				+ "{\"minimumSpending\":300000,\"benefits\":["
+				+ "{\"serviceName\":\"우수 할인\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":10,\"minimumPaymentAmount\":300000,"
+				+ "\"maximumDiscountAmountPerMonth\":50000,\"monthlyCountLimit\":10}]}"
+				+ "]}",
+			categoryCode,
+			categoryCode
+		);
+	}
+
+	private CategoryBenefitUsageVO usageRow(
+		Long userCardId,
+		String categoryCode,
+		Long usedAmount,
+		Integer usedCount
+	) {
+		CategoryBenefitUsageVO row =
+			new CategoryBenefitUsageVO();
+
+		row.setUserCardId(userCardId);
+		row.setCategoryCode(categoryCode);
+		row.setUsedAmount(usedAmount);
+		row.setUsedCount(usedCount);
+
+		return row;
+	}
+
+	@Test
+	void getCategoryBenefitStatusReturnsUsedAndRemainingAmountsForActiveTierCategories() {
+		YearMonth targetYearMonth =
+			YearMonth.of(BASE_YEAR, 8);
+
+		YearMonth previousYearMonth =
+			targetYearMonth.minusMonths(1);
+
+		when(
+			benefitMapper.findHeldCardBenefitsByUserId(
+				USER_ID,
+				previousYearMonth.format(YEAR_MONTH_FORMATTER)
+			)
+		).thenReturn(
+			List.of(
+				heldCard(
+					USER_CARD_ID,
+					singleTierBenefitsInfo("카페 5% 할인", "5813", 30_000L, 5),
+					0L
+				)
+			)
+		);
+
+		when(
+			benefitMapper.findCategoryBenefitUsageByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(
+			List.of(
+				usageRow(USER_CARD_ID, "5813", 12_000L, 3)
+			)
+		);
+
+		when(merchantCategoryService.getCategoryList()).thenReturn(
+			List.of(
+				MerchantCategoryResponseDto.builder()
+					.categoryCode("5813")
+					.categoryName("카페")
+					.build()
+			)
+		);
+
+		List<CategoryBenefitStatusResponseDto> result =
+			benefitService.getCategoryBenefitStatus(
+				USER_ID,
+				targetYearMonth.format(YEAR_MONTH_FORMATTER)
+			);
+
+		assertThat(result).hasSize(1);
+
+		CategoryBenefitStatusResponseDto status =
+			result.get(0);
+
+		assertThat(status.getUserCardId()).isEqualTo(USER_CARD_ID);
+		assertThat(status.getYearMonth()).isEqualTo(targetYearMonth.toString());
+		assertThat(status.getCategoryCode()).isEqualTo("5813");
+		assertThat(status.getCategoryName()).isEqualTo("카페");
+		assertThat(status.getServiceName()).isEqualTo("카페 5% 할인");
+		assertThat(status.getAmountLimit()).isEqualTo(30_000L);
+		assertThat(status.getUsedAmount()).isEqualTo(12_000L);
+		assertThat(status.getRemainingAmount()).isEqualTo(18_000L);
+		assertThat(status.isAmountLimitReached()).isFalse();
+		assertThat(status.getCountLimit()).isEqualTo(5);
+		assertThat(status.getUsedCount()).isEqualTo(3);
+		assertThat(status.getRemainingCount()).isEqualTo(2);
+		assertThat(status.isCountLimitReached()).isFalse();
+	}
+
+	@Test
+	void getCategoryBenefitStatusMarksLimitReachedWhenUsageMeetsOrExceedsLimit() {
+		YearMonth targetYearMonth =
+			YearMonth.of(BASE_YEAR, 8);
+
+		YearMonth previousYearMonth =
+			targetYearMonth.minusMonths(1);
+
+		when(
+			benefitMapper.findHeldCardBenefitsByUserId(
+				USER_ID,
+				previousYearMonth.format(YEAR_MONTH_FORMATTER)
+			)
+		).thenReturn(
+			List.of(
+				heldCard(
+					USER_CARD_ID,
+					singleTierBenefitsInfo("카페 5% 할인", "5813", 10_000L, 2),
+					0L
+				)
+			)
+		);
+
+		when(
+			benefitMapper.findCategoryBenefitUsageByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(
+			List.of(
+				usageRow(USER_CARD_ID, "5813", 10_000L, 2)
+			)
+		);
+
+		when(merchantCategoryService.getCategoryList()).thenReturn(List.of());
+
+		CategoryBenefitStatusResponseDto status =
+			benefitService.getCategoryBenefitStatus(
+				USER_ID,
+				targetYearMonth.format(YEAR_MONTH_FORMATTER)
+			).get(0);
+
+		assertThat(status.getRemainingAmount()).isEqualTo(0L);
+		assertThat(status.isAmountLimitReached()).isTrue();
+		assertThat(status.getRemainingCount()).isEqualTo(0);
+		assertThat(status.isCountLimitReached()).isTrue();
+	}
+
+	@Test
+	void getCategoryBenefitStatusTreatsMissingUsageRowAsZero() {
+		YearMonth targetYearMonth =
+			YearMonth.of(BASE_YEAR, 8);
+
+		YearMonth previousYearMonth =
+			targetYearMonth.minusMonths(1);
+
+		when(
+			benefitMapper.findHeldCardBenefitsByUserId(
+				USER_ID,
+				previousYearMonth.format(YEAR_MONTH_FORMATTER)
+			)
+		).thenReturn(
+			List.of(
+				heldCard(
+					USER_CARD_ID,
+					singleTierBenefitsInfo("카페 5% 할인", "5813", 10_000L, 2),
+					0L
+				)
+			)
+		);
+
+		when(
+			benefitMapper.findCategoryBenefitUsageByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(List.of());
+
+		when(merchantCategoryService.getCategoryList()).thenReturn(List.of());
+
+		CategoryBenefitStatusResponseDto status =
+			benefitService.getCategoryBenefitStatus(
+				USER_ID,
+				targetYearMonth.format(YEAR_MONTH_FORMATTER)
+			).get(0);
+
+		assertThat(status.getUsedAmount()).isEqualTo(0L);
+		assertThat(status.getUsedCount()).isEqualTo(0);
+		assertThat(status.getRemainingAmount()).isEqualTo(10_000L);
+		assertThat(status.isAmountLimitReached()).isFalse();
+	}
+
+	@Test
+	void getCategoryBenefitStatusLeavesRemainingAndReachedFalseWhenNoLimitDefined() {
+		YearMonth targetYearMonth =
+			YearMonth.of(BASE_YEAR, 8);
+
+		YearMonth previousYearMonth =
+			targetYearMonth.minusMonths(1);
+
+		when(
+			benefitMapper.findHeldCardBenefitsByUserId(
+				USER_ID,
+				previousYearMonth.format(YEAR_MONTH_FORMATTER)
+			)
+		).thenReturn(
+			List.of(
+				heldCard(
+					USER_CARD_ID,
+					singleTierBenefitsInfo("카페 5% 할인", "5813", null, null),
+					0L
+				)
+			)
+		);
+
+		when(
+			benefitMapper.findCategoryBenefitUsageByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(List.of());
+
+		when(merchantCategoryService.getCategoryList()).thenReturn(List.of());
+
+		CategoryBenefitStatusResponseDto status =
+			benefitService.getCategoryBenefitStatus(
+				USER_ID,
+				targetYearMonth.format(YEAR_MONTH_FORMATTER)
+			).get(0);
+
+		assertThat(status.getAmountLimit()).isNull();
+		assertThat(status.getRemainingAmount()).isNull();
+		assertThat(status.isAmountLimitReached()).isFalse();
+		assertThat(status.getCountLimit()).isNull();
+		assertThat(status.getRemainingCount()).isNull();
+		assertThat(status.isCountLimitReached()).isFalse();
+	}
+
+	@Test
+	void getCategoryBenefitStatusUsesTierActivatedByPreviousMonthSpend() {
+		YearMonth targetYearMonth =
+			YearMonth.of(BASE_YEAR, 8);
+
+		YearMonth previousYearMonth =
+			targetYearMonth.minusMonths(1);
+
+		when(
+			benefitMapper.findHeldCardBenefitsByUserId(
+				USER_ID,
+				previousYearMonth.format(YEAR_MONTH_FORMATTER)
+			)
+		).thenReturn(
+			List.of(
+				heldCard(
+					USER_CARD_ID,
+					twoTierBenefitsInfo("5813"),
+					300_000L
+				)
+			)
+		);
+
+		when(
+			benefitMapper.findCategoryBenefitUsageByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(List.of());
+
+		when(merchantCategoryService.getCategoryList()).thenReturn(List.of());
+
+		CategoryBenefitStatusResponseDto status =
+			benefitService.getCategoryBenefitStatus(
+				USER_ID,
+				targetYearMonth.format(YEAR_MONTH_FORMATTER)
+			).get(0);
+
+		assertThat(status.getServiceName()).isEqualTo("우수 할인");
+		assertThat(status.getAmountLimit()).isEqualTo(50_000L);
+	}
+
+	@Test
+	void getCategoryBenefitStatusExpandsEachCategoryCodeOnABenefitIntoItsOwnRow() {
+		YearMonth targetYearMonth =
+			YearMonth.of(BASE_YEAR, 8);
+
+		YearMonth previousYearMonth =
+			targetYearMonth.minusMonths(1);
+
+		String benefitsInfo =
+			"{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
+				+ "{\"serviceName\":\"마트/편의점 할인\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"5411\",\"5412\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":5,\"minimumPaymentAmount\":0,"
+				+ "\"maximumDiscountAmountPerMonth\":20000,\"monthlyCountLimit\":4}]}]}";
+
+		when(
+			benefitMapper.findHeldCardBenefitsByUserId(
+				USER_ID,
+				previousYearMonth.format(YEAR_MONTH_FORMATTER)
+			)
+		).thenReturn(
+			List.of(
+				heldCard(USER_CARD_ID, benefitsInfo, 0L)
+			)
+		);
+
+		when(
+			benefitMapper.findCategoryBenefitUsageByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(List.of());
+
+		when(merchantCategoryService.getCategoryList()).thenReturn(List.of());
+
+		List<CategoryBenefitStatusResponseDto> result =
+			benefitService.getCategoryBenefitStatus(
+				USER_ID,
+				targetYearMonth.format(YEAR_MONTH_FORMATTER)
+			);
+
+		assertThat(result)
+			.extracting(CategoryBenefitStatusResponseDto::getCategoryCode)
+			.containsExactlyInAnyOrder("5411", "5412");
+	}
+
+	@Test
+	void getCategoryBenefitStatusReturnsEmptyListWhenUserHasNoHeldCards() {
+		YearMonth targetYearMonth =
+			YearMonth.of(BASE_YEAR, 8);
+
+		YearMonth previousYearMonth =
+			targetYearMonth.minusMonths(1);
+
+		when(
+			benefitMapper.findHeldCardBenefitsByUserId(
+				USER_ID,
+				previousYearMonth.format(YEAR_MONTH_FORMATTER)
+			)
+		).thenReturn(List.of());
+
+		assertThat(
+			benefitService.getCategoryBenefitStatus(
+				USER_ID,
+				targetYearMonth.format(YEAR_MONTH_FORMATTER)
+			)
+		).isEmpty();
+
+		verify(benefitMapper, never()).findCategoryBenefitUsageByUserId(
+			any(), any(), any()
+		);
+	}
+
+	@Test
+	void getCategoryBenefitStatusSkipsCardsWithBlankBenefitsInfo() {
+		YearMonth targetYearMonth =
+			YearMonth.of(BASE_YEAR, 8);
+
+		YearMonth previousYearMonth =
+			targetYearMonth.minusMonths(1);
+
+		when(
+			benefitMapper.findHeldCardBenefitsByUserId(
+				USER_ID,
+				previousYearMonth.format(YEAR_MONTH_FORMATTER)
+			)
+		).thenReturn(
+			List.of(
+				heldCard(USER_CARD_ID, "", 0L)
+			)
+		);
+
+		when(
+			benefitMapper.findCategoryBenefitUsageByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(List.of());
+
+		when(merchantCategoryService.getCategoryList()).thenReturn(List.of());
+
+		assertThat(
+			benefitService.getCategoryBenefitStatus(
+				USER_ID,
+				targetYearMonth.format(YEAR_MONTH_FORMATTER)
+			)
+		).isEmpty();
+	}
+
+	@Test
+	void getCategoryBenefitStatusUsesCurrentMonthWhenYearMonthIsNull() {
+		YearMonth currentYearMonth =
+			YearMonth.now(ZONE);
+
+		YearMonth previousYearMonth =
+			currentYearMonth.minusMonths(1);
+
+		when(
+			benefitMapper.findHeldCardBenefitsByUserId(
+				USER_ID,
+				previousYearMonth.format(YEAR_MONTH_FORMATTER)
+			)
+		).thenReturn(
+			List.of(
+				heldCard(
+					USER_CARD_ID,
+					singleTierBenefitsInfo("카페 할인", "5813", 10_000L, 2),
+					0L
+				)
+			)
+		);
+
+		when(
+			benefitMapper.findCategoryBenefitUsageByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(List.of());
+
+		when(merchantCategoryService.getCategoryList()).thenReturn(List.of());
+
+		List<CategoryBenefitStatusResponseDto> result =
+			benefitService.getCategoryBenefitStatus(USER_ID, null);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getYearMonth()).isEqualTo(currentYearMonth.toString());
 	}
 }
