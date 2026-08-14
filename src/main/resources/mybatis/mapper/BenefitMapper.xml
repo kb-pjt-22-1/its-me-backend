@@ -76,6 +76,7 @@
             resultType="site.benepay.domain.benefit.dto.BenefitCoachDataDto$PaymentData">
 
         SELECT p.payment_id AS paymentId,
+        p.user_card_id AS userCardId,
         mc.category_code AS categoryCode,
         mc.category_name AS categoryName,
         m.merchant_name AS merchantName,

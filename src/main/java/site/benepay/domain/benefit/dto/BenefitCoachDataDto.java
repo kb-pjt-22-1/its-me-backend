@@ -22,6 +22,7 @@ public final class BenefitCoachDataDto {
 	public static class PaymentData {
 
 		private Long paymentId;
+		private Long userCardId;
 		private String categoryCode;
 		private String categoryName;
 		private String merchantName;
@@ -76,6 +77,7 @@ public final class BenefitCoachDataDto {
 		private BigDecimal averageAmount;
 		private Integer paymentCount;
 		private String usualMerchantName;
+		private Long usualUserCardId;
 	}
 
 	/**
@@ -101,5 +103,9 @@ public final class BenefitCoachDataDto {
 		private String appliedBenefitCondition;
 		private String reason;
 		private String usualMerchantName;
+		private String strategyType;
+		private String nextRecommendedCardName;
+		private Integer remainingUsageCount;
+		private Long expectedAdditionalSavingAmount;
 	}
 }
