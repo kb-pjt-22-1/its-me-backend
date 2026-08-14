@@ -186,6 +186,13 @@ public class OpenAiClient {
 				"previousMonthSpendingAmount",
 				data.getPreviousMonthSpendingAmount()
 			);
+			input.put("strategyType", data.getStrategyType());
+			input.put("nextRecommendedCardName",
+				data.getNextRecommendedCardName());
+			input.put("remainingUsageCount",
+				data.getRemainingUsageCount());
+			input.put("expectedAdditionalSavingAmount",
+				data.getExpectedAdditionalSavingAmount());
 			input.put(
 				"appliedBenefitCondition",
 				data.getAppliedBenefitCondition()

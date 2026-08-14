@@ -40,5 +40,25 @@ public class BenefitCoachResponseDto {
 		 * 카드 추천 및 혜택 적용 근거
 		 */
 		private String reason;
+
+		/**
+		 * 카드 사용 전략
+		 */
+		private String strategyType;
+
+		/**
+		 * 현재 카드 사용 후 전환할 카드
+		 */
+		private String nextRecommendedCardName;
+
+		/**
+		 * 현재 카드 혜택을 추가로 사용할 수 있는 횟수
+		 */
+		private Integer remainingUsageCount;
+
+		/**
+		 * 기존 사용 방법과 비교한 추가 절약 예상 금액
+		 */
+		private Long expectedAdditionalSavingAmount;
 	}
 }
