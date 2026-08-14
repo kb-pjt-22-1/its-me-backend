@@ -72,4 +72,59 @@
 
     </select>
 
+    <!--
+        카테고리별 혜택 현황(한도 소진 현황) 전용. recommendation_enabled 필터가 없다 -
+        추천 노출 여부와 무관하게 보유한 활성 카드 전체를 봐야 한다.
+    -->
+    <select id="findHeldCardBenefitsByUserId"
+            resultType="site.benepay.domain.benefit.vo.HeldCardBenefitVO">
+
+        SELECT uc.user_card_id AS userCardId,
+        c.card_id AS cardId,
+        c.card_name AS cardName,
+        c.card_image_url AS cardImageUrl,
+        c.benefits_info AS benefitsInfo,
+        COALESCE(cms.total_spending_amount, 0) AS previousMonthSpendingAmount
+        FROM user_cards uc
+        INNER JOIN cards c
+        ON c.card_id = uc.card_id
+        LEFT JOIN card_monthly_status cms
+        ON cms.user_card_id = uc.user_card_id
+        AND cms.target_year_month = #{previousYearMonth}
+        WHERE uc.user_id = #{userId}
+        AND uc.status = 'ACTIVE'
+        AND uc.deleted_at IS NULL
+        ORDER BY uc.is_primary DESC,
+        uc.created_at DESC
+
+    </select>
+
+    <!--
+        카테고리별 혜택 현황 전용. 카드+카테고리 단위로만 귀속 가능한 이유는
+        findMonthlyCategoryBenefitsByUserId 위 주석과 같다(payments에 혜택 단위 기록이 없음).
+    -->
+    <select id="findCategoryBenefitUsageByUserId"
+            resultType="site.benepay.domain.benefit.vo.CategoryBenefitUsageVO">
+
+        SELECT p.user_card_id AS userCardId,
+        mc.category_code AS categoryCode,
+        COALESCE(SUM(p.discount_amount), 0) AS usedAmount,
+        COUNT(*) AS usedCount
+        FROM payments p
+        INNER JOIN user_cards uc
+        ON uc.user_card_id = p.user_card_id
+        INNER JOIN merchants m
+        ON m.merchant_id = p.merchant_id
+        INNER JOIN merchant_categories mc
+        ON mc.category_code = m.category_code
+        WHERE uc.user_id = #{userId}
+        AND p.payment_status = 'APPROVED'
+        AND p.discount_amount &gt; 0
+        AND p.payment_time &gt;= #{startPaymentTime}
+        AND p.payment_time &lt; #{endPaymentTime}
+        GROUP BY p.user_card_id,
+        mc.category_code
+
+    </select>
+
 </mapper>
