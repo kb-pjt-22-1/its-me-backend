@@ -127,4 +127,37 @@ class MerchantServiceImplTest {
 		assertThat(result).hasSize(1);
 		verify(merchantMapper).findWithinBounds(37.4, 127.0, 37.6, 127.2, "5812");
 	}
+
+	// ---- getNearbyMerchants(lat, lng, categoryCode, limit) ----
+
+	@Test
+	void getNearbyMerchantsMapsDistanceMetersThrough() {
+		MerchantResponseDto nearby = MerchantResponseDto.builder()
+			.merchantId(MERCHANT_ID)
+			.categoryCode("5812")
+			.brandId(1L)
+			.merchantCode("M001")
+			.merchantName("테스트 식당")
+			.address("서울시 강남구")
+			.latitude(BigDecimal.valueOf(37.5))
+			.longitude(BigDecimal.valueOf(127.0))
+			.phone("02-000-0000")
+			.distanceMeters(123.4)
+			.build();
+		when(merchantMapper.findNearby(37.5, 127.0, null, 20)).thenReturn(List.of(nearby));
+
+		List<MerchantResponseDto> result = merchantService.getNearbyMerchants(37.5, 127.0, null, 20);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getMerchantCode()).isEqualTo("M001");
+		assertThat(result.get(0).getDistanceMeters()).isEqualTo(123.4);
+	}
+
+	@Test
+	void getNearbyMerchantsPassesCategoryCodeAndLimitThroughToMapper() {
+		when(merchantMapper.findNearby(37.5, 127.0, "5812", 2)).thenReturn(List.of());
+
+		assertThat(merchantService.getNearbyMerchants(37.5, 127.0, "5812", 2)).isEmpty();
+		verify(merchantMapper).findNearby(37.5, 127.0, "5812", 2);
+	}
 }

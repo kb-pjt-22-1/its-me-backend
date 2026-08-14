@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import lombok.RequiredArgsConstructor;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.BenefitCoachResponseDto;
+import site.benepay.domain.benefit.dto.CategoryBenefitStatusResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 import site.benepay.domain.benefit.service.BenefitService;
 
@@ -22,9 +23,9 @@ import site.benepay.domain.benefit.service.BenefitService;
 @RequestMapping("/api/v1/benefits")
 public class BenefitController {
 
-	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
-
 	private final BenefitService benefitService;
+
+	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
 	/**
 	 * 혜택 탭에서 사용할 카드별 연회비 본전 정보를 조회한다.
@@ -33,8 +34,7 @@ public class BenefitController {
 	 * 프론트에서는 응답 배열을 슬라이드 형태로 표시한다.
 	 */
 	@GetMapping("/annual-fee-break-even")
-	public ResponseEntity<List<AnnualFeeBreakEvenResponseDto>>
-	getAnnualFeeBreakEven(
+	public ResponseEntity<List<AnnualFeeBreakEvenResponseDto>> getAnnualFeeBreakEven(
 		@AuthenticationPrincipal Long userId,
 		@RequestParam(required = false) Integer year
 	) {
@@ -76,6 +76,21 @@ public class BenefitController {
 	) {
 		BenefitCoachResponseDto response =
 			benefitService.getBenefitCoaching(userId);
+
+		return ResponseEntity.ok(response);
+	}
+
+	/**
+	 * 사용자가 보유한 전체 카드의 카테고리별 혜택 현황(금액 한도/횟수 한도 대비 소진량)을
+	 * 조회한다. 이번 달(또는 지정한 달) 기준이며, 적용 중인 혜택은 전월 실적으로 정해진다.
+	 */
+	@GetMapping("/category-status")
+	public ResponseEntity<List<CategoryBenefitStatusResponseDto>> getCategoryBenefitStatus(
+		@AuthenticationPrincipal Long userId,
+		@RequestParam(required = false) String yearMonth
+	) {
+		List<CategoryBenefitStatusResponseDto> response =
+			benefitService.getCategoryBenefitStatus(userId, yearMonth);
 
 		return ResponseEntity.ok(response);
 	}

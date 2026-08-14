@@ -51,6 +51,10 @@
         SELECT <include refid="paymentHistoryColumns" />
         <include refid="paymentHistoryJoins" />
         WHERE uc.user_id = #{userId}
+        <if test="startPaymentTime != null">
+            AND p.payment_time &gt;= #{startPaymentTime}
+            AND p.payment_time &lt; #{endPaymentTime}
+        </if>
         ORDER BY p.payment_time DESC
     </select>
 

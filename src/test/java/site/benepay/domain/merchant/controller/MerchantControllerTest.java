@@ -140,4 +140,29 @@ class MerchantControllerTest {
 		assertThat(response.getBody()).isEqualTo(recommended);
 		verify(facade).getRecommendedMerchants(USER_ID, merchants);
 	}
+
+	// ---- GET /api/v1/merchants/today-recommendation ----
+	// standaloneSetup은 @AuthenticationPrincipal을 못 풀어주므로, 컨트롤러 메서드를 직접 호출한다.
+
+	@Test
+	void getTodayRecommendationAsksNearbyCandidatesThenFacadeAndReturnsFacadeResult() {
+		MerchantController controller = new MerchantController(merchantService, facade);
+		List<MerchantResponseDto> candidates = List.of(merchantResponse());
+		List<NearbyMerchantRecommendationResponseDto> today =
+			List.of(
+				NearbyMerchantRecommendationResponseDto.builder()
+					.merchantId(MERCHANT_ID)
+					.merchantName(merchantResponse().getMerchantName())
+					.benefitAvailable(true)
+					.distanceMeters(42.0)
+					.build());
+		when(merchantService.getNearbyMerchants(37.5, 127.0, null, 20)).thenReturn(candidates);
+		when(facade.getTodayRecommendedMerchants(USER_ID, candidates, 2)).thenReturn(today);
+
+		ResponseEntity<List<NearbyMerchantRecommendationResponseDto>> response =
+			controller.getTodayRecommendation(USER_ID, 37.5, 127.0, null);
+
+		assertThat(response.getBody()).isEqualTo(today);
+		verify(facade).getTodayRecommendedMerchants(USER_ID, candidates, 2);
+	}
 }

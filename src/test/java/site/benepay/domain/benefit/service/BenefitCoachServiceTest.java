@@ -22,6 +22,7 @@ import site.benepay.domain.benefit.dto.BenefitCoachDataDto.PaymentData;
 import site.benepay.domain.benefit.dto.BenefitCoachResponseDto;
 import site.benepay.domain.benefit.dto.BenefitCoachResponseDto.BenefitCoachItemDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
+import site.benepay.domain.merchant.service.MerchantCategoryService;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,6 +39,9 @@ class BenefitCoachServiceTest {
 	private BenefitMapper benefitMapper;
 
 	@Mock
+	private MerchantCategoryService merchantCategoryService;
+
+	@Mock
 	private RecommendationParamsLoader recommendationParamsLoader;
 
 	@Mock
@@ -50,6 +54,7 @@ class BenefitCoachServiceTest {
 		benefitService =
 			new BenefitServiceImpl(
 				benefitMapper,
+				merchantCategoryService,
 				new ObjectMapper(),
 				recommendationParamsLoader,
 				openAiClient

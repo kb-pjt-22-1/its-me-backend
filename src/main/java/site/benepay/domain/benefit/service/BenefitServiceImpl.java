@@ -12,6 +12,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -33,13 +34,18 @@ import site.benepay.domain.benefit.dto.BenefitCoachDataDto.PaymentData;
 import site.benepay.domain.benefit.dto.BenefitCoachDataDto.SpendingPatternData;
 import site.benepay.domain.benefit.dto.BenefitCoachResponseDto;
 import site.benepay.domain.benefit.dto.BenefitCoachResponseDto.BenefitCoachItemDto;
+import site.benepay.domain.benefit.dto.CategoryBenefitStatusResponseDto;
 import site.benepay.domain.benefit.dto.DailyBenefitAmountDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto.CategoryBenefitDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
 import site.benepay.domain.benefit.service.OpenAiClient.OpenAiCoachingItemText;
 import site.benepay.domain.benefit.service.OpenAiClient.OpenAiCoachingText;
+import site.benepay.domain.benefit.vo.CategoryBenefitUsageVO;
+import site.benepay.domain.benefit.vo.HeldCardBenefitVO;
 import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
+import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
+import site.benepay.domain.merchant.service.MerchantCategoryService;
 import site.benepay.domain.recommendation.engine.BenefitEngine;
 import site.benepay.domain.recommendation.engine.BenefitJsonParser;
 import site.benepay.domain.recommendation.engine.BenefitNode;
@@ -60,6 +66,7 @@ public class BenefitServiceImpl implements BenefitService {
 	private static final long MINIMUM_SWITCH_SAVING_AMOUNT = 500L;
 
 	private final BenefitMapper benefitMapper;
+	private final MerchantCategoryService merchantCategoryService;
 	private final ObjectMapper objectMapper;
 	private final RecommendationParamsLoader recommendationParamsLoader;
 	private final OpenAiClient openAiClient;
@@ -1443,5 +1450,205 @@ public class BenefitServiceImpl implements BenefitService {
 
 			return usualUserCardId;
 		}
+	}
+
+	@Override
+	public List<CategoryBenefitStatusResponseDto> getCategoryBenefitStatus(
+		Long userId,
+		String yearMonth
+	) {
+		YearMonth targetYearMonth =
+			parseYearMonth(yearMonth);
+
+		YearMonth previousYearMonth =
+			targetYearMonth.minusMonths(1);
+
+		List<HeldCardBenefitVO> heldCards =
+			benefitMapper.findHeldCardBenefitsByUserId(
+				userId,
+				previousYearMonth.format(YEAR_MONTH_FORMATTER)
+			);
+
+		if (heldCards.isEmpty()) {
+			return List.of();
+		}
+
+		List<CategoryBenefitUsageVO> usageRows =
+			benefitMapper.findCategoryBenefitUsageByUserId(
+				userId,
+				startOfMonth(targetYearMonth),
+				startOfMonth(
+					targetYearMonth.plusMonths(1)
+				)
+			);
+
+		Map<String, CategoryBenefitUsageVO> usageByCardAndCategory =
+			groupUsageByCardAndCategory(usageRows);
+
+		Map<String, String> categoryNames =
+			findCategoryNames();
+
+		List<CategoryBenefitStatusResponseDto> responses =
+			new ArrayList<>();
+
+		for (HeldCardBenefitVO card : heldCards) {
+			responses.addAll(
+				createCardCategoryStatuses(
+					card,
+					targetYearMonth,
+					categoryNames,
+					usageByCardAndCategory
+				)
+			);
+		}
+
+		return responses;
+	}
+
+	private Map<String, CategoryBenefitUsageVO> groupUsageByCardAndCategory(
+		List<CategoryBenefitUsageVO> usageRows
+	) {
+		Map<String, CategoryBenefitUsageVO> grouped =
+			new HashMap<>();
+
+		for (CategoryBenefitUsageVO row : usageRows) {
+			grouped.put(
+				usageKey(
+					row.getUserCardId(),
+					row.getCategoryCode()
+				),
+				row
+			);
+		}
+
+		return grouped;
+	}
+
+	private String usageKey(
+		Long userCardId,
+		String categoryCode
+	) {
+		return userCardId + "|" + categoryCode;
+	}
+
+	private Map<String, String> findCategoryNames() {
+		Map<String, String> categoryNames =
+			new HashMap<>();
+
+		for (MerchantCategoryResponseDto category
+			: merchantCategoryService.getCategoryList()) {
+
+			categoryNames.putIfAbsent(
+				category.getCategoryCode(),
+				category.getCategoryName()
+			);
+		}
+
+		return categoryNames;
+	}
+
+	/**
+	 * 카드 한 장의 이번 달 적용 중인 혜택(전월 실적으로 정해지는 activeTier, 추천 도메인 모드
+	 * 3과 동일 규약)을 카테고리별로 풀어 소진 현황 DTO 목록을 만든다. ALL_MERCHANTS(카테고리
+	 * 구분 없는 전 가맹점 혜택)는 "카테고리별" 현황에 자연스럽게 대응되지 않아 제외한다.
+	 */
+	private List<CategoryBenefitStatusResponseDto> createCardCategoryStatuses(
+		HeldCardBenefitVO card,
+		YearMonth targetYearMonth,
+		Map<String, String> categoryNames,
+		Map<String, CategoryBenefitUsageVO> usageByCardAndCategory
+	) {
+		List<PerformanceTier> tiers =
+			BenefitJsonParser.parse(card.getBenefitsInfo(), objectMapper);
+
+		if (tiers.isEmpty()) {
+			return List.of();
+		}
+
+		long prevMonthSpend =
+			card.getPreviousMonthSpendingAmount() == null
+				? 0L
+				: card.getPreviousMonthSpendingAmount();
+
+		PerformanceTier activeTier =
+			BenefitEngine.activeTier(tiers, prevMonthSpend);
+
+		List<CategoryBenefitStatusResponseDto> statuses =
+			new ArrayList<>();
+
+		for (BenefitNode benefit : activeTier.realBenefits()) {
+			for (String categoryCode : benefit.categoryCodes()) {
+				statuses.add(
+					createStatus(
+						card,
+						targetYearMonth,
+						categoryCode,
+						categoryNames.get(categoryCode),
+						benefit,
+						usageByCardAndCategory.get(
+							usageKey(card.getUserCardId(), categoryCode)
+						)
+					)
+				);
+			}
+		}
+
+		return statuses;
+	}
+
+	private CategoryBenefitStatusResponseDto createStatus(
+		HeldCardBenefitVO card,
+		YearMonth targetYearMonth,
+		String categoryCode,
+		String categoryName,
+		BenefitNode benefit,
+		CategoryBenefitUsageVO usage
+	) {
+		long usedAmount =
+			usage == null || usage.getUsedAmount() == null
+				? 0L
+				: usage.getUsedAmount();
+
+		int usedCount =
+			usage == null || usage.getUsedCount() == null
+				? 0
+				: usage.getUsedCount();
+
+		Long amountLimit =
+			benefit.monthlyDiscountLimit();
+
+		Integer countLimit =
+			benefit.monthlyCountLimit();
+
+		return CategoryBenefitStatusResponseDto.builder()
+			.userCardId(card.getUserCardId())
+			.cardId(card.getCardId())
+			.cardName(card.getCardName())
+			.cardImageUrl(card.getCardImageUrl())
+			.yearMonth(targetYearMonth.toString())
+			.categoryCode(categoryCode)
+			.categoryName(categoryName)
+			.serviceName(benefit.serviceName())
+			.amountLimit(amountLimit)
+			.usedAmount(usedAmount)
+			.remainingAmount(
+				amountLimit == null
+					? null
+					: Math.max(amountLimit - usedAmount, 0L)
+			)
+			.amountLimitReached(
+				amountLimit != null && usedAmount >= amountLimit
+			)
+			.countLimit(countLimit)
+			.usedCount(usedCount)
+			.remainingCount(
+				countLimit == null
+					? null
+					: Math.max(countLimit - usedCount, 0)
+			)
+			.countLimitReached(
+				countLimit != null && usedCount >= countLimit
+			)
+			.build();
 	}
 }

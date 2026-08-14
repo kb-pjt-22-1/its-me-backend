@@ -18,6 +18,8 @@ public class MerchantResponseDto {
 	private BigDecimal latitude;
 	private BigDecimal longitude;
 	private String phone;
+	// 위치 기반 조회(findNearby)에서만 채워진다. 그 외 조회 경로에서는 null.
+	private Double distanceMeters;
 
 	public static MerchantResponseDto from(Merchant merchant) {
 		return MerchantResponseDto.builder()
