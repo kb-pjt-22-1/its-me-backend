@@ -13,44 +13,58 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
-import site.benepay.common.exception.JwtAuthenticationEntryPoint;
 import site.benepay.auth.security.jwt.JwtAuthenticationFilter;
 import site.benepay.auth.security.jwt.JwtTokenProvider;
+import site.benepay.common.exception.JwtAuthenticationEntryPoint;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
-    private final JwtTokenProvider jwtTokenProvider;
-    private final StringRedisTemplate redisTemplate;
-    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+	private final JwtTokenProvider jwtTokenProvider;
+	private final StringRedisTemplate redisTemplate;
+	private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 
-    public SecurityConfig(JwtTokenProvider jwtTokenProvider, StringRedisTemplate redisTemplate,
-                           JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint) {
-        this.jwtTokenProvider = jwtTokenProvider;
-        this.redisTemplate = redisTemplate;
-        this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
-    }
+	public SecurityConfig(JwtTokenProvider jwtTokenProvider, StringRedisTemplate redisTemplate,
+		JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint) {
+		this.jwtTokenProvider = jwtTokenProvider;
+		this.redisTemplate = redisTemplate;
+		this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
+	}
 
-    @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-                .csrf(AbstractHttpConfigurer::disable)
-                .formLogin(AbstractHttpConfigurer::disable)
-                .httpBasic(AbstractHttpConfigurer::disable)
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(new AntPathRequestMatcher("/api/auth/logout")).authenticated()
-                        .requestMatchers(new AntPathRequestMatcher("/api/auth/**")).permitAll()
-                        .anyRequest().authenticated())
-                .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider, redisTemplate), UsernamePasswordAuthenticationFilter.class);
+	@Bean
+	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+		http
+			.csrf(AbstractHttpConfigurer::disable)
+			.formLogin(AbstractHttpConfigurer::disable)
+			.httpBasic(AbstractHttpConfigurer::disable)
+			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+			.exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
+			.authorizeHttpRequests(auth -> auth
+				.requestMatchers(
+					new AntPathRequestMatcher("/api/auth/logout")
+				).authenticated()
 
-        return http.build();
-    }
+				.requestMatchers(
+					new AntPathRequestMatcher("/api/auth/**")
+				).permitAll()
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+				.requestMatchers(
+					new AntPathRequestMatcher(
+						"/api/v1/webhooks/kb-card/**"
+					)
+				).permitAll()
+
+				.anyRequest().authenticated()
+			)
+			.addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider, redisTemplate),
+				UsernamePasswordAuthenticationFilter.class);
+
+		return http.build();
+	}
+
+	@Bean
+	public PasswordEncoder passwordEncoder() {
+		return new BCryptPasswordEncoder();
+	}
 }

@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="site.benepay.domain.card.mapper.CardMapper">
+
+    <select id="findAllByUserId" parameterType="long" resultType="site.benepay.domain.card.vo.UserCardListVO">
+        SELECT uc.user_card_id           AS userCardId,
+               c.card_id                 AS cardId,
+               c.card_name               AS cardName,
+               c.card_type               AS cardType,
+               c.card_image_url          AS cardImageUrl,
+               cv.card_network           AS cardNetwork,
+               c.annual_fee              AS annualFee,
+               uc.pan_last4              AS panLast4,
+               uc.status                 AS status,
+               uc.is_primary             AS primaryCard,
+               uc.recommendation_enabled AS recommendationEnabled
+        FROM user_cards uc
+                 INNER JOIN cards c
+                            ON uc.card_id = c.card_id
+                 INNER JOIN card_variants cv
+                            ON c.card_variant_id = cv.card_variant_id
+        WHERE uc.user_id = #{userId}
+          AND uc.deleted_at IS NULL
+        ORDER BY uc.is_primary DESC, uc.created_at DESC
+    </select>
+
+    <select id="findDetailByUserCardId" resultType="site.benepay.domain.card.vo.UserCardDetailVO">
+        SELECT uc.user_card_id           AS userCardId,
+               c.card_id                 AS cardId,
+               c.card_name               AS cardName,
+               c.card_type               AS cardType,
+               c.card_image_url          AS cardImageUrl,
+               c.description             AS description,
+               cv.card_network           AS cardNetwork,
+               c.annual_fee              AS annualFee,
+               uc.pan_last4              AS panLast4,
+               uc.token_expiry_date      AS tokenExpiryDate,
+               uc.status                 AS status,
+               uc.is_primary             AS primaryCard,
+               uc.recommendation_enabled AS recommendationEnabled,
+               c.is_supported            AS supported,
+               c.min_benefit_amount      AS minBenefitAmount,
+               uc.created_at             AS createdAt
+        FROM user_cards uc
+                 INNER JOIN cards c
+                            ON uc.card_id = c.card_id
+                 INNER JOIN card_variants cv
+                            ON c.card_variant_id = cv.card_variant_id
+        WHERE uc.user_card_id = #{userCardId}
+          AND uc.user_id = #{userId}
+          AND uc.deleted_at IS NULL
+
+    </select>
+
+    <select id="findBenefitsByUserCardId" resultType="site.benepay.domain.card.vo.UserCardBenefitVO">
+        SELECT uc.user_card_id      AS userCardId,
+               c.card_id            AS cardId,
+               c.card_name          AS cardName,
+               c.min_benefit_amount AS minBenefitAmount,
+               c.benefits_info      AS benefitsInfo
+        FROM user_cards uc
+                 INNER JOIN cards c
+                            ON uc.card_id = c.card_id
+        WHERE uc.user_card_id = #{userCardId}
+          AND uc.user_id = #{userId}
+          AND uc.deleted_at IS NULL
+    </select>
+
+    <select id="findPerformanceByUserCardId" resultType="site.benepay.domain.card.vo.UserCardPerformanceVO">
+        SELECT uc.user_card_id                        AS userCardId,
+               c.card_id                              AS cardId,
+               c.card_name                            AS cardName,
+               #{yearMonth}                           AS targetYearMonth,
+               COALESCE(cms.total_spending_amount, 0) AS currentSpendingAmount,
+               COALESCE(c.min_benefit_amount, 0)      AS requiredSpendingAmount
+        FROM user_cards uc
+                 INNER JOIN cards c
+                            ON uc.card_id = c.card_id
+                 LEFT JOIN card_monthly_status cms
+                           ON uc.user_card_id = cms.user_card_id
+                               AND cms.target_year_month = #{yearMonth}
+        WHERE uc.user_card_id = #{userCardId}
+          AND uc.user_id = #{userId}
+          AND uc.deleted_at IS NULL
+    </select>
+
+    <select id="existsActiveUserCard" resultType="boolean">
+        SELECT EXISTS (SELECT 1
+                       FROM user_cards
+                       WHERE user_id = #{userId}
+                         AND user_card_id = #{userCardId}
+                         AND status = 'ACTIVE'
+                         AND deleted_at IS NULL)
+    </select>
+
+    <update id="clearPrimaryCard">
+        UPDATE user_cards
+        SET is_primary = FALSE,
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+          AND is_primary = TRUE
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="setPrimaryCard">
+        UPDATE user_cards
+        SET is_primary = TRUE,
+            updated_at = NOW()
+        WHERE user_id = #{userId}
+          AND user_card_id = #{userCardId}
+          AND status = 'ACTIVE'
+          AND deleted_at IS NULL
+    </update>
+
+    <update id="updateRecommendationEnabled">
+        UPDATE user_cards
+        SET recommendation_enabled = #{recommendationEnabled},
+            updated_at             = NOW()
+        WHERE user_id = #{userId}
+          AND user_card_id = #{userCardId}
+          AND status = 'ACTIVE'
+          AND deleted_at IS NULL
+    </update>
+
+    <insert id="addMonthlySpending">
+        INSERT INTO card_monthly_status
+        (user_card_id,
+         target_year_month,
+         total_spending_amount,
+         updated_at)
+        VALUES (#{userCardId},
+                #{targetYearMonth},
+                #{amount},
+                NOW()) ON DUPLICATE KEY
+        UPDATE
+            total_spending_amount = total_spending_amount + #{amount},
+            updated_at = NOW()
+    </insert>
+
+    <!--차감 쿼리 추가-->
+    <update id="subtractMonthlySpending">
+        UPDATE card_monthly_status
+        SET total_spending_amount =
+                GREATEST(total_spending_amount - #{amount}, 0),
+            updated_at            = NOW()
+        WHERE user_card_id = #{userCardId}
+          AND target_year_month = #{targetYearMonth}
+    </update>
+
+    <!--KB카드 상품 코드를 BenePay 내부 card_id로 변환한다.
+    두 DB에 상품 코드가 동일하게 Seed되어 있어야 한다.-->
+    <select id="findCardIdByIssuerProductCode" resultType="long">
+        SELECT card_id
+        FROM cards
+        WHERE issuer_product_code = #{issuerProductCode}
+          AND is_supported = TRUE
+    </select>
+
+    <!--신규 카드가 사용자의 첫 카드인지 판단하기 위해
+    기존 대표 카드 존재 여부를 확인한다.-->
+    <select id="existsPrimaryCardByUserId" resultType="boolean">
+        SELECT EXISTS (SELECT 1
+                       FROM user_cards
+                       WHERE user_id = #{userId}
+                         AND is_primary = TRUE
+                         AND deleted_at IS NULL)
+    </select>
+
+    <!--같은 사용자의 동일한 카드사 카드 참조 ID가 이미 있으면 INSERT하지 않는다.
+    Webhook 중복 전송과 회원가입 재동기화에 대한 멱등성을 보장한다.-->
+    <insert id="insertUserCardIfAbsent" parameterType="site.benepay.domain.card.vo.UserCardVO">
+        INSERT INTO user_cards
+        (user_id,
+         card_id,
+         issuer_card_reference_id,
+         issuer_token_reference_id,
+         payment_token,
+         card_expiry_year_month,
+         token_expiry_date,
+         pan_last4,
+         status,
+         is_primary,
+         recommendation_enabled,
+         created_at)
+        SELECT #{userId},
+               #{cardId},
+               #{issuerCardReferenceId},
+               #{issuerTokenReferenceId},
+               #{paymentToken},
+               #{cardExpiryYearMonth},
+               #{tokenExpiryDate},
+               #{panLast4},
+               #{status},
+               #{primaryCard},
+               #{recommendationEnabled},
+               NOW()
+        FROM DUAL
+        WHERE NOT EXISTS (SELECT 1
+                          FROM user_cards
+                          WHERE user_id = #{userId}
+                            AND issuer_card_reference_id = #{issuerCardReferenceId})
+    </insert>
+
+    <select id="findRecommendationCardsByUserId" resultType="site.benepay.domain.card.vo.UserCardRecommendationVO">
+
+        SELECT uc.user_card_id  AS userCardId,
+               c.card_id        AS cardId,
+               c.card_name      AS cardName,
+               c.card_image_url AS cardImageUrl,
+               c.benefits_info  AS benefitsInfo
+        FROM user_cards uc
+                 INNER JOIN cards c
+                            ON uc.card_id = c.card_id
+        WHERE uc.user_id = #{userId}
+          AND uc.status = 'ACTIVE'
+          AND uc.recommendation_enabled = 1
+          AND uc.deleted_at IS NULL
+        ORDER BY uc.is_primary DESC,
+                 uc.created_at DESC
+    </select>
+
+    <select id="findMonthlyStatusByUserId" resultType="site.benepay.domain.card.vo.CardMonthlyStatusVO">
+        SELECT cms.card_monthly_status_id AS cardMonthlyStatusId,
+               cms.user_card_id           AS userCardId,
+               cms.target_year_month      AS targetYearMonth,
+               cms.total_spending_amount  AS totalSpendingAmount,
+               cms.updated_at             AS updatedAt
+        FROM card_monthly_status cms
+                 INNER JOIN user_cards uc
+                            ON cms.user_card_id = uc.user_card_id
+        WHERE uc.user_id = #{userId}
+          AND uc.status = 'ACTIVE'
+          AND uc.recommendation_enabled = 1
+          AND uc.deleted_at IS NULL
+        ORDER BY cms.user_card_id,
+                 cms.target_year_month
+    </select>
+</mapper>

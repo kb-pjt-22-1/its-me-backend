@@ -49,6 +49,14 @@
         AND is_deleted = FALSE
     </select>
 
+    <select id="findByCiHash" resultMap="userResultMap">
+        SELECT
+        <include refid="userColumns"/>
+        FROM users
+        WHERE ci_hash = #{ciHash}
+        AND is_deleted = FALSE
+    </select>
+
     <select id="existsByLoginId" resultType="boolean">
         SELECT EXISTS (SELECT 1
                        FROM users

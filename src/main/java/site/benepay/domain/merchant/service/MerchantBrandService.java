@@ -1,10 +1,10 @@
 package site.benepay.domain.merchant.service;
 
-import site.benepay.domain.merchant.dto.MerchantBrandResponseDto;
-
 import java.util.List;
+
+import site.benepay.domain.merchant.dto.MerchantBrandResponseDto;
 
 public interface MerchantBrandService {
 
-    List<MerchantBrandResponseDto> getBrandList();
+	List<MerchantBrandResponseDto> getBrandList();
 }

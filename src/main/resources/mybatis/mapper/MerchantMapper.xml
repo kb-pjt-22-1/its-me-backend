@@ -3,61 +3,64 @@
 <mapper namespace="site.benepay.domain.merchant.mapper.MerchantMapper">
 
     <sql id="merchantColumns">
-        merchant_id, brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude, phone
+        merchant_id
+        , brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude, phone
     </sql>
 
-    <insert id="insert" parameterType="site.benepay.domain.merchant.vo.Merchant"
-            useGeneratedKeys="true" keyProperty="merchantId" keyColumn="merchant_id">
-        INSERT INTO merchants (brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude, phone)
-        VALUES (#{brandId}, #{categoryCode}, #{merchantCode}, #{merchantName}, #{address}, #{latitude}, #{longitude}, #{phone})
-    </insert>
-
-    <select id="findByMerchantId" resultType="site.benepay.domain.merchant.vo.Merchant">
-        SELECT <include refid="merchantColumns" />
-        FROM merchants
-        WHERE merchant_id = #{merchantId}
-    </select>
-
     <select id="findAll" resultType="site.benepay.domain.merchant.vo.Merchant">
-        SELECT <include refid="merchantColumns" />
+        SELECT
+        <include refid="merchantColumns"/>
         FROM merchants
+        <where>
+            <if test="categoryCode != null">
+                category_code = #{categoryCode}
+            </if>
+        </where>
         ORDER BY merchant_id DESC
     </select>
 
-    <!-- 반경 이내 매장만 가까운 순으로 반환 -->
-    <select id="findWithinRadius" resultType="site.benepay.domain.merchant.vo.MerchantNearbyVO">
-        SELECT merchant_id, brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude, phone, distance_meters
-        FROM (
-            SELECT <include refid="merchantColumns" />,
-                   6371000 * ACOS(
-                       COS(RADIANS(#{lat})) * COS(RADIANS(latitude)) * COS(RADIANS(longitude) - RADIANS(#{lng}))
-                       + SIN(RADIANS(#{lat})) * SIN(RADIANS(latitude))
-                   ) AS distance_meters
-            FROM merchants
-        ) AS merchants_with_distance
-        WHERE distance_meters &lt;= #{radiusMeters}
-        ORDER BY distance_meters ASC
-    </select>
-
-    <select id="existsByMerchantCode" resultType="boolean">
-        SELECT EXISTS (SELECT 1 FROM merchants WHERE merchant_code = #{merchantCode})
-    </select>
-
-    <update id="update" parameterType="site.benepay.domain.merchant.vo.Merchant">
-        UPDATE merchants
-        SET brand_id = #{brandId},
-            category_code = #{categoryCode},
-            merchant_code = #{merchantCode},
-            merchant_name = #{merchantName},
-            address = #{address},
-            latitude = #{latitude},
-            longitude = #{longitude},
-            phone = #{phone}
+    <!-- 매장 상세(핀 클릭) 조회 -->
+    <select id="findByMerchantId" resultType="site.benepay.domain.merchant.vo.Merchant">
+        SELECT
+        <include refid="merchantColumns"/>
+        FROM merchants
         WHERE merchant_id = #{merchantId}
-    </update>
+    </select>
 
-    <delete id="deleteByMerchantId">
-        DELETE FROM merchants WHERE merchant_id = #{merchantId}
-    </delete>
+    <!-- 지도 화면(bounds) 사각형 범위 안의 매장만 반환 -->
+    <select id="findWithinBounds" resultType="site.benepay.domain.merchant.vo.Merchant">
+        SELECT
+        <include refid="merchantColumns"/>
+        FROM merchants
+        WHERE latitude BETWEEN #{swLat} AND #{neLat}
+        AND longitude BETWEEN #{swLng} AND #{neLng}
+        <if test="categoryCode != null">
+            AND category_code = #{categoryCode}
+        </if>
+    </select>
+
+    <!-- 홈 화면 "오늘의 추천" 후보 조회. Haversine 공식으로 사용자 위치(lat/lng)에서 각 매장까지의
+         실거리(m)를 계산해 가까운 순으로 limit개만 뽑는다 - 혜택 판단(benefitAvailable)은 이후
+         Facade가 하므로 여기선 필터링 없이 거리순 후보만 넉넉히 확보한다. COS 인자를 LEAST/GREATEST로
+         [-1, 1]에 clamp하는 이유: 부동소수점 오차로 인자가 1을 살짝 넘으면 ACOS가 NULL을 반환해
+         (실제로 같은 좌표의 매장에서 재현됨) 그 매장의 거리가 NULL이 되어 정렬이 깨진다. -->
+    <select id="findNearby" resultType="site.benepay.domain.merchant.dto.MerchantResponseDto">
+        SELECT
+        <include refid="merchantColumns"/>
+        , (6371000 * ACOS(
+            LEAST(1, GREATEST(-1,
+                COS(RADIANS(#{lat})) * COS(RADIANS(latitude)) * COS(RADIANS(longitude) - RADIANS(#{lng}))
+                + SIN(RADIANS(#{lat})) * SIN(RADIANS(latitude))
+            ))
+        )) AS distance_meters
+        FROM merchants
+        <where>
+            <if test="categoryCode != null">
+                category_code = #{categoryCode}
+            </if>
+        </where>
+        ORDER BY distance_meters ASC
+        LIMIT #{limit}
+    </select>
 
 </mapper>

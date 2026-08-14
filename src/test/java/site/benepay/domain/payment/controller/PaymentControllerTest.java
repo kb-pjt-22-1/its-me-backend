@@ -36,9 +36,21 @@ class PaymentControllerTest {
 	void getPaymentHistoryReturnsOkWithTheServiceResult() {
 		List<PaymentHistoryResponseDto> history = List.of(
 			PaymentHistoryResponseDto.builder().paymentId(PAYMENT_ID).paymentStatus("APPROVED").build());
-		when(paymentService.getPaymentHistory(USER_ID)).thenReturn(history);
+		when(paymentService.getPaymentHistory(USER_ID, "202608")).thenReturn(history);
 
-		ResponseEntity<List<PaymentHistoryResponseDto>> response = controller.getPaymentHistory(USER_ID);
+		ResponseEntity<List<PaymentHistoryResponseDto>> response = controller.getPaymentHistory(USER_ID, "202608");
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody()).isEqualTo(history);
+	}
+
+	@Test
+	void getPaymentHistoryPassesANullYearMonthWhenOmitted() {
+		List<PaymentHistoryResponseDto> history = List.of(
+			PaymentHistoryResponseDto.builder().paymentId(PAYMENT_ID).paymentStatus("APPROVED").build());
+		when(paymentService.getPaymentHistory(USER_ID, null)).thenReturn(history);
+
+		ResponseEntity<List<PaymentHistoryResponseDto>> response = controller.getPaymentHistory(USER_ID, null);
 
 		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(response.getBody()).isEqualTo(history);
@@ -54,5 +66,17 @@ class PaymentControllerTest {
 
 		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(response.getBody()).isEqualTo(found);
+	}
+
+	@Test
+	void cancelPaymentReturnsOkWithTheServiceResult() {
+		PaymentHistoryResponseDto canceled =
+			PaymentHistoryResponseDto.builder().paymentId(PAYMENT_ID).paymentStatus("CANCELED").build();
+		when(paymentService.cancelPayment(USER_ID, PAYMENT_ID)).thenReturn(canceled);
+
+		ResponseEntity<PaymentHistoryResponseDto> response = controller.cancelPayment(USER_ID, PAYMENT_ID);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody()).isEqualTo(canceled);
 	}
 }
