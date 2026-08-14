@@ -47,17 +47,23 @@ class BenefitCoachServiceTest {
 	@Mock
 	private OpenAiClient openAiClient;
 
+	private BenefitCoachDataLoader benefitCoachDataLoader;
 	private BenefitServiceImpl benefitService;
 
 	@BeforeEach
 	void setUp() {
+
+		benefitCoachDataLoader =
+			new BenefitCoachDataLoader(benefitMapper);
+
 		benefitService =
 			new BenefitServiceImpl(
 				benefitMapper,
 				merchantCategoryService,
 				new ObjectMapper(),
 				recommendationParamsLoader,
-				openAiClient
+				openAiClient,
+				benefitCoachDataLoader
 			);
 
 		lenient()
@@ -336,6 +342,67 @@ class BenefitCoachServiceTest {
 
 		assertThat(item.getNextRecommendedCardName())
 			.isEqualTo("굿데이카드");
+	}
+
+	@Test
+	void returnsCalculatedResultWithFallbackTextWhenOpenAiFails() {
+		stubCoachingData(
+			payment(999L),
+			List.of(
+				card(
+					RECOMMENDED_USER_CARD_ID,
+					"NEED Global 카드",
+					215L,
+					null
+				)
+			),
+			List.of()
+		);
+
+		when(openAiClient.generateCoachingText(anyList()))
+			.thenThrow(
+				new IllegalStateException(
+					"OpenAI 응답 시간 초과"
+				)
+			);
+
+		BenefitCoachResponseDto response =
+			benefitService.getBenefitCoaching(USER_ID);
+
+		assertThat(response.getSummary())
+			.isEqualTo(
+				"이번 주 카드 사용 전략을 준비했어요."
+			);
+
+		assertThat(response.getItems()).hasSize(1);
+
+		BenefitCoachItemDto item =
+			response.getItems().get(0);
+
+		assertThat(item.getTitle())
+			.isEqualTo("주유소 혜택 안내");
+
+		assertThat(item.getMessage())
+			.isEqualTo(
+				"NEED Global 카드 사용이 유리합니다."
+			);
+
+		assertThat(item.getRecommendedCardName())
+			.isEqualTo("NEED Global 카드");
+
+		assertThat(item.getExpectedSavingAmount())
+			.isEqualTo(215L);
+
+		assertThat(item.getExpectedAdditionalSavingAmount())
+			.isEqualTo(215L);
+
+		assertThat(item.getStrategyType())
+			.isEqualTo("BENEFIT_GUIDE");
+
+		assertThat(item.getReason()).isNotBlank();
+
+		verify(openAiClient)
+			.generateCoachingText(anyList());
 	}
 
 	private BenefitCoachItemDto getSingleCoachingItem() {

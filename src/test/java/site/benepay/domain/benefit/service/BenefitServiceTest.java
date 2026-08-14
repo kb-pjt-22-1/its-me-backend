@@ -31,12 +31,9 @@ import site.benepay.domain.benefit.mapper.BenefitMapper;
 import site.benepay.domain.benefit.vo.CategoryBenefitUsageVO;
 import site.benepay.domain.benefit.vo.HeldCardBenefitVO;
 import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
-<<<<<<< HEAD
-import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
-=======
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
->>>>>>> origin/dev
+import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 
 @ExtendWith(MockitoExtension.class)
 class BenefitServiceTest {
@@ -60,8 +57,6 @@ class BenefitServiceTest {
 	@Mock
 	private BenefitMapper benefitMapper;
 
-	@Mock
-<<<<<<< HEAD
 	private ObjectMapper objectMapper;
 
 	@Mock
@@ -69,25 +64,28 @@ class BenefitServiceTest {
 
 	@Mock
 	private OpenAiClient openAiClient;
-=======
+
+	@Mock
 	private MerchantCategoryService merchantCategoryService;
->>>>>>> origin/dev
 
 	private BenefitServiceImpl benefitService;
+	private BenefitCoachDataLoader benefitCoachDataLoader;
 
 	@BeforeEach
 	void setUp() {
+		objectMapper = new ObjectMapper();
+		benefitCoachDataLoader =
+			new BenefitCoachDataLoader(benefitMapper);
+
 		benefitService =
-<<<<<<< HEAD
 			new BenefitServiceImpl(
 				benefitMapper,
+				merchantCategoryService,
 				objectMapper,
 				recommendationParamsLoader,
-				openAiClient
+				openAiClient,
+				benefitCoachDataLoader
 			);
-=======
-			new BenefitServiceImpl(benefitMapper, merchantCategoryService, new ObjectMapper());
->>>>>>> origin/dev
 	}
 
 	private DailyBenefitAmountDto benefitRow(

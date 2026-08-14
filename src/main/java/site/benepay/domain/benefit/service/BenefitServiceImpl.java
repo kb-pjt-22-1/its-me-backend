@@ -19,11 +19,13 @@ import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import site.benepay.common.exception.InvalidBenefitPeriodException;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto.MonthlyBenefitDto;
@@ -39,6 +41,7 @@ import site.benepay.domain.benefit.dto.DailyBenefitAmountDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto.CategoryBenefitDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
+import site.benepay.domain.benefit.service.BenefitCoachDataLoader.LoadedCoachingData;
 import site.benepay.domain.benefit.service.OpenAiClient.OpenAiCoachingItemText;
 import site.benepay.domain.benefit.service.OpenAiClient.OpenAiCoachingText;
 import site.benepay.domain.benefit.vo.CategoryBenefitUsageVO;
@@ -54,6 +57,7 @@ import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 @Transactional(readOnly = true)
 public class BenefitServiceImpl implements BenefitService {
 
@@ -70,6 +74,7 @@ public class BenefitServiceImpl implements BenefitService {
 	private final ObjectMapper objectMapper;
 	private final RecommendationParamsLoader recommendationParamsLoader;
 	private final OpenAiClient openAiClient;
+	private final BenefitCoachDataLoader benefitCoachDataLoader;
 
 	@Override
 	public List<AnnualFeeBreakEvenResponseDto> getAnnualFeeBreakEven(
@@ -353,51 +358,38 @@ public class BenefitServiceImpl implements BenefitService {
 	}
 
 	@Override
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
 	public BenefitCoachResponseDto getBenefitCoaching(
 		Long userId
 	) {
 		LocalDateTime now =
 			LocalDateTime.now(ZONE);
 
-		YearMonth currentYearMonth =
-			YearMonth.from(now);
+		LoadedCoachingData loadedData =
+			benefitCoachDataLoader.load(userId, now);
 
-		List<SpendingPatternData> patterns =
-			createSpendingPatterns(userId, now);
-
-		if (patterns.isEmpty()) {
+		if (loadedData.payments().isEmpty()) {
 			return createEmptyCoachingResponse(
 				"최근 3개월 결제 내역이 없어 분석할 소비 패턴이 없습니다."
 			);
 		}
 
-		List<CardData> cards =
-			benefitMapper.findBenefitCoachingCards(
-				userId,
-				currentYearMonth
-					.minusMonths(1)
-					.format(YEAR_MONTH_FORMATTER)
+		List<SpendingPatternData> patterns =
+			createSpendingPatterns(
+				loadedData.payments()
 			);
 
-		if (cards.isEmpty()) {
+		if (loadedData.cards().isEmpty()) {
 			return createEmptyCoachingResponse(
 				"혜택 코칭에 사용할 수 있는 보유 카드가 없습니다."
 			);
 		}
 
-		List<MonthlyUsageData> monthlyUsages =
-			benefitMapper.findBenefitCoachingMonthlyUsages(
-				userId,
-				currentYearMonth.format(
-					YEAR_MONTH_FORMATTER
-				)
-			);
-
 		List<CalculatedCoachingData> calculatedData =
 			calculateCoachingData(
 				patterns,
-				cards,
-				monthlyUsages
+				loadedData.cards(),
+				loadedData.monthlyUsages()
 			);
 
 		if (calculatedData.isEmpty()) {
@@ -406,10 +398,29 @@ public class BenefitServiceImpl implements BenefitService {
 			);
 		}
 
-		OpenAiCoachingText coachingText =
-			openAiClient.generateCoachingText(
-				calculatedData
+		/*
+		 * DataLoader의 읽기 전용 트랜잭션이 종료된 뒤
+		 * 외부 OpenAI API를 호출한다.
+		 */
+		OpenAiCoachingText coachingText;
+
+		try {
+			coachingText =
+				openAiClient.generateCoachingText(
+					calculatedData
+				);
+		} catch (IllegalStateException e) {
+			log.warn(
+				"OpenAI 코칭 텍스트 생성에 실패하여 기본 문구로 대체합니다.",
+				e
 			);
+
+			coachingText =
+				new OpenAiCoachingText(
+					"이번 주 카드 사용 전략을 준비했어요.",
+					List.of()
+				);
+		}
 
 		return BenefitCoachResponseDto.builder()
 			.summary(coachingText.summary())
@@ -905,19 +916,8 @@ public class BenefitServiceImpl implements BenefitService {
 	 * 가장 자주 결제한 요일과 평균 결제 금액을 계산한다.
 	 */
 	private List<SpendingPatternData> createSpendingPatterns(
-		Long userId,
-		LocalDateTime endPaymentTime
+		List<PaymentData> payments
 	) {
-		LocalDateTime startPaymentTime =
-			endPaymentTime.minusMonths(3);
-
-		List<PaymentData> payments =
-			benefitMapper.findBenefitCoachingPayments(
-				userId,
-				startPaymentTime,
-				endPaymentTime
-			);
-
 		Map<String, SpendingPatternAccumulator> accumulatorByCategory =
 			new LinkedHashMap<>();
 
