@@ -71,5 +71,75 @@
         ORDER BY categoryAmount DESC
 
     </select>
+    <!-- 최근 3개월 결제 내역 조회 -->
+    <select id="findBenefitCoachingPayments"
+            resultType="site.benepay.domain.benefit.dto.BenefitCoachDataDto$PaymentData">
+
+        SELECT p.payment_id AS paymentId,
+        mc.category_code AS categoryCode,
+        mc.category_name AS categoryName,
+        m.merchant_name AS merchantName,
+        m.brand_id AS brandId,
+        p.original_amount AS originalAmount,
+        p.payment_time AS paymentTime
+        FROM payments p
+        INNER JOIN user_cards uc
+        ON uc.user_card_id = p.user_card_id
+        INNER JOIN merchants m
+        ON m.merchant_id = p.merchant_id
+        INNER JOIN merchant_categories mc
+        ON mc.category_code = m.category_code
+        WHERE uc.user_id = #{userId}
+        AND p.payment_status = 'APPROVED'
+        AND p.payment_time &gt;= #{startPaymentTime}
+        AND p.payment_time &lt; #{endPaymentTime}
+        ORDER BY p.payment_time DESC
+
+    </select>
+
+    <!-- 추천 가능한 보유 카드와 전월 실적 조회 -->
+    <select id="findBenefitCoachingCards"
+            resultType="site.benepay.domain.benefit.dto.BenefitCoachDataDto$CardData">
+
+        SELECT uc.user_card_id AS userCardId,
+        c.card_id AS cardId,
+        c.card_name AS cardName,
+        c.benefits_info AS benefitsInfo,
+        COALESCE(cms.total_spending_amount, 0)
+        AS previousMonthSpendingAmount
+        FROM user_cards uc
+        INNER JOIN cards c
+        ON c.card_id = uc.card_id
+        LEFT JOIN card_monthly_status cms
+        ON cms.user_card_id = uc.user_card_id
+        AND cms.target_year_month = #{previousYearMonth}
+        WHERE uc.user_id = #{userId}
+        AND uc.status = 'ACTIVE'
+        AND uc.recommendation_enabled = TRUE
+        AND uc.deleted_at IS NULL
+        AND c.is_supported = TRUE
+        ORDER BY uc.is_primary DESC,
+        uc.created_at ASC
+
+    </select>
+
+    <!-- 이번 달 카드별·카테고리별 사용 혜택 조회 -->
+    <select id="findBenefitCoachingMonthlyUsages"
+            resultType="site.benepay.domain.benefit.dto.BenefitCoachDataDto$MonthlyUsageData">
+
+        SELECT ubms.user_card_id AS userCardId,
+        ubms.category_code AS categoryCode,
+        ubms.used_benefit_amount AS usedBenefitAmount,
+        ubms.usage_count AS usageCount
+        FROM user_card_benefit_monthly_status ubms
+        INNER JOIN user_cards uc
+        ON uc.user_card_id = ubms.user_card_id
+        WHERE uc.user_id = #{userId}
+        AND ubms.target_year_month = #{targetYearMonth}
+        AND uc.status = 'ACTIVE'
+        AND uc.recommendation_enabled = TRUE
+        AND uc.deleted_at IS NULL
+
+    </select>
 
 </mapper>
