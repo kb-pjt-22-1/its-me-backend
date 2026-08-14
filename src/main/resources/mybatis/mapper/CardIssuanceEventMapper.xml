@@ -41,4 +41,11 @@
         WHERE event_id = #{eventId}
     </update>
 
+    <update id="markFailed">
+        UPDATE card_issuance_events
+        SET processing_status = 'FAILED',
+            fail_reason       = #{failReason},
+            processed_at      = NOW()
+        WHERE event_id = #{eventId}
+    </update>
 </mapper>

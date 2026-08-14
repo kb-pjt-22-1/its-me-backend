@@ -3,11 +3,11 @@ package site.benepay.integration.kbcard.service;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
 import site.benepay.common.exception.KbCardWebhookUserNotFoundException;
 import site.benepay.domain.card.mapper.CardIssuanceEventMapper;
+import site.benepay.domain.card.service.CardIssuanceEventService;
 import site.benepay.domain.card.service.CardRegistrationService;
 import site.benepay.domain.card.vo.CardIssuanceEventVO;
 import site.benepay.domain.user.mapper.UserMapper;
@@ -29,11 +29,11 @@ import site.benepay.integration.kbcard.dto.KbCardResponseDto;
 public class KbCardWebhookService {
 
 	private final CardIssuanceEventMapper eventMapper;
+	private final CardIssuanceEventService cardIssuanceEventService;
 	private final UserMapper userMapper;
 	private final KbCardClient kbCardClient;
 	private final CardRegistrationService cardRegistrationService;
 
-	@Transactional
 	public void processCardIssued(CardIssuedWebhookRequestDto request) {
 
 		if (eventMapper.existsByEventId(request.getEventId())) {
@@ -45,37 +45,45 @@ public class KbCardWebhookService {
 				.eventId(request.getEventId())
 				.ciHash(request.getCiHash())
 				.cardReferenceId(request.getCardReferenceId())
-				.issuerProductCode(
-					request.getIssuerProductCode()
-				)
+				.issuerProductCode(request.getIssuerProductCode())
 				.cardLast4(request.getCardLast4())
 				.cardType(request.getCardType())
 				.cardStatus(request.getCardStatus())
 				.processingStatus("RECEIVED")
 				.build();
 
-		eventMapper.insertReceived(event);
+		// 수신 기록은 먼저 독립적으로 확정
+		cardIssuanceEventService.recordReceived(event);
 
-		User user = userMapper
-			.findByCiHash(request.getCiHash())
-			.orElseThrow(() ->
-				new KbCardWebhookUserNotFoundException(
-					"Webhook 대상 BenePay 사용자를 찾을 수 없습니다."
-				)
+		try {
+			User user = userMapper
+				.findByCiHash(request.getCiHash())
+				.orElseThrow(() ->
+					new KbCardWebhookUserNotFoundException(
+						"Webhook 대상 BenePay 사용자를 찾을 수 없습니다."
+					)
+				);
+
+			KbCardResponseDto card =
+				kbCardClient.findCardByReferenceId(
+					request.getCardReferenceId()
+				);
+
+			cardRegistrationService.registerCards(
+				user.getUserId(),
+				List.of(card)
 			);
 
-		KbCardResponseDto card =
-			kbCardClient.findCardByReferenceId(
-				request.getCardReferenceId()
+			cardIssuanceEventService.markProcessed(
+				request.getEventId()
 			);
 
-		cardRegistrationService.registerCards(
-			user.getUserId(),
-			List.of(card)
-		);
-
-		eventMapper.markProcessed(
-			request.getEventId()
-		);
+		} catch (RuntimeException e) {
+			cardIssuanceEventService.markFailed(
+				request.getEventId(),
+				e.getMessage()
+			);
+			throw e;
+		}
 	}
 }

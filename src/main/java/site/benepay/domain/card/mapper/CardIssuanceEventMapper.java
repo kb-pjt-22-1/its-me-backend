@@ -20,4 +20,9 @@ public interface CardIssuanceEventMapper {
 	int markProcessed(
 		@Param("eventId") String eventId
 	);
+
+	int markFailed(
+		@Param("eventId") String eventId,
+		@Param("failReason") String failReason
+	);
 }
