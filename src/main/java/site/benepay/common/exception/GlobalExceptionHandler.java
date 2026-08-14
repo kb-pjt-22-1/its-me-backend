@@ -176,4 +176,9 @@ public class GlobalExceptionHandler {
 		InvalidBenefitPeriodException ex) {
 		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
 	}
+
+	@ExceptionHandler(InvalidYearMonthException.class)
+	public ResponseEntity<ErrorResponse> handleInvalidYearMonth(InvalidYearMonthException ex, HttpServletRequest request) {
+		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+	}
 }

@@ -1,5 +1,6 @@
 package site.benepay.domain.payment.mapper;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,8 +17,14 @@ public interface PaymentMapper {
 	// merchants/user_cards/cards와 조인해 화면 표시용 값까지 채워서 단건 조회
 	Optional<PaymentHistoryVO> findByPaymentId(@Param("paymentId") Long paymentId);
 
-	// 위와 같은 조인으로 이 사용자 소유 카드의 결제 내역을 최신순으로 조회
-	List<PaymentHistoryVO> findPaymentHistoryByUserId(@Param("userId") Long userId);
+	// 위와 같은 조인으로 이 사용자 소유 카드의 결제 내역을 최신순으로 조회.
+	// startPaymentTime/endPaymentTime이 있으면 그 구간만(끝은 미포함), 둘 다 null이면 전체 조회.
+	// yyyyMM 문자열 대신 날짜 범위를 받는 이유: payment_time 컬럼을 DATE_FORMAT() 등으로 감싸면
+	// 인덱스를 못 타서(non-sargable) 결제가 많아질수록 이 쿼리 자체가 느려진다 - 정확히 이 필터를
+	// 추가한 목적(쿼리 단 효율화)과 어긋나서, 컬럼은 그대로 두고 범위 비교로 바꿨다.
+	List<PaymentHistoryVO> findPaymentHistoryByUserId(@Param("userId") Long userId,
+		@Param("startPaymentTime") LocalDateTime startPaymentTime,
+		@Param("endPaymentTime") LocalDateTime endPaymentTime);
 
 	// user_id + user_card_id + status='ACTIVE' + 미삭제 조건이라, 소유권/활성 상태 검증을 겸한다.
 	// 소유하지 않았거나 비활성/삭제된 카드면 빈 값이 온다.
