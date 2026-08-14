@@ -96,6 +96,126 @@ class BenefitCoachServiceTest {
 	}
 
 	@Test
+	void returnsEmptyResponseWhenAvailableCardsDoNotExist() {
+		when(
+			benefitMapper.findBenefitCoachingPayments(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(List.of(payment(RECOMMENDED_USER_CARD_ID)));
+
+		when(
+			benefitMapper.findBenefitCoachingCards(
+				eq(USER_ID),
+				anyString()
+			)
+		).thenReturn(List.of());
+
+		BenefitCoachResponseDto response =
+			benefitService.getBenefitCoaching(USER_ID);
+
+		assertThat(response.getSummary())
+			.isEqualTo(
+				"혜택 코칭에 사용할 수 있는 보유 카드가 없습니다."
+			);
+		assertThat(response.getItems()).isEmpty();
+
+		verify(benefitMapper, never())
+			.findBenefitCoachingMonthlyUsages(
+				anyLong(),
+				anyString()
+			);
+		verify(openAiClient, never())
+			.generateCoachingText(anyList());
+	}
+
+	@Test
+	void returnsEmptyResponseWhenNoBenefitApplies() {
+		CardData card =
+			card(
+				RECOMMENDED_USER_CARD_ID,
+				"혜택 없는 카드",
+				215L,
+				null
+			);
+
+		card.setBenefitsInfo(
+			"{\"performanceTiers\":[]}"
+		);
+
+		stubCoachingData(
+			payment(RECOMMENDED_USER_CARD_ID),
+			List.of(card),
+			List.of()
+		);
+
+		BenefitCoachResponseDto response =
+			benefitService.getBenefitCoaching(USER_ID);
+
+		assertThat(response.getSummary())
+			.isEqualTo(
+				"현재 소비 패턴에 적용 가능한 카드 혜택이 없습니다."
+			);
+		assertThat(response.getItems()).isEmpty();
+
+		verify(openAiClient, never())
+			.generateCoachingText(anyList());
+	}
+
+	@Test
+	void usesFallbackTextWhenAiItemIsInvalidOrBlank() {
+		stubCoachingData(
+			payment(999L),
+			List.of(
+				card(
+					RECOMMENDED_USER_CARD_ID,
+					"NEED Global 카드",
+					215L,
+					null
+				)
+			),
+			List.of()
+		);
+
+		when(openAiClient.generateCoachingText(anyList()))
+			.thenReturn(
+				new OpenAiClient.OpenAiCoachingText(
+					"최근 소비 패턴에 따른 카드 추천입니다.",
+					List.of(
+						new OpenAiClient.OpenAiCoachingItemText(
+							-1,
+							"무시할 제목",
+							"무시할 메시지"
+						),
+						new OpenAiClient.OpenAiCoachingItemText(
+							99,
+							"무시할 제목",
+							"무시할 메시지"
+						),
+						new OpenAiClient.OpenAiCoachingItemText(
+							0,
+							" ",
+							" "
+						),
+						new OpenAiClient.OpenAiCoachingItemText(
+							0,
+							"중복 제목",
+							"중복 메시지"
+						)
+					)
+				)
+			);
+
+		BenefitCoachItemDto item = getSingleCoachingItem();
+
+		assertThat(item.getTitle())
+			.isEqualTo("주유소 혜택 안내");
+		assertThat(item.getMessage())
+			.isEqualTo("NEED Global 카드 사용이 유리합니다.");
+	}
+
+	@Test
 	void usesBenefitGuideWhenAdditionalSavingIsLessThanThreshold() {
 		stubCoachingData(
 			payment(999L),
