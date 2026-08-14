@@ -17,7 +17,6 @@ import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.mapper.MerchantMapper;
 import site.benepay.domain.merchant.vo.Merchant;
-import site.benepay.domain.merchant.vo.NearbyMerchantVO;
 
 @ExtendWith(MockitoExtension.class)
 class MerchantServiceImplTest {
@@ -133,7 +132,7 @@ class MerchantServiceImplTest {
 
 	@Test
 	void getNearbyMerchantsMapsDistanceMetersThrough() {
-		NearbyMerchantVO nearby = NearbyMerchantVO.builder()
+		MerchantResponseDto nearby = MerchantResponseDto.builder()
 			.merchantId(MERCHANT_ID)
 			.categoryCode("5812")
 			.brandId(1L)

@@ -5,7 +5,6 @@ import java.math.BigDecimal;
 import lombok.Builder;
 import lombok.Getter;
 import site.benepay.domain.merchant.vo.Merchant;
-import site.benepay.domain.merchant.vo.NearbyMerchantVO;
 
 @Getter
 @Builder
@@ -33,21 +32,6 @@ public class MerchantResponseDto {
 			.latitude(merchant.getLatitude())
 			.longitude(merchant.getLongitude())
 			.phone(merchant.getPhone())
-			.build();
-	}
-
-	public static MerchantResponseDto from(NearbyMerchantVO merchant) {
-		return MerchantResponseDto.builder()
-			.merchantId(merchant.getMerchantId())
-			.categoryCode(merchant.getCategoryCode())
-			.brandId(merchant.getBrandId())
-			.merchantCode(merchant.getMerchantCode())
-			.merchantName(merchant.getMerchantName())
-			.address(merchant.getAddress())
-			.latitude(merchant.getLatitude())
-			.longitude(merchant.getLongitude())
-			.phone(merchant.getPhone())
-			.distanceMeters(merchant.getDistanceMeters())
 			.build();
 	}
 }

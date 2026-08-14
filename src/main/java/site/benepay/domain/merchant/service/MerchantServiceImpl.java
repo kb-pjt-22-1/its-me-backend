@@ -44,8 +44,6 @@ public class MerchantServiceImpl implements MerchantService {
 	@Override
 	@Transactional(readOnly = true)
 	public List<MerchantResponseDto> getNearbyMerchants(double lat, double lng, String categoryCode, int limit) {
-		return merchantMapper.findNearby(lat, lng, categoryCode, limit).stream()
-			.map(MerchantResponseDto::from)
-			.toList();
+		return merchantMapper.findNearby(lat, lng, categoryCode, limit);
 	}
 }
