@@ -51,8 +51,9 @@
         SELECT <include refid="paymentHistoryColumns" />
         <include refid="paymentHistoryJoins" />
         WHERE uc.user_id = #{userId}
-        <if test="yearMonth != null and yearMonth != ''">
-            AND DATE_FORMAT(p.payment_time, '%Y%m') = #{yearMonth}
+        <if test="startPaymentTime != null">
+            AND p.payment_time &gt;= #{startPaymentTime}
+            AND p.payment_time &lt; #{endPaymentTime}
         </if>
         ORDER BY p.payment_time DESC
     </select>
