@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import lombok.Builder;
 import lombok.Getter;
 import site.benepay.domain.merchant.vo.Merchant;
+import site.benepay.domain.merchant.vo.NearbyMerchantVO;
 
 @Getter
 @Builder
@@ -18,6 +19,8 @@ public class MerchantResponseDto {
 	private BigDecimal latitude;
 	private BigDecimal longitude;
 	private String phone;
+	// 위치 기반 조회(findNearby)에서만 채워진다. 그 외 조회 경로에서는 null.
+	private Double distanceMeters;
 
 	public static MerchantResponseDto from(Merchant merchant) {
 		return MerchantResponseDto.builder()
@@ -30,6 +33,21 @@ public class MerchantResponseDto {
 			.latitude(merchant.getLatitude())
 			.longitude(merchant.getLongitude())
 			.phone(merchant.getPhone())
+			.build();
+	}
+
+	public static MerchantResponseDto from(NearbyMerchantVO merchant) {
+		return MerchantResponseDto.builder()
+			.merchantId(merchant.getMerchantId())
+			.categoryCode(merchant.getCategoryCode())
+			.brandId(merchant.getBrandId())
+			.merchantCode(merchant.getMerchantCode())
+			.merchantName(merchant.getMerchantName())
+			.address(merchant.getAddress())
+			.latitude(merchant.getLatitude())
+			.longitude(merchant.getLongitude())
+			.phone(merchant.getPhone())
+			.distanceMeters(merchant.getDistanceMeters())
 			.build();
 	}
 }

@@ -72,4 +72,51 @@ class FacadeTest {
 
 		assertThat(facade.getRecommendedMerchants(USER_ID, List.of())).isEmpty();
 	}
+
+	// ---- getTodayRecommendedMerchants(userId, candidates, limit) ----
+
+	@Test
+	void getTodayRecommendedMerchantsPrefersBenefitAvailableThenNearestAndCapsAtLimit() {
+		List<MerchantResponseDto> candidates = List.of(MerchantResponseDto.builder().merchantId(1L).build());
+		List<RecommendationCardCandidateVO> heldCards = List.of();
+		// 정렬 전 순서를 일부러 뒤섞는다: 먼 혜택 매장 > 가까운 비혜택 매장 > 가까운 혜택 매장.
+		NearbyMerchantRecommendationResponseDto farBenefit = NearbyMerchantRecommendationResponseDto.builder()
+			.merchantId(1L).benefitAvailable(true).distanceMeters(500.0).build();
+		NearbyMerchantRecommendationResponseDto nearNoBenefit = NearbyMerchantRecommendationResponseDto.builder()
+			.merchantId(2L).benefitAvailable(false).distanceMeters(50.0).build();
+		NearbyMerchantRecommendationResponseDto nearBenefit = NearbyMerchantRecommendationResponseDto.builder()
+			.merchantId(3L).benefitAvailable(true).distanceMeters(100.0).build();
+
+		when(cardService.getRecommendationCandidates(USER_ID)).thenReturn(heldCards);
+		when(recommendationService.recommendMerchants(USER_ID, heldCards, candidates))
+			.thenReturn(List.of(farBenefit, nearNoBenefit, nearBenefit));
+
+		List<NearbyMerchantRecommendationResponseDto> result =
+			facade.getTodayRecommendedMerchants(USER_ID, candidates, 2);
+
+		assertThat(result).extracting(NearbyMerchantRecommendationResponseDto::getMerchantId)
+			.containsExactly(3L, 1L);
+	}
+
+	@Test
+	void getTodayRecommendedMerchantsFillsRemainingSlotsWithNearestWhenNotEnoughBenefitMerchants() {
+		List<MerchantResponseDto> candidates = List.of(MerchantResponseDto.builder().merchantId(1L).build());
+		List<RecommendationCardCandidateVO> heldCards = List.of();
+		NearbyMerchantRecommendationResponseDto onlyBenefit = NearbyMerchantRecommendationResponseDto.builder()
+			.merchantId(1L).benefitAvailable(true).distanceMeters(300.0).build();
+		NearbyMerchantRecommendationResponseDto nearest = NearbyMerchantRecommendationResponseDto.builder()
+			.merchantId(2L).benefitAvailable(false).distanceMeters(20.0).build();
+		NearbyMerchantRecommendationResponseDto farther = NearbyMerchantRecommendationResponseDto.builder()
+			.merchantId(3L).benefitAvailable(false).distanceMeters(999.0).build();
+
+		when(cardService.getRecommendationCandidates(USER_ID)).thenReturn(heldCards);
+		when(recommendationService.recommendMerchants(USER_ID, heldCards, candidates))
+			.thenReturn(List.of(farther, onlyBenefit, nearest));
+
+		List<NearbyMerchantRecommendationResponseDto> result =
+			facade.getTodayRecommendedMerchants(USER_ID, candidates, 2);
+
+		assertThat(result).extracting(NearbyMerchantRecommendationResponseDto::getMerchantId)
+			.containsExactly(1L, 2L);
+	}
 }
