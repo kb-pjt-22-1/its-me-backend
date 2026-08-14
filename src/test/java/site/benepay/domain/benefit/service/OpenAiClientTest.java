@@ -10,8 +10,12 @@ import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -92,30 +96,19 @@ class OpenAiClientTest {
 			);
 	}
 
-	@Test
-	void generateCoachingTextRejectsEmptyResponse() {
-		OpenAiClient client = createClient(API_KEY);
-		MockRestServiceServer server = bindServer(client);
-
-		server.expect(requestTo(API_URL))
-			.andRespond(withSuccess("", MediaType.APPLICATION_JSON));
-
-		assertThatThrownBy(
-			() -> client.generateCoachingText(List.of())
-		)
-			.isInstanceOf(IllegalStateException.class)
-			.hasMessage("OpenAI API 응답이 비어 있습니다.");
-	}
-
-	@Test
-	void generateCoachingTextRejectsIncompleteResponse() {
+	@ParameterizedTest
+	@MethodSource("invalidSuccessfulResponses")
+	void generateCoachingTextRejectsInvalidSuccessfulResponse(
+		String responseBody,
+		String expectedMessage
+	) {
 		OpenAiClient client = createClient(API_KEY);
 		MockRestServiceServer server = bindServer(client);
 
 		server.expect(requestTo(API_URL))
 			.andRespond(
 				withSuccess(
-					"{\"status\":\"incomplete\"}",
+					responseBody,
 					MediaType.APPLICATION_JSON
 				)
 			);
@@ -124,9 +117,7 @@ class OpenAiClientTest {
 			() -> client.generateCoachingText(List.of())
 		)
 			.isInstanceOf(IllegalStateException.class)
-			.hasMessage(
-				"OpenAI API 응답 생성이 완료되지 않았습니다."
-			);
+			.hasMessage(expectedMessage);
 	}
 
 	@Test
@@ -154,28 +145,6 @@ class OpenAiClientTest {
 		)
 			.isInstanceOf(IllegalStateException.class)
 			.hasMessage("OpenAI가 코칭 생성을 거부했습니다.");
-	}
-
-	@Test
-	void generateCoachingTextRejectsResponseWithoutOutputText() {
-		OpenAiClient client = createClient(API_KEY);
-		MockRestServiceServer server = bindServer(client);
-
-		server.expect(requestTo(API_URL))
-			.andRespond(
-				withSuccess(
-					"{\"status\":\"completed\",\"output\":[]}",
-					MediaType.APPLICATION_JSON
-				)
-			);
-
-		assertThatThrownBy(
-			() -> client.generateCoachingText(List.of())
-		)
-			.isInstanceOf(IllegalStateException.class)
-			.hasMessage(
-				"OpenAI 응답에서 코칭 결과를 찾지 못했습니다."
-			);
 	}
 
 	@Test
@@ -311,6 +280,23 @@ class OpenAiClientTest {
 		return MockRestServiceServer
 			.bindTo(restTemplate)
 			.build();
+	}
+
+	private static Stream<Arguments> invalidSuccessfulResponses() {
+		return Stream.of(
+			Arguments.of(
+				"",
+				"OpenAI API 응답이 비어 있습니다."
+			),
+			Arguments.of(
+				"{\"status\":\"incomplete\"}",
+				"OpenAI API 응답 생성이 완료되지 않았습니다."
+			),
+			Arguments.of(
+				"{\"status\":\"completed\",\"output\":[]}",
+				"OpenAI 응답에서 코칭 결과를 찾지 못했습니다."
+			)
+		);
 	}
 
 	private CalculatedCoachingData calculatedData() {

@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -772,8 +773,8 @@ public class BenefitServiceImpl implements BenefitService {
 		DayOfWeek day =
 			DayOfWeek.valueOf(dayOfWeek);
 
-		return day == DayOfWeek.SATURDAY
-			|| day == DayOfWeek.SUNDAY;
+		return Objects.equals(day, DayOfWeek.SATURDAY)
+			|| Objects.equals(day, DayOfWeek.SUNDAY);
 	}
 
 	private int findUsedCount(
@@ -1194,46 +1195,13 @@ public class BenefitServiceImpl implements BenefitService {
 					previousMonthSpendingAmount
 				);
 
-			CardBenefitEvaluation bestCardEvaluation = null;
-
-			for (BenefitNode benefit
-				: activeTier.benefitsForCategory(
-				pattern.getCategoryCode()
-			)) {
-
-				if (!matchesMerchant(pattern, benefit)) {
-					continue;
-				}
-
-				long expectedSavingAmount =
-					calculateExpectedSavingAmount(
-						pattern,
-						card,
-						activeTier,
-						benefit,
-						monthlyUsages
-					);
-
-				if (expectedSavingAmount <= 0L) {
-					continue;
-				}
-
-				CardBenefitEvaluation evaluation =
-					new CardBenefitEvaluation(
-						card,
-						activeTier,
-						benefit,
-						expectedSavingAmount
-					);
-
-				if (bestCardEvaluation == null
-					|| expectedSavingAmount
-					> bestCardEvaluation
-					.expectedSavingAmount()) {
-
-					bestCardEvaluation = evaluation;
-				}
-			}
+			CardBenefitEvaluation bestCardEvaluation =
+				findBestCardEvaluation(
+					pattern,
+					card,
+					activeTier,
+					monthlyUsages
+				);
 
 			if (bestCardEvaluation != null) {
 				evaluations.add(bestCardEvaluation);
@@ -1248,6 +1216,78 @@ public class BenefitServiceImpl implements BenefitService {
 				).reversed()
 			)
 			.toList();
+	}
+
+	private CardBenefitEvaluation findBestCardEvaluation(
+		SpendingPatternData pattern,
+		CardData card,
+		PerformanceTier activeTier,
+		List<MonthlyUsageData> monthlyUsages
+	) {
+		CardBenefitEvaluation bestCardEvaluation = null;
+
+		for (BenefitNode benefit
+			: activeTier.benefitsForCategory(
+			pattern.getCategoryCode()
+		)) {
+
+			CardBenefitEvaluation evaluation =
+				createCardBenefitEvaluation(
+					pattern,
+					card,
+					activeTier,
+					benefit,
+					monthlyUsages
+				);
+
+			if (isBetterEvaluation(evaluation, bestCardEvaluation)) {
+				bestCardEvaluation = evaluation;
+			}
+		}
+
+		return bestCardEvaluation;
+	}
+
+	private CardBenefitEvaluation createCardBenefitEvaluation(
+		SpendingPatternData pattern,
+		CardData card,
+		PerformanceTier activeTier,
+		BenefitNode benefit,
+		List<MonthlyUsageData> monthlyUsages
+	) {
+		if (!matchesMerchant(pattern, benefit)) {
+			return null;
+		}
+
+		long expectedSavingAmount =
+			calculateExpectedSavingAmount(
+				pattern,
+				card,
+				activeTier,
+				benefit,
+				monthlyUsages
+			);
+
+		if (expectedSavingAmount <= 0L) {
+			return null;
+		}
+
+		return new CardBenefitEvaluation(
+			card,
+			activeTier,
+			benefit,
+			expectedSavingAmount
+		);
+	}
+
+	private boolean isBetterEvaluation(
+		CardBenefitEvaluation evaluation,
+		CardBenefitEvaluation currentBest
+	) {
+		return evaluation != null
+			&& (currentBest == null
+				|| evaluation.expectedSavingAmount()
+				> currentBest.expectedSavingAmount());
 	}
 
 	private long calculateUseThenSwitchSaving(

@@ -30,6 +30,14 @@ import site.benepay.domain.benefit.dto.BenefitCoachDataDto.CalculatedCoachingDat
 @Component
 public class OpenAiClient {
 
+	private static final String FIELD_CONTENT = "content";
+	private static final String FIELD_INDEX = "index";
+	private static final String FIELD_ITEMS = "items";
+	private static final String FIELD_MESSAGE = "message";
+	private static final String FIELD_SUMMARY = "summary";
+	private static final String FIELD_TITLE = "title";
+	private static final String JSON_TYPE_STRING = "string";
+
 	private final String systemPrompt;
 
 	private final ObjectMapper objectMapper;
@@ -165,7 +173,7 @@ public class OpenAiClient {
 			Map<String, Object> input =
 				new LinkedHashMap<>();
 
-			input.put("index", index);
+			input.put(FIELD_INDEX, index);
 			input.put("categoryCode", data.getCategoryCode());
 			input.put("categoryName", data.getCategoryName());
 			input.put(
@@ -220,13 +228,13 @@ public class OpenAiClient {
 				Map.of(
 					"role",
 					"system",
-					"content",
+					FIELD_CONTENT,
 					systemPrompt
 				),
 				Map.of(
 					"role",
 					"user",
-					"content",
+					FIELD_CONTENT,
 					inputJson
 				)
 			)
@@ -247,16 +255,16 @@ public class OpenAiClient {
 			new LinkedHashMap<>();
 
 		itemProperties.put(
-			"index",
+			FIELD_INDEX,
 			Map.of("type", "integer")
 		);
 		itemProperties.put(
-			"title",
-			Map.of("type", "string")
+			FIELD_TITLE,
+			Map.of("type", JSON_TYPE_STRING)
 		);
 		itemProperties.put(
-			"message",
-			Map.of("type", "string")
+			FIELD_MESSAGE,
+			Map.of("type", JSON_TYPE_STRING)
 		);
 
 		Map<String, Object> itemSchema =
@@ -266,7 +274,7 @@ public class OpenAiClient {
 		itemSchema.put("properties", itemProperties);
 		itemSchema.put(
 			"required",
-			List.of("index", "title", "message")
+			List.of(FIELD_INDEX, FIELD_TITLE, FIELD_MESSAGE)
 		);
 		itemSchema.put("additionalProperties", false);
 
@@ -274,15 +282,15 @@ public class OpenAiClient {
 			new LinkedHashMap<>();
 
 		rootProperties.put(
-			"summary",
-			Map.of("type", "string")
+			FIELD_SUMMARY,
+			Map.of("type", JSON_TYPE_STRING)
 		);
 		rootProperties.put(
-			"items",
+			FIELD_ITEMS,
 			Map.of(
 				"type",
 				"array",
-				"items",
+				FIELD_ITEMS,
 				itemSchema
 			)
 		);
@@ -294,7 +302,7 @@ public class OpenAiClient {
 		schema.put("properties", rootProperties);
 		schema.put(
 			"required",
-			List.of("summary", "items")
+			List.of(FIELD_SUMMARY, FIELD_ITEMS)
 		);
 		schema.put("additionalProperties", false);
 
@@ -333,17 +341,17 @@ public class OpenAiClient {
 			objectMapper.readTree(outputText);
 
 		String summary =
-			coachingJson.path("summary").asText();
+			coachingJson.path(FIELD_SUMMARY).asText();
 
 		List<OpenAiCoachingItemText> items =
 			new ArrayList<>();
 
-		for (JsonNode item : coachingJson.path("items")) {
+		for (JsonNode item : coachingJson.path(FIELD_ITEMS)) {
 			items.add(
 				new OpenAiCoachingItemText(
-					item.path("index").asInt(),
-					item.path("title").asText(),
-					item.path("message").asText()
+					item.path(FIELD_INDEX).asInt(),
+					item.path(FIELD_TITLE).asText(),
+					item.path(FIELD_MESSAGE).asText()
 				)
 			);
 		}
@@ -353,7 +361,7 @@ public class OpenAiClient {
 
 	private String findOutputText(JsonNode response) {
 		for (JsonNode output : response.path("output")) {
-			for (JsonNode content : output.path("content")) {
+			for (JsonNode content : output.path(FIELD_CONTENT)) {
 				String type =
 					content.path("type").asText();
 
