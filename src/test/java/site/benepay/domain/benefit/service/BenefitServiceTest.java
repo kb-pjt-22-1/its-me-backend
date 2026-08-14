@@ -33,6 +33,7 @@ import site.benepay.domain.benefit.vo.HeldCardBenefitVO;
 import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
+import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 
 @ExtendWith(MockitoExtension.class)
 class BenefitServiceTest {
@@ -56,15 +57,35 @@ class BenefitServiceTest {
 	@Mock
 	private BenefitMapper benefitMapper;
 
+	private ObjectMapper objectMapper;
+
+	@Mock
+	private RecommendationParamsLoader recommendationParamsLoader;
+
+	@Mock
+	private OpenAiClient openAiClient;
+
 	@Mock
 	private MerchantCategoryService merchantCategoryService;
 
 	private BenefitServiceImpl benefitService;
+	private BenefitCoachDataLoader benefitCoachDataLoader;
 
 	@BeforeEach
 	void setUp() {
+		objectMapper = new ObjectMapper();
+		benefitCoachDataLoader =
+			new BenefitCoachDataLoader(benefitMapper);
+
 		benefitService =
-			new BenefitServiceImpl(benefitMapper, merchantCategoryService, new ObjectMapper());
+			new BenefitServiceImpl(
+				benefitMapper,
+				merchantCategoryService,
+				objectMapper,
+				recommendationParamsLoader,
+				openAiClient,
+				benefitCoachDataLoader
+			);
 	}
 
 	private DailyBenefitAmountDto benefitRow(

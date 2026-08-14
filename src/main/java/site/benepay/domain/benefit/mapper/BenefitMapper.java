@@ -5,6 +5,9 @@ import java.util.List;
 
 import org.apache.ibatis.annotations.Param;
 
+import site.benepay.domain.benefit.dto.BenefitCoachDataDto.CardData;
+import site.benepay.domain.benefit.dto.BenefitCoachDataDto.MonthlyUsageData;
+import site.benepay.domain.benefit.dto.BenefitCoachDataDto.PaymentData;
 import site.benepay.domain.benefit.dto.DailyBenefitAmountDto;
 import site.benepay.domain.benefit.vo.CategoryBenefitUsageVO;
 import site.benepay.domain.benefit.vo.HeldCardBenefitVO;
@@ -39,6 +42,31 @@ public interface BenefitMapper {
 		@Param("userId") Long userId,
 		@Param("startPaymentTime") LocalDateTime startPaymentTime,
 		@Param("endPaymentTime") LocalDateTime endPaymentTime
+	);
+
+	/**
+	 * 사용자의 최근 결제 내역을 혜택 코칭 분석용으로 조회한다.
+	 */
+	List<PaymentData> findBenefitCoachingPayments(
+		@Param("userId") Long userId,
+		@Param("startPaymentTime") LocalDateTime startPaymentTime,
+		@Param("endPaymentTime") LocalDateTime endPaymentTime
+	);
+
+	/**
+	 * 추천 가능한 사용자의 보유 카드와 전월 실적을 조회한다.
+	 */
+	List<CardData> findBenefitCoachingCards(
+		@Param("userId") Long userId,
+		@Param("previousYearMonth") String previousYearMonth
+	);
+
+	/**
+	 * 이번 달 카드별·카테고리별 사용 혜택 금액과 횟수를 조회한다.
+	 */
+	List<MonthlyUsageData> findBenefitCoachingMonthlyUsages(
+		@Param("userId") Long userId,
+		@Param("targetYearMonth") String targetYearMonth
 	);
 
 	/**
