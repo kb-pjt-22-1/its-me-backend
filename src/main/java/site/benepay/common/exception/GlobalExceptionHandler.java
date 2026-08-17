@@ -159,6 +159,58 @@ public class GlobalExceptionHandler {
 		);
 	}
 
+	@ExceptionHandler(CardSettingUpdateException.class)
+	public ResponseEntity<ErrorResponse> handleCardSettingUpdateException(CardSettingUpdateException ex,
+		HttpServletRequest request) {
+
+		return errorResponse(
+			HttpStatus.INTERNAL_SERVER_ERROR,
+			ex.getMessage(),
+			request
+		);
+	}
+
+	@ExceptionHandler(CardBenefitParseException.class)
+	public ResponseEntity<ErrorResponse> handleCardBenefitParseException(
+		CardBenefitParseException ex,
+		HttpServletRequest request) {
+
+		log.error("카드 혜택 정보 파싱 실패", ex);
+
+		return errorResponse(
+			HttpStatus.INTERNAL_SERVER_ERROR,
+			"카드 혜택 정보를 처리하는 중 오류가 발생했습니다.",
+			request
+		);
+	}
+
+	@ExceptionHandler(UserCardNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handleUserCardNotFound(
+		UserCardNotFoundException ex,
+		HttpServletRequest request) {
+
+		return errorResponse(
+			HttpStatus.NOT_FOUND,
+			ex.getMessage(),
+			request
+		);
+	}
+
+	@ExceptionHandler(InvalidBenefitPeriodException.class)
+	public ResponseEntity<ErrorResponse> handleInvalidBenefitPeriod(HttpServletRequest request,
+		InvalidBenefitPeriodException ex) {
+		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+	}
+
+	@ExceptionHandler(InvalidYearMonthException.class)
+	public ResponseEntity<ErrorResponse> handleInvalidYearMonth(InvalidYearMonthException ex,
+		HttpServletRequest request) {
+		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+	}
+
+	/**
+	 * 별도로 처리되지 않은 예외를 공통 서버 오류로 처리한다.
+	 */
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) {
 		log.error("서버 오류", ex);
@@ -169,16 +221,5 @@ public class GlobalExceptionHandler {
 		HttpServletRequest request) {
 		return ResponseEntity.status(status)
 			.body(new ErrorResponse(status.value(), message, request.getRequestURI(), LocalDateTime.now(ZONE)));
-	}
-
-	@ExceptionHandler(InvalidBenefitPeriodException.class)
-	public ResponseEntity<ErrorResponse> handleInvalidBenefitPeriod(HttpServletRequest request,
-		InvalidBenefitPeriodException ex) {
-		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
-	}
-
-	@ExceptionHandler(InvalidYearMonthException.class)
-	public ResponseEntity<ErrorResponse> handleInvalidYearMonth(InvalidYearMonthException ex, HttpServletRequest request) {
-		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
 	}
 }
