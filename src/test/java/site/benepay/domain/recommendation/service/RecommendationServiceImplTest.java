@@ -80,6 +80,13 @@ class RecommendationServiceImplTest {
 		Long userCardId, String cardName, String categoryCode, double rate,
 		Map<String, Long> spendHistory, long currentMonthSpend
 	) {
+		return candidate(userCardId, cardName, categoryCode, rate, spendHistory, currentMonthSpend, 0L);
+	}
+
+	private static RecommendationCardCandidateVO candidate(
+		Long userCardId, String cardName, String categoryCode, double rate,
+		Map<String, Long> spendHistory, long currentMonthSpend, long minimumPaymentAmount
+	) {
 		RecommendationCardCandidateVO vo = new RecommendationCardCandidateVO();
 		vo.setUserCardId(userCardId);
 		vo.setCardId(userCardId);
@@ -89,11 +96,36 @@ class RecommendationServiceImplTest {
 			"{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
 				+ "{\"serviceName\":\"%s\",\"benefitType\":\"MERCHANT_CATEGORY\","
 				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
-				+ "\"discountRate\":%s,\"minimumPaymentAmount\":0}]}]}",
-			cardName, categoryCode, rate
+				+ "\"discountRate\":%s,\"minimumPaymentAmount\":%d}]}]}",
+			cardName, categoryCode, rate, minimumPaymentAmount
 		));
 		vo.setSpendHistory(spendHistory);
 		vo.setCurrentMonthSpend(currentMonthSpend);
+		return vo;
+	}
+
+	/**
+	 * 단일 구간 · 건당 정액 할인 카드. count=usable/ticket=qualifying(테스트 환경에서는 항상
+	 * 1.0)이라 now = discountAmount로 ticket 크기와 무관하게 고정된다 - 그래서 정률 카드와
+	 * 짝지으면 "기준 결제액이 얼마로 정해지느냐"에 따라 순위가 뒤집히는지 확인할 수 있다.
+	 */
+	private static RecommendationCardCandidateVO flatDiscountCandidate(
+		Long userCardId, String cardName, String categoryCode, long discountAmount, long minimumPaymentAmount
+	) {
+		RecommendationCardCandidateVO vo = new RecommendationCardCandidateVO();
+		vo.setUserCardId(userCardId);
+		vo.setCardId(userCardId);
+		vo.setCardName(cardName);
+		vo.setCardImageUrl("https://example.com/" + userCardId + ".png");
+		vo.setBenefitsInfo(String.format(
+			"{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
+				+ "{\"serviceName\":\"%s\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"CASHBACK\","
+				+ "\"discountAmount\":%d,\"minimumPaymentAmount\":%d}]}]}",
+			cardName, categoryCode, discountAmount, minimumPaymentAmount
+		));
+		vo.setSpendHistory(SOME_PAST_HISTORY);
+		vo.setCurrentMonthSpend(0L);
 		return vo;
 	}
 
@@ -269,7 +301,7 @@ class RecommendationServiceImplTest {
 	@Test
 	void marksMerchantUnavailableWhenUserHasNoHeldCards() {
 		stubCafeCategory();
-		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+		// 비교할 카드가 없으면 기준 결제액 계산을 위해 params()를 조회할 필요가 없다.
 
 		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
 			USER_ID,
@@ -378,6 +410,52 @@ class RecommendationServiceImplTest {
 		assertThat(result.get(0).isBenefitAvailable()).isTrue();
 		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
 			.containsExactly("청춘대로 톡톡카드");
+	}
+
+	@Test
+	void usesTheHighestMinimumPaymentAmountAmongCandidateCardsAsTheTicket() {
+		// typicalPaymentAmount("카페")=10,000원인 채로 두면(비교 대상 카드에 최소결제금액이
+		// 없을 때만 쓰는 값), 정률카드(1%)는 100원, 정액카드(300원)는 300원이라 정액카드가
+		// 이긴다. 정액카드의 최소결제금액(50,000원)이 기준액으로 채택되면 정률카드가
+		// 50,000*1%=500원으로 역전해야 한다 - 두 결과가 다르므로 어느 로직이 쓰였는지 구분된다.
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(
+				candidate(1L, "정률카드", CAFE_CODE, 1, SOME_PAST_HISTORY, 0L, 0L),
+				flatDiscountCandidate(2L, "정액카드", CAFE_CODE, 300L, 50_000L)
+			),
+			List.of(merchant(MERCHANT_ID, CAFE_CODE))
+		);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
+			.containsExactly("정률카드", "정액카드");
+	}
+
+	@Test
+	void fallsBackToRoundedTypicalPaymentAmountWhenNoCardHasAMinimumPaymentAmount() {
+		// 두 카드 모두 최소결제금액이 0이라 통상결제액(8,700원)을 천원 단위로 반올림한
+		// 9,000원이 기준액이 돼야 한다. 정률카드(3%)는 반올림 전 8,700원 기준이면
+		// 261원으로 정액카드(265원)에 지고, 반올림 후 9,000원 기준이면 270원으로 이긴다 -
+		// 두 결과가 다르므로 반올림이 실제로 적용됐는지 구분된다.
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 8_700L)));
+
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(
+				candidate(1L, "정률카드", CAFE_CODE, 3, SOME_PAST_HISTORY, 0L, 0L),
+				flatDiscountCandidate(2L, "정액카드", CAFE_CODE, 265L, 0L)
+			),
+			List.of(merchant(MERCHANT_ID, CAFE_CODE))
+		);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
+			.containsExactly("정률카드", "정액카드");
 	}
 
 	@Test

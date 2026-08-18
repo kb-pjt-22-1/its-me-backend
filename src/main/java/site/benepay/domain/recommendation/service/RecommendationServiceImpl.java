@@ -25,6 +25,7 @@ import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationRespon
 import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
 import site.benepay.domain.recommendation.engine.BenefitEngine;
 import site.benepay.domain.recommendation.engine.BenefitJsonParser;
+import site.benepay.domain.recommendation.engine.BenefitNode;
 import site.benepay.domain.recommendation.engine.Mode3Result;
 import site.benepay.domain.recommendation.engine.PerformanceTier;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
@@ -186,8 +187,12 @@ public class RecommendationServiceImpl implements RecommendationService {
 		Map<String, Long> walletSpendHistory,
 		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers
 	) {
-		Long typicalAmount = recommendationParamsLoader.params().typicalPaymentAmount().get(categoryName);
-		if (typicalAmount == null || heldCards.isEmpty()) {
+		if (heldCards.isEmpty()) {
+			return List.of();
+		}
+
+		Long typicalAmount = resolveTypicalAmount(heldCards, categoryCode, categoryName, parsedTiers);
+		if (typicalAmount == null) {
 			return List.of();
 		}
 
@@ -202,6 +207,38 @@ public class RecommendationServiceImpl implements RecommendationService {
 				e -> e.getValue().total()).reversed())
 			.limit(TOP_CARD_LIMIT)
 			.toList();
+	}
+
+	/**
+	 * 이 카테고리에서 카드 비교에 쓸 기준 결제액(ticket)을 정한다. 비교 대상 카드들이 이
+	 * 카테고리에 가진 혜택의 최소결제금액 중 가장 큰 값을 우선 쓰고, 전부 최소결제금액이
+	 * 없으면(전부 0) 카테고리 통상결제액(params.json)을 천원 단위로 반올림해 대신 쓴다.
+	 * 매장(카테고리) 하나당 한 번만 계산해 비교 대상 카드 전체에 동일하게 적용한다 -
+	 * 그래야 정률 할인과 건당 정액 할인이 같은 기준 금액에서 공정하게 비교된다.
+	 */
+	private Long resolveTypicalAmount(
+		List<RecommendationCardCandidateVO> heldCards,
+		String categoryCode,
+		String categoryName,
+		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers
+	) {
+		long maxMinimumPaymentAmount = heldCards.stream()
+			.flatMap(candidate -> parsedTiers.get(candidate).stream())
+			.flatMap(tier -> tier.benefitsForCategory(categoryCode).stream())
+			.mapToLong(BenefitNode::minimumPaymentAmount)
+			.max()
+			.orElse(0L);
+
+		if (maxMinimumPaymentAmount > 0) {
+			return maxMinimumPaymentAmount;
+		}
+
+		Long typicalPaymentAmount = recommendationParamsLoader.params().typicalPaymentAmount().get(categoryName);
+		return typicalPaymentAmount == null ? null : roundToNearestThousand(typicalPaymentAmount);
+	}
+
+	private static long roundToNearestThousand(long amount) {
+		return Math.round(amount / 1000.0) * 1000;
 	}
 
 	/**
