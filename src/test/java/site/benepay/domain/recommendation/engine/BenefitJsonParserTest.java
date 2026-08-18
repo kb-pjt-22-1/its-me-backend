@@ -89,4 +89,31 @@ class BenefitJsonParserTest {
 		assertThat(benefit.weekdayDiscountPerLiter()).isEqualTo(50L);
 		assertThat(benefit.weekendDiscountPerLiter()).isEqualTo(60L);
 	}
+
+	@Test
+	void parseFallsBackToRewardRateForPointAccumulationBenefitsWhenDiscountRateIsAbsent() {
+		// 가온 올포인트 체크카드처럼 적립형(POINT_ACCUMULATION) 혜택은 원본 JSON에 discountRate가
+		// 아니라 rewardRate로 저장돼 있다. 이걸 대체 필드로 읽지 않으면 discountRate가 0.0으로
+		// 취급돼 BenefitEngine이 적립형 카드의 혜택 가치를 0으로 계산해 추천에서 항상 배제된다.
+		String json = "{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
+			+ "{\"serviceName\":\"전 가맹점 기본 적립\",\"benefitType\":\"ALL_MERCHANTS\",\"categoryCodes\":[],"
+			+ "\"discountMethod\":\"POINT_ACCUMULATION\",\"rewardRate\":0.2}"
+			+ "]}]}";
+
+		BenefitNode benefit = BenefitJsonParser.parse(json, objectMapper).get(0).benefits().get(0);
+
+		assertThat(benefit.discountRate()).isEqualTo(0.2);
+	}
+
+	@Test
+	void parsePrefersDiscountRateOverRewardRateWhenBothArePresent() {
+		String json = "{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
+			+ "{\"serviceName\":\"카페\",\"benefitType\":\"MERCHANT_CATEGORY\",\"categoryCodes\":[\"5311\"],"
+			+ "\"discountMethod\":\"STATEMENT_DISCOUNT\",\"discountRate\":10,\"rewardRate\":999}"
+			+ "]}]}";
+
+		BenefitNode benefit = BenefitJsonParser.parse(json, objectMapper).get(0).benefits().get(0);
+
+		assertThat(benefit.discountRate()).isEqualTo(10.0);
+	}
 }

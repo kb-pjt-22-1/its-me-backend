@@ -184,6 +184,61 @@ class CardServiceTest {
 	}
 
 	@Test
+	void getCardBenefitsFillsDiscountRateFromRewardRateForPointAccumulationBenefits() {
+		// 프론트는 discountRate/discountAmount가 둘 다 없으면 description 원문을 그대로
+		// 배지에 노출한다. 적립형(POINT_ACCUMULATION) 혜택은 원본 데이터에 discountRate 대신
+		// rewardRate로 저장돼 있어 배지가 깨지므로, 응답 시점에 discountRate를 채워 넣어야 한다.
+		UserCardBenefitVO vo = new UserCardBenefitVO();
+		vo.setUserCardId(USER_CARD_ID);
+		vo.setBenefitsInfo("{\"performanceTiers\":[{\"benefits\":["
+			+ "{\"serviceName\":\"커피·제과·아이스크림 추가 적립\",\"discountMethod\":\"POINT_ACCUMULATION\","
+			+ "\"rewardRate\":0.2,\"description\":\"커피·제과·아이스크림 업종 이용금액 0.2% 추가 적립\"}"
+			+ "]}]}");
+		when(cardMapper.findBenefitsByUserCardId(USER_ID, USER_CARD_ID)).thenReturn(Optional.of(vo));
+
+		CardBenefitResponseDto response = cardService.getCardBenefits(USER_ID, USER_CARD_ID);
+
+		com.fasterxml.jackson.databind.JsonNode benefit =
+			response.getBenefits().path("performanceTiers").get(0).path("benefits").get(0);
+		assertThat(benefit.path("discountRate").asDouble()).isEqualTo(0.2);
+		// 원본 rewardRate 필드도 그대로 남아 있어야 한다(기존 소비자에게 영향 없음).
+		assertThat(benefit.path("rewardRate").asDouble()).isEqualTo(0.2);
+	}
+
+	@Test
+	void getCardBenefitsDoesNotOverwriteDiscountRateWhenAlreadyPresent() {
+		UserCardBenefitVO vo = new UserCardBenefitVO();
+		vo.setUserCardId(USER_CARD_ID);
+		vo.setBenefitsInfo("{\"performanceTiers\":[{\"benefits\":["
+			+ "{\"serviceName\":\"적립\",\"discountMethod\":\"POINT_ACCUMULATION\","
+			+ "\"discountRate\":5,\"rewardRate\":0.2}"
+			+ "]}]}");
+		when(cardMapper.findBenefitsByUserCardId(USER_ID, USER_CARD_ID)).thenReturn(Optional.of(vo));
+
+		CardBenefitResponseDto response = cardService.getCardBenefits(USER_ID, USER_CARD_ID);
+
+		com.fasterxml.jackson.databind.JsonNode benefit =
+			response.getBenefits().path("performanceTiers").get(0).path("benefits").get(0);
+		assertThat(benefit.path("discountRate").asDouble()).isEqualTo(5.0);
+	}
+
+	@Test
+	void getCardBenefitsLeavesNonPointAccumulationBenefitsUnchanged() {
+		UserCardBenefitVO vo = new UserCardBenefitVO();
+		vo.setUserCardId(USER_CARD_ID);
+		vo.setBenefitsInfo("{\"performanceTiers\":[{\"benefits\":["
+			+ "{\"serviceName\":\"할인\",\"discountMethod\":\"STATEMENT_DISCOUNT\",\"rewardRate\":0.2}"
+			+ "]}]}");
+		when(cardMapper.findBenefitsByUserCardId(USER_ID, USER_CARD_ID)).thenReturn(Optional.of(vo));
+
+		CardBenefitResponseDto response = cardService.getCardBenefits(USER_ID, USER_CARD_ID);
+
+		com.fasterxml.jackson.databind.JsonNode benefit =
+			response.getBenefits().path("performanceTiers").get(0).path("benefits").get(0);
+		assertThat(benefit.has("discountRate")).isFalse();
+	}
+
+	@Test
 	void getCardBenefitsThrowsWhenTheStoredJsonIsMalformed() {
 		UserCardBenefitVO vo = new UserCardBenefitVO();
 		vo.setUserCardId(USER_CARD_ID);
