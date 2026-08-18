@@ -37,7 +37,8 @@ class CardPerformanceEventHandlerTest {
 			"5813",
 			LocalDateTime.of(2026, 8, 12, 15, 30),
 			BigDecimal.valueOf(9000),
-			BigDecimal.valueOf(1000)
+			BigDecimal.valueOf(1000),
+			null
 		);
 
 		when(cardMapper.addMonthlySpending(
@@ -67,7 +68,8 @@ class CardPerformanceEventHandlerTest {
 			"5813",
 			LocalDateTime.of(2026, 7, 31, 23, 50),
 			BigDecimal.valueOf(9000),
-			BigDecimal.valueOf(1000)
+			BigDecimal.valueOf(1000),
+			null
 		);
 
 		when(cardMapper.subtractMonthlySpending(
@@ -97,7 +99,8 @@ class CardPerformanceEventHandlerTest {
 			"5813",
 			LocalDateTime.of(2026, 8, 12, 15, 30),
 			BigDecimal.valueOf(9000),
-			BigDecimal.valueOf(1000)
+			BigDecimal.valueOf(1000),
+			null
 		);
 
 		when(cardMapper.addMonthlySpending(
@@ -123,7 +126,8 @@ class CardPerformanceEventHandlerTest {
 			"5813",
 			LocalDateTime.of(2026, 7, 31, 23, 50),
 			BigDecimal.valueOf(9000),
-			BigDecimal.valueOf(1000)
+			BigDecimal.valueOf(1000),
+			null
 		);
 
 		when(cardMapper.subtractMonthlySpending(

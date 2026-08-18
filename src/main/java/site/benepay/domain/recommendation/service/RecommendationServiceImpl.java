@@ -1,7 +1,9 @@
 package site.benepay.domain.recommendation.service;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -26,10 +28,12 @@ import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
 import site.benepay.domain.recommendation.engine.BenefitEngine;
 import site.benepay.domain.recommendation.engine.BenefitJsonParser;
 import site.benepay.domain.recommendation.engine.BenefitNode;
+import site.benepay.domain.recommendation.engine.BenefitUsage;
 import site.benepay.domain.recommendation.engine.Mode3Result;
 import site.benepay.domain.recommendation.engine.PerformanceTier;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
+import site.benepay.domain.recommendation.vo.RecommendationBenefitUsageVO;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 import site.benepay.domain.recommendation.vo.RecommendationMerchantVO;
 
@@ -45,6 +49,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 	private static final int TOP_CARD_LIMIT = 3;
 	// DB 커넥션의 serverTimezone(application.properties의 db.url)과 맞춘다 - UserServiceImpl과 동일 규약.
 	private static final ZoneId APP_ZONE = ZoneId.of("Asia/Seoul");
+	private static final DateTimeFormatter YEAR_MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
 
 	private final RecommendationMapper recommendationMapper;
 	private final MerchantCategoryService merchantCategoryService;
@@ -127,10 +132,55 @@ public class RecommendationServiceImpl implements RecommendationService {
 				candidate -> BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper)
 			));
 
+		// 카드별 이번 달/올해 혜택 소진액(card_benefit_monthly_usage) - 매장 N개를 평가하는
+		// 동안 반복 조회하지 않도록 한 번만 가져온다. 한도가 이미 소진된 카드는 이 값으로
+		// BenefitEngine이 잔여 한도를 계산해 실질 가치를 낮춰 반영한다.
+		Map<Long, Map<String, BenefitUsage>> usageByCard = loadUsageByCard(userId);
+
 		return merchants.stream()
 			.map(merchant -> toOptimalCardRecommendation(merchant, heldCards, categoryNames, walletSpendHistory,
-				parsedTiers))
+				parsedTiers, usageByCard))
 			.toList();
+	}
+
+	private Map<Long, Map<String, BenefitUsage>> loadUsageByCard(Long userId) {
+		YearMonth currentYearMonth = YearMonth.now(APP_ZONE);
+		String targetYearMonth = currentYearMonth.format(YEAR_MONTH_FORMATTER);
+
+		Map<Long, Map<String, Long>> monthlyAmount = new HashMap<>();
+		Map<Long, Map<String, Integer>> monthlyCount = new HashMap<>();
+		for (RecommendationBenefitUsageVO row : recommendationMapper.findMonthlyUsageByUserId(userId, targetYearMonth)) {
+			monthlyAmount.computeIfAbsent(row.getUserCardId(), k -> new HashMap<>())
+				.put(row.getBenefitServiceName(), row.getUsedAmount() == null ? 0L : row.getUsedAmount());
+			monthlyCount.computeIfAbsent(row.getUserCardId(), k -> new HashMap<>())
+				.put(row.getBenefitServiceName(), row.getUsedCount() == null ? 0 : row.getUsedCount());
+		}
+
+		Map<Long, Map<String, Integer>> annualCount = new HashMap<>();
+		for (RecommendationBenefitUsageVO row
+			: recommendationMapper.findAnnualCountByUserId(userId, currentYearMonth.getYear())) {
+			annualCount.computeIfAbsent(row.getUserCardId(), k -> new HashMap<>())
+				.put(row.getBenefitServiceName(), row.getUsedCount() == null ? 0 : row.getUsedCount());
+		}
+
+		Map<Long, Map<String, BenefitUsage>> usageByCard = new HashMap<>();
+		for (Map.Entry<Long, Map<String, Long>> cardEntry : monthlyAmount.entrySet()) {
+			Long userCardId = cardEntry.getKey();
+			Map<String, Integer> counts = monthlyCount.getOrDefault(userCardId, Map.of());
+			Map<String, Integer> annualCounts = annualCount.getOrDefault(userCardId, Map.of());
+
+			Map<String, BenefitUsage> usage = new HashMap<>();
+			for (Map.Entry<String, Long> serviceEntry : cardEntry.getValue().entrySet()) {
+				String serviceName = serviceEntry.getKey();
+				usage.put(serviceName, new BenefitUsage(
+					serviceEntry.getValue(),
+					counts.getOrDefault(serviceName, 0),
+					annualCounts.getOrDefault(serviceName, 0)
+				));
+			}
+			usageByCard.put(userCardId, usage);
+		}
+		return usageByCard;
 	}
 
 	/**
@@ -150,12 +200,14 @@ public class RecommendationServiceImpl implements RecommendationService {
 		List<RecommendationCardCandidateVO> heldCards,
 		Map<String, String> categoryNames,
 		Map<String, Long> walletSpendHistory,
-		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers
+		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers,
+		Map<Long, Map<String, BenefitUsage>> usageByCard
 	) {
 		String categoryName = categoryNames.get(merchant.getCategoryCode());
 		TopCardsResult topCardsResult = categoryName == null
 			? TopCardsResult.EMPTY
-			: findTopCards(heldCards, merchant.getCategoryCode(), categoryName, walletSpendHistory, parsedTiers);
+			: findTopCards(heldCards, merchant.getCategoryCode(), categoryName, walletSpendHistory, parsedTiers,
+				usageByCard);
 
 		List<RecommendedCardResponseDto> recommendedCards = topCardsResult.cards().stream()
 			.map(entry -> RecommendedCardResponseDto.builder()
@@ -195,7 +247,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 		String categoryCode,
 		String categoryName,
 		Map<String, Long> walletSpendHistory,
-		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers
+		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers,
+		Map<Long, Map<String, BenefitUsage>> usageByCard
 	) {
 		if (heldCards.isEmpty()) {
 			return TopCardsResult.EMPTY;
@@ -210,7 +263,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.map(candidate -> Map.entry(
 				candidate,
 				scorePriority(candidate, categoryCode, categoryName, typicalAmount, walletSpendHistory,
-					parsedTiers.get(candidate))
+					parsedTiers.get(candidate),
+					usageByCard.getOrDefault(candidate.getUserCardId(), Map.of()))
 			))
 			.filter(entry -> entry.getValue().total() > 0)
 			.sorted(Comparator.<Map.Entry<RecommendationCardCandidateVO, Mode3Result>>comparingDouble(
@@ -264,7 +318,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 		String categoryName,
 		long typicalAmount,
 		Map<String, Long> walletSpendHistory,
-		List<PerformanceTier> tiers
+		List<PerformanceTier> tiers,
+		Map<String, BenefitUsage> usageByServiceName
 	) {
 		Map<String, Long> spendHistory =
 			candidate.getSpendHistory() == null ? Collections.emptyMap() : candidate.getSpendHistory();
@@ -274,7 +329,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		return BenefitEngine.evaluatePriority(
 			tiers, prevMonthSpend, currentMonthSpend, categoryCode, categoryName, typicalAmount,
 			spendHistory, walletSpendHistory, recommendationParamsLoader.params(), LocalDate.now(APP_ZONE),
-			PRIORITY_BETA
+			PRIORITY_BETA, usageByServiceName
 		);
 	}
 

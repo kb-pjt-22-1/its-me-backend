@@ -203,9 +203,14 @@ public final class BenefitEngine {
 	/**
 	 * 혜택 하나가 이 카테고리의 통상결제액(ticket) 1건을 근거로 한 달에 주는 할인 추정치.
 	 * benefits.py의 benefit_discount()를 단일 카테고리·단일 혜택 배정으로 단순화한 것.
+	 *
+	 * <p>usage는 이 혜택을 이번 달(월 한도)·올해(연 한도) 이미 얼마나 썼는지다(card_benefit_
+	 * monthly_usage 집계) - 한도를 "매번 새로 꽉 찬 상태"로 가정하지 않고 남은 만큼만 캡으로
+	 * 쓴다. monthlyEligibleLimit(월 이용금액 한도)은 소진액을 추적하지 않으므로(BenefitUsage
+	 * 참고) usage와 무관하게 기존 그대로 이번 ticket 기준으로만 적용한다.</p>
 	 */
 	private static long benefitDiscountEstimate(
-		BenefitNode benefit, String categoryName, long ticket, RecommendationParams params
+		BenefitNode benefit, String categoryName, long ticket, RecommendationParams params, BenefitUsage usage
 	) {
 		double qualifying = qualifyingRatio(benefit, categoryName, params);
 		double usable = ticket * qualifying;
@@ -219,9 +224,11 @@ public final class BenefitEngine {
 
 		double discount;
 		if (benefit.discountAmount() > 0) {
-			Double limit = benefit.monthlyCountLimit() == null ? null : benefit.monthlyCountLimit().doubleValue();
+			Double limit = benefit.monthlyCountLimit() == null
+				? null : Math.max(0.0, benefit.monthlyCountLimit() - usage.usedMonthlyCount());
 			if (benefit.annualCountLimit() != null) {
-				double perMonth = benefit.annualCountLimit() / 12.0;
+				double remainingAnnual = Math.max(0, benefit.annualCountLimit() - usage.usedAnnualCount());
+				double perMonth = remainingAnnual / 12.0;
 				limit = limit == null ? perMonth : Math.min(limit, perMonth);
 			}
 			double uses = limit == null ? count : Math.min(count, limit);
@@ -234,9 +241,71 @@ public final class BenefitEngine {
 		}
 
 		if (benefit.monthlyDiscountLimit() != null) {
-			discount = Math.min(discount, benefit.monthlyDiscountLimit());
+			double remaining = Math.max(0, benefit.monthlyDiscountLimit() - usage.usedAmount());
+			discount = Math.min(discount, remaining);
 		}
 		return Math.round(discount);
+	}
+
+	private static final Set<String> PAYMENT_TIME_EXCLUDED_METHODS =
+		Set.of("POINT_ACCUMULATION", "PER_LITER_STATEMENT_DISCOUNT", "PER_LITER_CASHBACK");
+
+	/**
+	 * 결제 1건에 실제로 적용할 혜택을 고른다. benefitDiscountEstimate가 "통상결제액 1건이
+	 * 반복된다면"이라는 통계적 추정인 것과 달리, 이건 이번 결제 금액 하나에 대한 확정 계산이다.
+	 *
+	 * <p>POINT_ACCUMULATION(적립형)은 결제금액을 깎지 않고 포인트로 쌓이는 것이라 이 결제의
+	 * discountAmount로 취급하면 데이터가 왜곡돼 제외한다. PER_LITER_*는 리터 단위 계산인데
+	 * 결제 API에 리터 정보가 없어 계산할 수 없어 제외한다. 카테고리를 커버하는 나머지 혜택 중
+	 * 최소결제금액을 충족하고 월/연 횟수 한도가 아직 안 찬 것들 가운데 할인액이 가장 큰 하나만
+	 * 고른다 - 실제 결제는 한 번에 한 혜택만 적용되는 게 자연스럽다.</p>
+	 */
+	public static BenefitApplication selectPaymentBenefit(
+		List<PerformanceTier> tiers,
+		long prevMonthSpend,
+		String categoryCode,
+		long paymentAmount,
+		Map<String, BenefitUsage> usageByServiceName
+	) {
+		PerformanceTier active = activeTier(tiers, prevMonthSpend);
+
+		BenefitApplication best = BenefitApplication.NONE;
+		for (BenefitNode benefit : active.benefitsForCategory(categoryCode)) {
+			if (PAYMENT_TIME_EXCLUDED_METHODS.contains(benefit.discountMethod())) {
+				continue;
+			}
+			if (benefit.minimumPaymentAmount() > paymentAmount) {
+				continue;
+			}
+			BenefitUsage usage = usageByServiceName.getOrDefault(benefit.serviceName(), BenefitUsage.NONE);
+			long discount = singleTransactionDiscount(benefit, paymentAmount, usage);
+			if (discount > best.discountAmount()) {
+				best = new BenefitApplication(benefit.serviceName(), discount);
+			}
+		}
+		return best;
+	}
+
+	private static long singleTransactionDiscount(BenefitNode benefit, long paymentAmount, BenefitUsage usage) {
+		if (benefit.monthlyCountLimit() != null && usage.usedMonthlyCount() >= benefit.monthlyCountLimit()) {
+			return 0L;
+		}
+		if (benefit.annualCountLimit() != null && usage.usedAnnualCount() >= benefit.annualCountLimit()) {
+			return 0L;
+		}
+
+		long discount = benefit.discountAmount() > 0
+			? benefit.discountAmount()
+			: Math.round(paymentAmount * (benefit.discountRate() / 100.0));
+
+		if (benefit.maximumDiscountPerTransaction() != null) {
+			discount = Math.min(discount, benefit.maximumDiscountPerTransaction());
+		}
+		if (benefit.monthlyDiscountLimit() != null) {
+			long remaining = Math.max(0, benefit.monthlyDiscountLimit() - usage.usedAmount());
+			discount = Math.min(discount, remaining);
+		}
+		return Math.max(discount, 0L);
 	}
 
 	/**
@@ -246,7 +315,8 @@ public final class BenefitEngine {
 	 * gain(다음/기준 구간 차이) 양쪽에서 재사용한다.
 	 */
 	private static long tierDiscountForCategory(
-		PerformanceTier tier, String categoryCode, String categoryName, long ticket, RecommendationParams params
+		PerformanceTier tier, String categoryCode, String categoryName, long ticket, RecommendationParams params,
+		Map<String, BenefitUsage> usageByServiceName
 	) {
 		List<BenefitNode> covering = tier.benefitsForCategory(categoryCode);
 		if (covering.isEmpty()) {
@@ -255,7 +325,8 @@ public final class BenefitEngine {
 		BenefitNode best = null;
 		long bestDiscount = 0L;
 		for (BenefitNode benefit : covering) {
-			long discount = benefitDiscountEstimate(benefit, categoryName, ticket, params);
+			BenefitUsage usage = usageByServiceName.getOrDefault(benefit.serviceName(), BenefitUsage.NONE);
+			long discount = benefitDiscountEstimate(benefit, categoryName, ticket, params, usage);
 			if (best == null || discount > bestDiscount) {
 				best = benefit;
 				bestDiscount = discount;
@@ -292,6 +363,9 @@ public final class BenefitEngine {
 	 *        "의도적으로 몰아준다"는 전제라 이 카드의 평소 습관이 아니라 지갑 전체 여력이 기준이다
 	 * @param today 남은 일수 계산 기준일(호출부에서 LocalDate.now()를 넘긴다)
 	 * @param beta 확정 이득과 확률적 기대 이득을 몇 대 몇으로 합산할지 정하는 가정값
+	 * @param usageByServiceName 이 카드가 혜택별로 이번 달/올해 이미 소진한 사용량(card_benefit_
+	 *        monthly_usage) - now/next/baseline 세 시나리오 모두 "지금 이 순간까지의 소진량"은
+	 *        같으므로 동일한 맵을 그대로 재사용한다
 	 */
 	public static Mode3Result evaluatePriority(
 		List<PerformanceTier> tiers,
@@ -304,7 +378,8 @@ public final class BenefitEngine {
 		Map<String, Long> walletSpendHistory,
 		RecommendationParams params,
 		LocalDate today,
-		double beta
+		double beta,
+		Map<String, BenefitUsage> usageByServiceName
 	) {
 		boolean hasAnywhere = tiers.stream().anyMatch(t -> !t.benefitsForCategory(categoryCode).isEmpty());
 		if (!hasAnywhere) {
@@ -312,7 +387,8 @@ public final class BenefitEngine {
 		}
 
 		PerformanceTier active = activeTier(tiers, prevMonthSpend);
-		long now = tierDiscountForCategory(active, categoryCode, categoryName, typicalAmount, params);
+		long now = tierDiscountForCategory(active, categoryCode, categoryName, typicalAmount, params,
+			usageByServiceName);
 
 		PerformanceTier next = nextTier(tiers, currentMonthSpend, categoryCode);
 		if (next == null) {
@@ -331,9 +407,10 @@ public final class BenefitEngine {
 		);
 
 		PerformanceTier baseline = baselineTier(tiers, currentMonthSpend);
-		long nextDiscount = tierDiscountForCategory(next, categoryCode, categoryName, typicalAmount, params);
+		long nextDiscount = tierDiscountForCategory(next, categoryCode, categoryName, typicalAmount, params,
+			usageByServiceName);
 		long baselineDiscount =
-			tierDiscountForCategory(baseline, categoryCode, categoryName, typicalAmount, params);
+			tierDiscountForCategory(baseline, categoryCode, categoryName, typicalAmount, params, usageByServiceName);
 		long gain = nextDiscount - baselineDiscount;
 
 		double future = prob.pFill() * Math.max(0, gain);

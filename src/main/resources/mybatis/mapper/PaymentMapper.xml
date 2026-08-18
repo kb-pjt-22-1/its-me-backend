@@ -6,12 +6,25 @@
             useGeneratedKeys="true" keyProperty="paymentId" keyColumn="payment_id">
         INSERT INTO payments (
             merchant_id, user_card_id, payment_time,
-            original_amount, discount_amount, final_amount, payment_status, payment_method
+            original_amount, discount_amount, final_amount, benefit_service_name, payment_status, payment_method
         ) VALUES (
                      #{merchantId}, #{userCardId}, #{paymentTime},
-                     #{originalAmount}, #{discountAmount}, #{finalAmount}, #{paymentStatus}, #{paymentMethod}
+                     #{originalAmount}, #{discountAmount}, #{finalAmount}, #{benefitServiceName},
+                     #{paymentStatus}, #{paymentMethod}
                  )
     </insert>
+
+    <select id="findCardBenefitContext" resultType="site.benepay.domain.payment.vo.CardBenefitContextVO">
+        SELECT c.benefits_info                          AS benefitsInfo,
+               COALESCE(cms.total_spending_amount, 0)    AS previousMonthSpendingAmount
+        FROM user_cards uc
+                 INNER JOIN cards c
+                            ON c.card_id = uc.card_id
+                 LEFT JOIN card_monthly_status cms
+                           ON cms.user_card_id = uc.user_card_id
+                               AND cms.target_year_month = #{previousYearMonth}
+        WHERE uc.user_card_id = #{userCardId}
+    </select>
 
     <resultMap id="paymentHistoryResultMap" type="site.benepay.domain.payment.vo.PaymentHistoryVO">
         <id column="payment_id" property="paymentId" />
@@ -24,13 +37,14 @@
         <result column="original_amount" property="originalAmount" />
         <result column="discount_amount" property="discountAmount" />
         <result column="final_amount" property="finalAmount" />
+        <result column="benefit_service_name" property="benefitServiceName" />
         <result column="payment_status" property="paymentStatus" />
         <result column="payment_method" property="paymentMethod" />
     </resultMap>
 
     <sql id="paymentHistoryColumns">
         p.payment_id, p.user_card_id, m.merchant_name, m.category_code, c.card_name, uc.pan_last4,
-        p.payment_time, p.original_amount, p.discount_amount, p.final_amount,
+        p.payment_time, p.original_amount, p.discount_amount, p.final_amount, p.benefit_service_name,
         p.payment_status, p.payment_method
     </sql>
 

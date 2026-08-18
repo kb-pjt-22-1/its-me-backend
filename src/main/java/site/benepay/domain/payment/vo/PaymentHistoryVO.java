@@ -45,6 +45,9 @@ public class PaymentHistoryVO {
 	private BigDecimal discountAmount;
 	@NonNull
 	private BigDecimal finalAmount;
+	// 이 결제에 적용된 혜택의 serviceName. 적용된 혜택이 없으면(할인 0원) null - benefit
+	// 도메인이 card_benefit_monthly_usage를 갱신할 때(BenefitUsageEventHandler) 키로 쓴다.
+	private String benefitServiceName;
 	@NonNull
 	private String paymentStatus;
 	@NonNull
