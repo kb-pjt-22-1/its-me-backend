@@ -171,6 +171,7 @@ class RecommendationServiceImplTest {
 		assertThat(result.get(0).getRecommendedCards().get(0).getCardName()).isEqualTo("청춘대로 톡톡카드");
 		assertThat(result.get(0).getRecommendedCards().get(0).getBenefitSummary()).isNotBlank();
 		assertThat(result.get(0).getDistanceMeters()).isNull();
+		assertThat(result.get(0).getTypicalPaymentAmount()).isEqualTo(10_000L);
 	}
 
 	@Test
@@ -228,6 +229,7 @@ class RecommendationServiceImplTest {
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).isBenefitAvailable()).isFalse();
 		assertThat(result.get(0).getRecommendedCards()).isEmpty();
+		assertThat(result.get(0).getTypicalPaymentAmount()).isNull();
 	}
 
 	@Test
@@ -244,6 +246,7 @@ class RecommendationServiceImplTest {
 		assertThat(result.get(0).isBenefitAvailable()).isFalse();
 		assertThat(result.get(0).getCategoryCode()).isEqualTo("8888");
 		assertThat(result.get(0).getRecommendedCards()).isEmpty();
+		assertThat(result.get(0).getTypicalPaymentAmount()).isNull();
 	}
 
 	@Test
@@ -278,12 +281,14 @@ class RecommendationServiceImplTest {
 				assertThat(m.isBenefitAvailable()).isTrue();
 				assertThat(m.getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
 					.containsExactly("카페카드");
+				assertThat(m.getTypicalPaymentAmount()).isEqualTo(10_000L);
 			});
 		assertThat(result).filteredOn(m -> m.getMerchantId().equals(convenienceMerchantId))
 			.allSatisfy(m -> {
 				assertThat(m.isBenefitAvailable()).isTrue();
 				assertThat(m.getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
 					.containsExactly("편의점카드");
+				assertThat(m.getTypicalPaymentAmount()).isEqualTo(15_000L);
 			});
 	}
 
@@ -312,6 +317,7 @@ class RecommendationServiceImplTest {
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).isBenefitAvailable()).isFalse();
 		assertThat(result.get(0).getRecommendedCards()).isEmpty();
+		assertThat(result.get(0).getTypicalPaymentAmount()).isNull();
 	}
 
 	@Test
@@ -410,6 +416,7 @@ class RecommendationServiceImplTest {
 		assertThat(result.get(0).isBenefitAvailable()).isTrue();
 		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
 			.containsExactly("청춘대로 톡톡카드");
+		assertThat(result.get(0).getTypicalPaymentAmount()).isEqualTo(10_000L);
 	}
 
 	@Test
@@ -433,6 +440,8 @@ class RecommendationServiceImplTest {
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
 			.containsExactly("정률카드", "정액카드");
+		// 정액카드의 최소결제금액(50,000원)이 두 카드 중 더 크므로 그 값이 기준액으로 채택돼야 한다.
+		assertThat(result.get(0).getTypicalPaymentAmount()).isEqualTo(50_000L);
 	}
 
 	@Test
@@ -456,6 +465,8 @@ class RecommendationServiceImplTest {
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
 			.containsExactly("정률카드", "정액카드");
+		// 최소결제금액을 가진 카드가 없으므로 통상결제액(8,700원)을 천원 단위로 반올림한 값이 채택돼야 한다.
+		assertThat(result.get(0).getTypicalPaymentAmount()).isEqualTo(9_000L);
 	}
 
 	@Test
