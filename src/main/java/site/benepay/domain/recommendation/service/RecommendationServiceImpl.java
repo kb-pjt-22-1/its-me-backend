@@ -153,11 +153,11 @@ public class RecommendationServiceImpl implements RecommendationService {
 		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers
 	) {
 		String categoryName = categoryNames.get(merchant.getCategoryCode());
-		List<Map.Entry<RecommendationCardCandidateVO, Mode3Result>> topCards = categoryName == null
-			? List.of()
+		TopCardsResult topCardsResult = categoryName == null
+			? TopCardsResult.EMPTY
 			: findTopCards(heldCards, merchant.getCategoryCode(), categoryName, walletSpendHistory, parsedTiers);
 
-		List<RecommendedCardResponseDto> recommendedCards = topCards.stream()
+		List<RecommendedCardResponseDto> recommendedCards = topCardsResult.cards().stream()
 			.map(entry -> RecommendedCardResponseDto.builder()
 				.cardName(entry.getKey().getCardName())
 				.benefitSummary(entry.getValue().note())
@@ -177,10 +177,20 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.phone(merchant.getPhone())
 			.benefitAvailable(!recommendedCards.isEmpty())
 			.recommendedCards(recommendedCards)
+			.typicalPaymentAmount(recommendedCards.isEmpty() ? null : topCardsResult.typicalAmount())
 			.build();
 	}
 
-	private List<Map.Entry<RecommendationCardCandidateVO, Mode3Result>> findTopCards(
+	// findTopCards 결과와, 그 카드들을 비교할 때 쓴 기준 결제액(typicalAmount)을 함께 담는다 -
+	// 기준 금액은 응답 DTO의 "n원 기준" 표시에도 그대로 쓰여야 하므로 카드 목록과 분리해 반환한다.
+	private record TopCardsResult(
+		Long typicalAmount,
+		List<Map.Entry<RecommendationCardCandidateVO, Mode3Result>> cards
+	) {
+		private static final TopCardsResult EMPTY = new TopCardsResult(null, List.of());
+	}
+
+	private TopCardsResult findTopCards(
 		List<RecommendationCardCandidateVO> heldCards,
 		String categoryCode,
 		String categoryName,
@@ -188,15 +198,15 @@ public class RecommendationServiceImpl implements RecommendationService {
 		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers
 	) {
 		if (heldCards.isEmpty()) {
-			return List.of();
+			return TopCardsResult.EMPTY;
 		}
 
 		Long typicalAmount = resolveTypicalAmount(heldCards, categoryCode, categoryName, parsedTiers);
 		if (typicalAmount == null) {
-			return List.of();
+			return TopCardsResult.EMPTY;
 		}
 
-		return heldCards.stream()
+		List<Map.Entry<RecommendationCardCandidateVO, Mode3Result>> cards = heldCards.stream()
 			.map(candidate -> Map.entry(
 				candidate,
 				scorePriority(candidate, categoryCode, categoryName, typicalAmount, walletSpendHistory,
@@ -207,6 +217,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 				e -> e.getValue().total()).reversed())
 			.limit(TOP_CARD_LIMIT)
 			.toList();
+
+		return new TopCardsResult(typicalAmount, cards);
 	}
 
 	/**
