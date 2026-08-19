@@ -1526,7 +1526,7 @@ class BenefitServiceTest {
 		return location;
 	}
 
-	private MerchantResponseDto nearbyMerchant(Long merchantId, String merchantName, double distanceMeters) {
+	private MerchantResponseDto nearbyMerchant(Long merchantId, String merchantName, long distanceMeters) {
 		return MerchantResponseDto.builder()
 			.merchantId(merchantId)
 			.merchantName(merchantName)
@@ -1546,15 +1546,15 @@ class BenefitServiceTest {
 			.thenReturn(Optional.of(recentPaymentLocation(37.5, 127.0)));
 
 		// 반경(2km) 밖 매장은 facade에 아예 안 넘어가야 한다.
-		MerchantResponseDto near = nearbyMerchant(1L, "스타벅스 강남점", 500.0);
-		MerchantResponseDto far = nearbyMerchant(2L, "저 멀리 매장", 3_000.0);
+		MerchantResponseDto near = nearbyMerchant(1L, "스타벅스 강남점", 500L);
+		MerchantResponseDto far = nearbyMerchant(2L, "저 멀리 매장", 3_000L);
 		when(merchantService.getNearbyMerchants(37.5, 127.0, null, 50))
 			.thenReturn(List.of(near, far));
 
 		NearbyMerchantRecommendationResponseDto evaluated = NearbyMerchantRecommendationResponseDto.builder()
 			.merchantId(1L)
 			.merchantName("스타벅스 강남점")
-			.distanceMeters(500.0)
+			.distanceMeters(500L)
 			.benefitAvailable(true)
 			.recommendedCards(List.of(RecommendedCardResponseDto.builder()
 				.cardName("청춘대로 톡톡카드")
@@ -1571,7 +1571,7 @@ class BenefitServiceTest {
 		NearbyBenefitResponseDto nearbyBenefit = result.getNearbyMerchantBenefits().get(0);
 		assertThat(nearbyBenefit.getMerchantName()).isEqualTo("스타벅스 강남점");
 		assertThat(nearbyBenefit.getCardName()).isEqualTo("청춘대로 톡톡카드");
-		assertThat(nearbyBenefit.getDistanceMeters()).isEqualTo(500.0);
+		assertThat(nearbyBenefit.getDistanceMeters()).isEqualTo(500L);
 	}
 
 	@Test

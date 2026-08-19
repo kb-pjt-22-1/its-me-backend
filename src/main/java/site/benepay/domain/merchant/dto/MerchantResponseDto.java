@@ -19,7 +19,8 @@ public class MerchantResponseDto {
 	private BigDecimal longitude;
 	private String phone;
 	// 위치 기반 조회(findNearby)에서만 채워진다. 그 외 조회 경로에서는 null.
-	private Double distanceMeters;
+	// 소수점 없이 반올림된 값(SQL에서 ROUND 처리) - 응답에 "123.0m" 같은 소수점이 노출되지 않게 Long으로 받는다.
+	private Long distanceMeters;
 
 	public static MerchantResponseDto from(Merchant merchant) {
 		return MerchantResponseDto.builder()

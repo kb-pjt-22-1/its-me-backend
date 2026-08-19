@@ -25,6 +25,7 @@ import site.benepay.domain.recommendation.dto.CardBenefitComparisonResponseDto;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
+import site.benepay.domain.recommendation.dto.TodayCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.engine.BenefitEngine;
 import site.benepay.domain.recommendation.engine.BenefitJsonParser;
 import site.benepay.domain.recommendation.engine.BenefitNode;
@@ -47,6 +48,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 	private static final double PRIORITY_BETA = 1.0;
 	// 매장 하나당 추천 카드는 총 기대 가치 상위 3장까지만 보여준다.
 	private static final int TOP_CARD_LIMIT = 3;
+	// "오늘의 카드 추천"에서 대표 카드 외에 "가까운 혜택 매장"을 몇 곳까지 더 보여줄지.
+	private static final int TODAY_CARD_NEARBY_LIMIT = 2;
 	// DB 커넥션의 serverTimezone(application.properties의 db.url)과 맞춘다 - UserServiceImpl과 동일 규약.
 	private static final ZoneId APP_ZONE = ZoneId.of("Asia/Seoul");
 	private static final DateTimeFormatter YEAR_MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
@@ -56,12 +59,11 @@ public class RecommendationServiceImpl implements RecommendationService {
 	private final ObjectMapper objectMapper;
 	private final RecommendationParamsLoader recommendationParamsLoader;
 
-	// TODO: 다른 팀원의 카드 추천 알고리즘 구현이 완료되면 이 클래스에 주입한다.
-
 	@Override
 	public MerchantCardRecommendationResponseDto getCardRecommendations(
 		Long userId,
-		Long merchantId
+		Long merchantId,
+		List<RecommendationCardCandidateVO> heldCards
 	) {
 		validateUserId(userId);
 
@@ -74,23 +76,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 			);
 		}
 
-		/*
-		 * TODO: 다른 팀원의 카드 추천 알고리즘 연결 위치
-		 *
-		 * 팀원의 추천 알고리즘 구현이 완료되면
-		 * 아래와 같은 흐름으로 교체한다.
-		 *
-		 * List<CardBenefitComparisonResponseDto> cards =
-		 *     cardRecommendationAlgorithm.recommend(
-		 *         heldCards,
-		 *         merchant
-		 *     );
-		 *
-		 * 현재는 추천 알고리즘이 연결되지 않았으므로
-		 * 카드 비교 결과를 빈 목록으로 반환한다.
-		 */
 		List<CardBenefitComparisonResponseDto> cards =
-			Collections.emptyList();
+			compareCardsForMerchant(userId, heldCards, merchant.getCategoryCode());
 
 		return MerchantCardRecommendationResponseDto.builder()
 			.merchantId(merchant.getMerchantId())
@@ -99,6 +86,214 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.brandId(merchant.getBrandId())
 			.cards(cards)
 			.build();
+	}
+
+	/**
+	 * 보유 카드 전체를 이 매장의 카테고리 기준 모드 3으로 평가해, "왜 이 카드는 안 되는지"까지
+	 * 볼 수 있게 total&lt;=0인 카드도 걸러내지 않고 전부 반환한다("오늘의 카드 추천"의
+	 * findTopCards는 반대로 total&gt;0만 상위 3장 남긴다). 평가 대상 카드가 없거나 카테고리가
+	 * 추천 분석 대상(16개 대분류) 밖이면 카드별로 benefitApplicable=false인 비교 결과를 반환한다.
+	 */
+	private List<CardBenefitComparisonResponseDto> compareCardsForMerchant(
+		Long userId,
+		List<RecommendationCardCandidateVO> heldCards,
+		String categoryCode
+	) {
+		if (heldCards.isEmpty()) {
+			return Collections.emptyList();
+		}
+
+		String categoryName = resolveCategoryName(categoryCode);
+		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers = heldCards.stream()
+			.collect(Collectors.toMap(
+				candidate -> candidate,
+				candidate -> BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper)
+			));
+
+		if (categoryName == null) {
+			return heldCards.stream()
+				.map(candidate -> CardBenefitComparisonResponseDto.builder()
+					.userCardId(candidate.getUserCardId())
+					.cardName(candidate.getCardName())
+					.cardImageUrl(candidate.getCardImageUrl())
+					.benefitApplicable(false)
+					.performanceMet(false)
+					.reason("추천 분석 대상 카테고리가 아니에요")
+					.recommended(false)
+					.build())
+				.toList();
+		}
+
+		Long typicalAmount = resolveTypicalAmount(heldCards, categoryCode, categoryName, parsedTiers);
+		Map<String, Long> walletSpendHistory = aggregateWalletSpendHistory(heldCards);
+		Map<Long, Map<String, BenefitUsage>> usageByCard = loadUsageByCard(userId);
+
+		List<Map.Entry<RecommendationCardCandidateVO, Mode3Result>> evaluated = heldCards.stream()
+			.map(candidate -> Map.entry(candidate, typicalAmount == null
+				? new Mode3Result(0L, 0.0, 0.0, 0.0, 0.0, 0L, 0L, 0.0, "이 카테고리 통상 결제액 기준이 없어 비교할 수 없음", null)
+				: scorePriority(candidate, categoryCode, categoryName, typicalAmount, walletSpendHistory,
+					parsedTiers.get(candidate), usageByCard.getOrDefault(candidate.getUserCardId(), Map.of()))))
+			.toList();
+
+		Long bestUserCardId = evaluated.stream()
+			.filter(entry -> entry.getValue().total() > 0)
+			.max(Comparator.comparingDouble(entry -> entry.getValue().total()))
+			.map(entry -> entry.getKey().getUserCardId())
+			.orElse(null);
+
+		return evaluated.stream()
+			.map(entry -> toComparison(entry.getKey(), entry.getValue(), categoryCode,
+				parsedTiers.get(entry.getKey()), bestUserCardId))
+			.toList();
+	}
+
+	private String resolveCategoryName(String categoryCode) {
+		return merchantCategoryService.getCategoryList().stream()
+			.filter(category -> category.getCategoryCode().equals(categoryCode))
+			.map(MerchantCategoryResponseDto::getCategoryName)
+			.findFirst()
+			.orElse(null);
+	}
+
+	private CardBenefitComparisonResponseDto toComparison(
+		RecommendationCardCandidateVO candidate,
+		Mode3Result result,
+		String categoryCode,
+		List<PerformanceTier> tiers,
+		Long bestUserCardId
+	) {
+		boolean benefitApplicable = tiers.stream().anyMatch(tier -> !tier.benefitsForCategory(categoryCode).isEmpty());
+		boolean performanceMet = result.now() > 0;
+		Long minimumPaymentAmount = tiers.stream()
+			.flatMap(tier -> tier.benefitsForCategory(categoryCode).stream())
+			.map(BenefitNode::minimumPaymentAmount)
+			.max(Long::compareTo)
+			.orElse(null);
+
+		return CardBenefitComparisonResponseDto.builder()
+			.userCardId(candidate.getUserCardId())
+			.cardName(candidate.getCardName())
+			.cardImageUrl(candidate.getCardImageUrl())
+			.benefitDescription(result.note())
+			.benefitApplicable(benefitApplicable)
+			.performanceMet(performanceMet)
+			.minimumPaymentAmount(minimumPaymentAmount)
+			.reason(benefitApplicable && performanceMet ? null : result.note())
+			.recommended(candidate.getUserCardId().equals(bestUserCardId))
+			.build();
+	}
+
+	@Override
+	public TodayCardRecommendationResponseDto getTodayCardRecommendation(
+		Long userId,
+		List<RecommendationCardCandidateVO> heldCards,
+		List<MerchantResponseDto> nearbyMerchantCandidates
+	) {
+		validateUserId(userId);
+
+		if (heldCards.isEmpty()) {
+			return TodayCardRecommendationResponseDto.empty();
+		}
+
+		Map<String, String> categoryNames = merchantCategoryService.getCategoryList().stream()
+			.collect(Collectors.toMap(
+				MerchantCategoryResponseDto::getCategoryCode,
+				MerchantCategoryResponseDto::getCategoryName,
+				(first, ignored) -> first
+			));
+
+		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers = heldCards.stream()
+			.collect(Collectors.toMap(
+				candidate -> candidate,
+				candidate -> BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper)
+			));
+
+		Map<String, Long> walletSpendHistory = aggregateWalletSpendHistory(heldCards);
+		Map<Long, Map<String, BenefitUsage>> usageByCard = loadUsageByCard(userId);
+
+		// 카테고리당 한 번만 계산해, 카드 x 카테고리 전체 조합을 평가하는 동안 재사용한다.
+		Map<String, Long> typicalAmountByCategory = new HashMap<>();
+		for (Map.Entry<String, String> category : categoryNames.entrySet()) {
+			Long typicalAmount = resolveTypicalAmount(heldCards, category.getKey(), category.getValue(), parsedTiers);
+			if (typicalAmount != null) {
+				typicalAmountByCategory.put(category.getKey(), typicalAmount);
+			}
+		}
+
+		WalletBestPick best = findWalletBestPick(heldCards, categoryNames, typicalAmountByCategory, walletSpendHistory,
+			parsedTiers, usageByCard);
+
+		if (best == null) {
+			return TodayCardRecommendationResponseDto.empty();
+		}
+
+		List<PerformanceTier> bestCardTiers = parsedTiers.get(best.card());
+		List<TodayCardRecommendationResponseDto.NearbyMerchant> nearby = nearbyMerchantCandidates.stream()
+			.filter(merchant -> typicalAmountByCategory.containsKey(merchant.getCategoryCode()))
+			.map(merchant -> Map.entry(merchant, scorePriority(
+				best.card(), merchant.getCategoryCode(), categoryNames.get(merchant.getCategoryCode()),
+				typicalAmountByCategory.get(merchant.getCategoryCode()), walletSpendHistory, bestCardTiers,
+				usageByCard.getOrDefault(best.card().getUserCardId(), Map.of())
+			)))
+			.filter(entry -> entry.getValue().total() > 0)
+			.sorted(Comparator.comparing(
+				(Map.Entry<MerchantResponseDto, Mode3Result> entry) -> entry.getKey().getDistanceMeters(),
+				Comparator.nullsLast(Long::compareTo)
+			))
+			.limit(TODAY_CARD_NEARBY_LIMIT)
+			.map(entry -> TodayCardRecommendationResponseDto.NearbyMerchant.builder()
+				.merchantId(entry.getKey().getMerchantId())
+				.merchantName(entry.getKey().getMerchantName())
+				.distanceMeters(entry.getKey().getDistanceMeters())
+				.benefitLabel(entry.getValue().shortDescription())
+				.build())
+			.toList();
+
+		return TodayCardRecommendationResponseDto.builder()
+			.userCardId(best.card().getUserCardId())
+			.cardName(best.card().getCardName())
+			.categoryName(categoryNames.get(best.categoryCode()))
+			.benefitLabel(best.result().shortDescription())
+			.nearbyMerchants(nearby)
+			.build();
+	}
+
+	// 보유 카드 x 추천 분석 대상 카테고리 전체 조합 중 total이 가장 큰 조합.
+	private record WalletBestPick(
+		RecommendationCardCandidateVO card,
+		String categoryCode,
+		Mode3Result result
+	) {
+	}
+
+	/**
+	 * 카드 하나를 카테고리 하나에 고정하지 않고, 보유 카드 x 카테고리(16개 대분류) 전체 조합을
+	 * 모드 3으로 평가해 total이 가장 큰 조합 하나를 찾는다. "이 카드가 어느 카테고리에서 제일
+	 * 값어치가 큰가"를 지갑 전체 기준으로 묻는 것이라, 매장(위치)과는 무관하다 - typicalAmount는
+	 * compareCardsForMerchant/recommendMerchants와 같은 resolveTypicalAmount를 재사용해
+	 * 기준 결제액 산정 방식을 통일한다.
+	 */
+	private WalletBestPick findWalletBestPick(
+		List<RecommendationCardCandidateVO> heldCards,
+		Map<String, String> categoryNames,
+		Map<String, Long> typicalAmountByCategory,
+		Map<String, Long> walletSpendHistory,
+		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers,
+		Map<Long, Map<String, BenefitUsage>> usageByCard
+	) {
+		WalletBestPick best = null;
+		for (RecommendationCardCandidateVO candidate : heldCards) {
+			Map<String, BenefitUsage> usage = usageByCard.getOrDefault(candidate.getUserCardId(), Map.of());
+			for (Map.Entry<String, Long> category : typicalAmountByCategory.entrySet()) {
+				String categoryCode = category.getKey();
+				Mode3Result result = scorePriority(candidate, categoryCode, categoryNames.get(categoryCode),
+					category.getValue(), walletSpendHistory, parsedTiers.get(candidate), usage);
+				if (result.total() > 0 && (best == null || result.total() > best.result().total())) {
+					best = new WalletBestPick(candidate, categoryCode, result);
+				}
+			}
+		}
+		return best;
 	}
 
 	@Override
@@ -149,7 +344,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 
 		Map<Long, Map<String, Long>> monthlyAmount = new HashMap<>();
 		Map<Long, Map<String, Integer>> monthlyCount = new HashMap<>();
-		for (RecommendationBenefitUsageVO row : recommendationMapper.findMonthlyUsageByUserId(userId, targetYearMonth)) {
+		for (RecommendationBenefitUsageVO row : recommendationMapper.findMonthlyUsageByUserId(userId,
+			targetYearMonth)) {
 			monthlyAmount.computeIfAbsent(row.getUserCardId(), k -> new HashMap<>())
 				.put(row.getBenefitServiceName(), row.getUsedAmount() == null ? 0L : row.getUsedAmount());
 			monthlyCount.computeIfAbsent(row.getUserCardId(), k -> new HashMap<>())
@@ -207,10 +403,11 @@ public class RecommendationServiceImpl implements RecommendationService {
 		TopCardsResult topCardsResult = categoryName == null
 			? TopCardsResult.EMPTY
 			: findTopCards(heldCards, merchant.getCategoryCode(), categoryName, walletSpendHistory, parsedTiers,
-				usageByCard);
+			usageByCard);
 
 		List<RecommendedCardResponseDto> recommendedCards = topCardsResult.cards().stream()
 			.map(entry -> RecommendedCardResponseDto.builder()
+				.userCardId(entry.getKey().getUserCardId())
 				.cardName(entry.getKey().getCardName())
 				.benefitSummary(entry.getValue().note())
 				.build())
@@ -219,6 +416,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		return NearbyMerchantRecommendationResponseDto.builder()
 			.merchantId(merchant.getMerchantId())
 			.categoryCode(merchant.getCategoryCode())
+			.categoryName(categoryName)
 			.brandId(merchant.getBrandId())
 			.merchantCode(merchant.getMerchantCode())
 			.merchantName(merchant.getMerchantName())

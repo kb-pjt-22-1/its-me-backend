@@ -24,5 +24,5 @@ public class NearbyBenefitResponseDto {
 	 */
 	private String benefitSummary;
 
-	private Double distanceMeters;
+	private Long distanceMeters;
 }

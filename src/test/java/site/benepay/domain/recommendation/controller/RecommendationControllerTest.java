@@ -19,8 +19,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import site.benepay.common.facade.Facade;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
-import site.benepay.domain.recommendation.service.RecommendationService;
+import site.benepay.domain.recommendation.dto.TodayCardRecommendationResponseDto;
 
 @ExtendWith(MockitoExtension.class)
 class RecommendationControllerTest {
@@ -29,13 +30,13 @@ class RecommendationControllerTest {
 	private static final Long MERCHANT_ID = 100L;
 
 	@Mock
-	private RecommendationService recommendationService;
+	private Facade facade;
 
 	private RecommendationController controller;
 
 	@BeforeEach
 	void setUp() {
-		controller = new RecommendationController(recommendationService);
+		controller = new RecommendationController(facade);
 
 		Authentication authentication = mock(Authentication.class);
 		when(authentication.getPrincipal()).thenReturn(USER_ID);
@@ -57,12 +58,32 @@ class RecommendationControllerTest {
 			.categoryCode("5813")
 			.cards(List.of())
 			.build();
-		when(recommendationService.getCardRecommendations(USER_ID, MERCHANT_ID)).thenReturn(response);
+		when(facade.getCardRecommendations(USER_ID, MERCHANT_ID)).thenReturn(response);
 
 		ResponseEntity<MerchantCardRecommendationResponseDto> result = controller.getCardRecommendations(MERCHANT_ID);
 
 		assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(result.getBody()).isEqualTo(response);
-		verify(recommendationService).getCardRecommendations(USER_ID, MERCHANT_ID);
+		verify(facade).getCardRecommendations(USER_ID, MERCHANT_ID);
+	}
+
+	@Test
+	void getTodayCardRecommendationDelegatesToTheFacadeWithTheAuthenticatedUserAndCoordinates() {
+		double lat = 37.5;
+		double lng = 127.0;
+		TodayCardRecommendationResponseDto response = TodayCardRecommendationResponseDto.builder()
+			.userCardId(1L)
+			.cardName("KB국민 My WE:SH카드")
+			.categoryName("카페")
+			.benefitLabel("이번 달 5% 할인")
+			.nearbyMerchants(List.of())
+			.build();
+		when(facade.getTodayCardRecommendation(USER_ID, lat, lng)).thenReturn(response);
+
+		ResponseEntity<TodayCardRecommendationResponseDto> result = controller.getTodayCardRecommendation(lat, lng);
+
+		assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(result.getBody()).isEqualTo(response);
+		verify(facade).getTodayCardRecommendation(USER_ID, lat, lng);
 	}
 }

@@ -20,9 +20,11 @@ import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
+import site.benepay.domain.recommendation.dto.CardBenefitComparisonResponseDto;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
+import site.benepay.domain.recommendation.dto.TodayCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.engine.RecommendationParams;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
@@ -547,13 +549,13 @@ class RecommendationServiceImplTest {
 	void getCardRecommendationsThrowsWhenMerchantDoesNotExist() {
 		when(recommendationMapper.findMerchantForRecommendation(MERCHANT_ID)).thenReturn(null);
 
-		assertThatThrownBy(() -> recommendationService.getCardRecommendations(USER_ID, MERCHANT_ID))
+		assertThatThrownBy(() -> recommendationService.getCardRecommendations(USER_ID, MERCHANT_ID, List.of()))
 			.isInstanceOf(MerchantNotFoundException.class)
 			.hasMessage("존재하지 않는 매장입니다.");
 	}
 
 	@Test
-	void getCardRecommendationsReturnsMerchantInfoWithEmptyCardsWhenMerchantExists() {
+	void getCardRecommendationsReturnsMerchantInfoWithEmptyCardsWhenUserHoldsNoCards() {
 		RecommendationMerchantVO merchant = new RecommendationMerchantVO();
 		merchant.setMerchantId(MERCHANT_ID);
 		merchant.setMerchantName("스타벅스 강남점");
@@ -562,20 +564,188 @@ class RecommendationServiceImplTest {
 		when(recommendationMapper.findMerchantForRecommendation(MERCHANT_ID)).thenReturn(merchant);
 
 		MerchantCardRecommendationResponseDto response =
-			recommendationService.getCardRecommendations(USER_ID, MERCHANT_ID);
+			recommendationService.getCardRecommendations(USER_ID, MERCHANT_ID, List.of());
 
 		assertThat(response.getMerchantId()).isEqualTo(MERCHANT_ID);
 		assertThat(response.getMerchantName()).isEqualTo("스타벅스 강남점");
 		assertThat(response.getCategoryCode()).isEqualTo(CAFE_CODE);
 		assertThat(response.getBrandId()).isEqualTo(9L);
-		// 다른 팀원의 추천 알고리즘이 아직 연결되지 않아 카드 비교 결과는 항상 빈 목록이다.
 		assertThat(response.getCards()).isEmpty();
 	}
 
 	@Test
 	void getCardRecommendationsThrowsWhenUserIdIsNull() {
-		assertThatThrownBy(() -> recommendationService.getCardRecommendations(null, MERCHANT_ID))
+		assertThatThrownBy(() -> recommendationService.getCardRecommendations(null, MERCHANT_ID, List.of()))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("로그인 사용자 정보가 필요합니다.");
+	}
+
+	@Test
+	void getCardRecommendationsMarksTheHighestTotalCardAsRecommendedAndKeepsEveryHeldCard() {
+		RecommendationMerchantVO merchant = new RecommendationMerchantVO();
+		merchant.setMerchantId(MERCHANT_ID);
+		merchant.setMerchantName("스타벅스 강남점");
+		merchant.setCategoryCode(CAFE_CODE);
+		merchant.setBrandId(9L);
+		when(recommendationMapper.findMerchantForRecommendation(MERCHANT_ID)).thenReturn(merchant);
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
+		MerchantCardRecommendationResponseDto response = recommendationService.getCardRecommendations(
+			USER_ID,
+			MERCHANT_ID,
+			List.of(
+				candidate(1L, "낮은할인카드", CAFE_CODE, 10),
+				candidate(2L, "높은할인카드", CAFE_CODE, 50)
+			)
+		);
+
+		assertThat(response.getCards()).extracting(CardBenefitComparisonResponseDto::getCardName)
+			.containsExactlyInAnyOrder("낮은할인카드", "높은할인카드");
+		assertThat(response.getCards()).allMatch(CardBenefitComparisonResponseDto::isBenefitApplicable);
+		assertThat(response.getCards()).allMatch(CardBenefitComparisonResponseDto::isPerformanceMet);
+
+		CardBenefitComparisonResponseDto best = response.getCards().stream()
+			.filter(c -> c.getCardName().equals("높은할인카드")).findFirst().orElseThrow();
+		CardBenefitComparisonResponseDto worst = response.getCards().stream()
+			.filter(c -> c.getCardName().equals("낮은할인카드")).findFirst().orElseThrow();
+
+		assertThat(best.isRecommended()).isTrue();
+		assertThat(worst.isRecommended()).isFalse();
+	}
+
+	@Test
+	void getCardRecommendationsMarksCardsWithNoBenefitForTheCategoryAsNotApplicableWithAReason() {
+		RecommendationMerchantVO merchant = new RecommendationMerchantVO();
+		merchant.setMerchantId(MERCHANT_ID);
+		merchant.setMerchantName("스타벅스 강남점");
+		merchant.setCategoryCode(CAFE_CODE);
+		merchant.setBrandId(9L);
+		when(recommendationMapper.findMerchantForRecommendation(MERCHANT_ID)).thenReturn(merchant);
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
+		MerchantCardRecommendationResponseDto response = recommendationService.getCardRecommendations(
+			USER_ID,
+			MERCHANT_ID,
+			List.of(candidate(1L, "전혀다른카드", "9999", 50))
+		);
+
+		assertThat(response.getCards()).hasSize(1);
+		CardBenefitComparisonResponseDto card = response.getCards().get(0);
+		assertThat(card.isBenefitApplicable()).isFalse();
+		assertThat(card.isPerformanceMet()).isFalse();
+		assertThat(card.isRecommended()).isFalse();
+		assertThat(card.getReason()).isNotBlank();
+	}
+
+	// ---- getTodayCardRecommendation(userId, heldCards, nearbyMerchantCandidates) ----
+
+	@Test
+	void getTodayCardRecommendationPicksTheCardCategoryComboWithTheHighestTotalAcrossTheWallet() {
+		stubCafeAndConvenienceCategories();
+		when(recommendationParamsLoader.params())
+			.thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L, "편의점", 10_000L)));
+
+		RecommendationCardCandidateVO cafeCard = candidate(1L, "카페카드", CAFE_CODE, 10);
+		RecommendationCardCandidateVO convenienceCard = candidate(2L, "편의점카드", CONVENIENCE_CODE, 90);
+
+		TodayCardRecommendationResponseDto response = recommendationService.getTodayCardRecommendation(
+			USER_ID,
+			List.of(cafeCard, convenienceCard),
+			List.of(merchant(10L, CONVENIENCE_CODE))
+		);
+
+		assertThat(response.getUserCardId()).isEqualTo(2L);
+		assertThat(response.getCardName()).isEqualTo("편의점카드");
+		assertThat(response.getCategoryName()).isEqualTo("편의점");
+		assertThat(response.getBenefitLabel()).isNotBlank();
+		assertThat(response.getNearbyMerchants())
+			.extracting(TodayCardRecommendationResponseDto.NearbyMerchant::getMerchantId)
+			.containsExactly(10L);
+	}
+
+	@Test
+	void getTodayCardRecommendationOnlyIncludesNearbyMerchantsTheWinningCardActuallyBenefits() {
+		stubCafeAndConvenienceCategories();
+		when(recommendationParamsLoader.params())
+			.thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L, "편의점", 10_000L)));
+
+		RecommendationCardCandidateVO cafeOnlyCard = candidate(1L, "카페전용카드", CAFE_CODE, 50);
+
+		TodayCardRecommendationResponseDto response = recommendationService.getTodayCardRecommendation(
+			USER_ID,
+			List.of(cafeOnlyCard),
+			List.of(
+				merchant(1L, CONVENIENCE_CODE),
+				merchant(2L, CAFE_CODE)
+			)
+		);
+
+		assertThat(response.getUserCardId()).isEqualTo(1L);
+		assertThat(response.getNearbyMerchants())
+			.extracting(TodayCardRecommendationResponseDto.NearbyMerchant::getMerchantId)
+			.containsExactly(2L);
+	}
+
+	@Test
+	void getTodayCardRecommendationSortsNearbyMerchantsByDistanceAndCapsAtTwo() {
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
+		RecommendationCardCandidateVO cafeCard = candidate(1L, "카페카드", CAFE_CODE, 50);
+		MerchantResponseDto far = MerchantResponseDto.builder()
+			.merchantId(1L).categoryCode(CAFE_CODE).merchantName("먼 카페").distanceMeters(500L).build();
+		MerchantResponseDto near = MerchantResponseDto.builder()
+			.merchantId(2L).categoryCode(CAFE_CODE).merchantName("가까운 카페").distanceMeters(50L).build();
+		MerchantResponseDto mid = MerchantResponseDto.builder()
+			.merchantId(3L).categoryCode(CAFE_CODE).merchantName("중간 카페").distanceMeters(150L).build();
+
+		TodayCardRecommendationResponseDto response = recommendationService.getTodayCardRecommendation(
+			USER_ID, List.of(cafeCard), List.of(far, near, mid)
+		);
+
+		assertThat(response.getNearbyMerchants())
+			.extracting(TodayCardRecommendationResponseDto.NearbyMerchant::getMerchantId)
+			.containsExactly(2L, 3L);
+	}
+
+	@Test
+	void getTodayCardRecommendationStillReturnsTheCardWhenNoNearbyMerchantMatches() {
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
+		RecommendationCardCandidateVO cafeCard = candidate(1L, "카페카드", CAFE_CODE, 50);
+
+		TodayCardRecommendationResponseDto response =
+			recommendationService.getTodayCardRecommendation(USER_ID, List.of(cafeCard), List.of());
+
+		assertThat(response.getUserCardId()).isEqualTo(1L);
+		assertThat(response.getCardName()).isEqualTo("카페카드");
+		assertThat(response.getNearbyMerchants()).isEmpty();
+	}
+
+	@Test
+	void getTodayCardRecommendationReturnsEmptyWhenHeldCardsIsEmpty() {
+		TodayCardRecommendationResponseDto response =
+			recommendationService.getTodayCardRecommendation(USER_ID, List.of(), List.of());
+
+		assertThat(response.getUserCardId()).isNull();
+		assertThat(response.getCardName()).isNull();
+		assertThat(response.getNearbyMerchants()).isEmpty();
+	}
+
+	@Test
+	void getTodayCardRecommendationReturnsEmptyWhenNoCardBenefitsAnyAnalyzedCategory() {
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
+		RecommendationCardCandidateVO offCategoryCard = candidate(1L, "전혀다른카드", "9999", 50);
+
+		TodayCardRecommendationResponseDto response =
+			recommendationService.getTodayCardRecommendation(USER_ID, List.of(offCategoryCard), List.of());
+
+		assertThat(response.getUserCardId()).isNull();
+		assertThat(response.getNearbyMerchants()).isEmpty();
 	}
 }

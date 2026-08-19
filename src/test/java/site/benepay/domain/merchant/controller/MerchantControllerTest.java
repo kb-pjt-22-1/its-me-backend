@@ -131,11 +131,11 @@ class MerchantControllerTest {
 					.merchantName(merchantResponse().getMerchantName())
 					.benefitAvailable(true)
 					.build());
-		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null)).thenReturn(merchants);
+		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500)).thenReturn(merchants);
 		when(facade.getRecommendedMerchants(USER_ID, merchants)).thenReturn(recommended);
 
 		ResponseEntity<List<NearbyMerchantRecommendationResponseDto>> response =
-			controller.getRecommendedMerchantsInBounds(USER_ID, 37.4, 127.0, 37.6, 127.2, null);
+			controller.getRecommendedMerchantsInBounds(USER_ID, 37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null);
 
 		assertThat(response.getBody()).isEqualTo(recommended);
 		verify(facade).getRecommendedMerchants(USER_ID, merchants);
@@ -154,7 +154,7 @@ class MerchantControllerTest {
 					.merchantId(MERCHANT_ID)
 					.merchantName(merchantResponse().getMerchantName())
 					.benefitAvailable(true)
-					.distanceMeters(42.0)
+					.distanceMeters(42L)
 					.build());
 		when(merchantService.getNearbyMerchants(37.5, 127.0, null, 20)).thenReturn(candidates);
 		when(facade.getTodayRecommendedMerchants(USER_ID, candidates, 2)).thenReturn(today);

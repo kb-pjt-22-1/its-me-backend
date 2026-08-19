@@ -1801,7 +1801,7 @@ public class BenefitServiceImpl implements BenefitService {
 			.filter(NearbyMerchantRecommendationResponseDto::isBenefitAvailable)
 			.sorted(Comparator.comparing(
 				NearbyMerchantRecommendationResponseDto::getDistanceMeters,
-				Comparator.nullsLast(Double::compareTo)
+				Comparator.nullsLast(Long::compareTo)
 			))
 			.limit(3)
 			.map(this::toNearbyBenefitResponseDto)

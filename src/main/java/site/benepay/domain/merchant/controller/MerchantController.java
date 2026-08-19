@@ -24,6 +24,10 @@ public class MerchantController {
 	// 오늘의 추천 후보 풀 크기 - 가까운 순 20곳을 전부 혜택 평가한 뒤 상위 TODAY_RECOMMENDATION_LIMIT개만 추린다.
 	private static final int TODAY_RECOMMENDATION_CANDIDATE_POOL = 20;
 	private static final int TODAY_RECOMMENDATION_LIMIT = 2;
+	// 지도 화면(bounds) 조회 상한 - bounds가 넓어져도(축소된 지도) 응답이 무한정 커지지 않도록
+	// centerLat/centerLng 기준 가까운 순 이 개수까지만 자른다. 나머지는 화면에서 마커
+	// 클러스터링으로 뭉쳐 보여준다.
+	private static final int BOUNDS_SEARCH_LIMIT = 500;
 
 	private final MerchantService merchantService;
 	private final Facade facade;
@@ -52,11 +56,15 @@ public class MerchantController {
 
 	/**
 	 * 지도 화면(bounds) 안의 매장 후보를 조회해서 Facade에 넘기고, Facade가 사용자 보유 카드로
-	 * 지금 당장 혜택을 주는 매장에 recommended=true 표시를 붙여 처리한 결과를 반환한다.
+	 * 지금 당장 혜택을 주는 매장에 recommended=true 표시를 붙여 처리한 결과를 반환한다. bounds가
+	 * 넓어져도(축소된 지도) centerLat/centerLng 기준 가까운 순 최대 {@value #BOUNDS_SEARCH_LIMIT}
+	 * 개까지만 조회한다.
 	 * @param swLat 남서쪽 위도
 	 * @param swLng 남서쪽 경도
 	 * @param neLat 북동쪽 위도
 	 * @param neLng 북동쪽 경도
+	 * @param centerLat 거리 정렬/상한 기준 중심 위도
+	 * @param centerLng 거리 정렬/상한 기준 중심 경도
 	 * @param categoryCode 카테고리 코드. 없으면 전체 카테고리
 	 */
 	@GetMapping("/recommendations")
@@ -66,9 +74,12 @@ public class MerchantController {
 		@RequestParam double swLng,
 		@RequestParam double neLat,
 		@RequestParam double neLng,
+		@RequestParam double centerLat,
+		@RequestParam double centerLng,
 		@RequestParam(required = false) String categoryCode
 	) {
-		List<MerchantResponseDto> merchants = merchantService.getMerchants(swLat, swLng, neLat, neLng, categoryCode);
+		List<MerchantResponseDto> merchants = merchantService.getMerchants(swLat, swLng, neLat, neLng, centerLat,
+			centerLng, categoryCode, BOUNDS_SEARCH_LIMIT);
 		return ResponseEntity.ok(facade.getRecommendedMerchants(userId, merchants));
 	}
 
