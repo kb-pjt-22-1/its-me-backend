@@ -26,6 +26,7 @@ import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
 import site.benepay.domain.recommendation.engine.RecommendationParams;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
+import site.benepay.domain.recommendation.vo.RecommendationBenefitUsageVO;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 import site.benepay.domain.recommendation.vo.RecommendationMerchantVO;
 
@@ -467,6 +468,79 @@ class RecommendationServiceImplTest {
 			.containsExactly("정률카드", "정액카드");
 		// 최소결제금액을 가진 카드가 없으므로 통상결제액(8,700원)을 천원 단위로 반올림한 값이 채택돼야 한다.
 		assertThat(result.get(0).getTypicalPaymentAmount()).isEqualTo(9_000L);
+	}
+
+	private static RecommendationCardCandidateVO candidateWithMonthlyDiscountLimit(
+		Long userCardId, String cardName, String categoryCode, double rate, long monthlyDiscountLimit
+	) {
+		RecommendationCardCandidateVO vo = new RecommendationCardCandidateVO();
+		vo.setUserCardId(userCardId);
+		vo.setCardId(userCardId);
+		vo.setCardName(cardName);
+		vo.setCardImageUrl("https://example.com/" + userCardId + ".png");
+		// BenefitJsonParser는 monthlyDiscountLimit을 "maximumDiscountAmountPerMonth" 키로 읽는다
+		// (BenefitNode 필드명과 실제 JSON 키가 다름 - PaymentTokenServiceImplTest와 동일 주의사항).
+		vo.setBenefitsInfo(String.format(
+			"{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
+				+ "{\"serviceName\":\"%s\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":%s,\"minimumPaymentAmount\":0,\"maximumDiscountAmountPerMonth\":%d}]}]}",
+			cardName, categoryCode, rate, monthlyDiscountLimit
+		));
+		vo.setSpendHistory(SOME_PAST_HISTORY);
+		vo.setCurrentMonthSpend(0L);
+		return vo;
+	}
+
+	private RecommendationBenefitUsageVO usageRow(Long userCardId, String benefitServiceName, long usedAmount,
+		int usedCount) {
+		RecommendationBenefitUsageVO row = new RecommendationBenefitUsageVO();
+		row.setUserCardId(userCardId);
+		row.setBenefitServiceName(benefitServiceName);
+		row.setUsedAmount(usedAmount);
+		row.setUsedCount(usedCount);
+		return row;
+	}
+
+	@Test
+	void recommendsTheCardWhenItsMonthlyDiscountLimitHasNotBeenTouchedYet() {
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+		// 이번 달 소진액 조회에 아무것도 없으면(unstubbed -> 빈 리스트) 한도가 그대로 남아있다고
+		// 계산돼야 한다: 10,000 * 50% = 5,000원 > 0이라 추천된다.
+
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(candidateWithMonthlyDiscountLimit(1L, "청춘대로 톡톡카드", CAFE_CODE, 50, 5_000L)),
+			List.of(merchant(MERCHANT_ID, CAFE_CODE))
+		);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).isBenefitAvailable()).isTrue();
+		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
+			.containsExactly("청춘대로 톡톡카드");
+	}
+
+	@Test
+	void excludesTheCardWhenItsMonthlyDiscountLimitIsAlreadyFullyConsumed() {
+		// 앞 테스트와 완전히 같은 카드(월 한도 5,000원, 정률 50%)지만, 이번 달 이미 5,000원을
+		// 전부 소진했다고 card_benefit_monthly_usage에 집계돼 있으면 now=0이 되어 total>0
+		// 필터에 걸려 추천 대상에서 빠져야 한다 - 한도 임박 시 실질 할인율을 반영 못 하던
+		// 문제(추천 엔진이 매번 한도가 가득 남아있다고 가정하던 문제)의 회귀 테스트.
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+		when(recommendationMapper.findMonthlyUsageByUserId(eq(USER_ID), any()))
+			.thenReturn(List.of(usageRow(1L, "청춘대로 톡톡카드", 5_000L, 1)));
+
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(candidateWithMonthlyDiscountLimit(1L, "청춘대로 톡톡카드", CAFE_CODE, 50, 5_000L)),
+			List.of(merchant(MERCHANT_ID, CAFE_CODE))
+		);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).isBenefitAvailable()).isFalse();
+		assertThat(result.get(0).getRecommendedCards()).isEmpty();
 	}
 
 	@Test

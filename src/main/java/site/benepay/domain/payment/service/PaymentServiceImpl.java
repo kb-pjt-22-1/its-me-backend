@@ -93,7 +93,8 @@ public class PaymentServiceImpl implements PaymentService {
 			canceled.getCategoryCode(),
 			canceled.getPaymentTime(),
 			canceled.getFinalAmount(),
-			canceled.getDiscountAmount()
+			canceled.getDiscountAmount(),
+			canceled.getBenefitServiceName()
 		));
 
 		return PaymentHistoryResponseDto.from(canceled);

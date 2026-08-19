@@ -66,7 +66,11 @@ public final class BenefitJsonParser {
 			b.path("benefitType").asText(""),
 			textArray(b.path("categoryCodes")),
 			b.path("discountMethod").asText(""),
-			b.path("discountRate").asDouble(0.0),
+			// POINT_ACCUMULATION(적립형)은 원본 JSON에 discountRate 대신 rewardRate로
+			// 저장돼 있다 - 적립도 결제금액 대비 비율이라는 계산 의미는 할인과 같으므로
+			// discountRate가 없을 때만 rewardRate를 대신 읽는다(weekdayDiscountPerLiter류와
+			// 동일한 신/구 명칭 대응 패턴).
+			firstPresentDouble(b, 0.0, "discountRate", "rewardRate"),
 			b.path("discountAmount").asLong(0L),
 			firstPresentLong(b, 0L, "weekdayDiscountPerLiter", "discountAmountPerLiter"),
 			firstPresentLong(b, 0L, "weekendDiscountPerLiter", "discountAmountPerLiter"),
@@ -117,6 +121,16 @@ public final class BenefitJsonParser {
 			JsonNode value = node.get(field);
 			if (value != null && !value.isNull()) {
 				return value.asLong();
+			}
+		}
+		return fallback;
+	}
+
+	private static double firstPresentDouble(JsonNode node, double fallback, String... fields) {
+		for (String field : fields) {
+			JsonNode value = node.get(field);
+			if (value != null && !value.isNull()) {
+				return value.asDouble();
 			}
 		}
 		return fallback;

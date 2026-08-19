@@ -17,4 +17,35 @@
         WHERE m.merchant_id = #{merchantId}
 
     </select>
+
+    <select id="findMonthlyUsageByUserId"
+            resultType="site.benepay.domain.recommendation.vo.RecommendationBenefitUsageVO">
+
+        SELECT cbmu.user_card_id         AS userCardId,
+        cbmu.benefit_service_name AS benefitServiceName,
+        cbmu.used_amount          AS usedAmount,
+        cbmu.used_count           AS usedCount
+        FROM card_benefit_monthly_usage cbmu
+        INNER JOIN user_cards uc
+        ON uc.user_card_id = cbmu.user_card_id
+        WHERE uc.user_id = #{userId}
+        AND cbmu.target_year_month = #{targetYearMonth}
+
+    </select>
+
+    <select id="findAnnualCountByUserId"
+            resultType="site.benepay.domain.recommendation.vo.RecommendationBenefitUsageVO">
+
+        SELECT cbmu.user_card_id         AS userCardId,
+        cbmu.benefit_service_name AS benefitServiceName,
+        SUM(cbmu.used_count)      AS usedCount
+        FROM card_benefit_monthly_usage cbmu
+        INNER JOIN user_cards uc
+        ON uc.user_card_id = cbmu.user_card_id
+        WHERE uc.user_id = #{userId}
+        AND cbmu.target_year = #{targetYear}
+        GROUP BY cbmu.user_card_id,
+        cbmu.benefit_service_name
+
+    </select>
 </mapper>

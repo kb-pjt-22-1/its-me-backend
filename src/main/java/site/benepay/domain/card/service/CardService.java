@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import lombok.RequiredArgsConstructor;
 import site.benepay.common.exception.CardBenefitParseException;
@@ -274,9 +275,35 @@ public class CardService {
 			return objectMapper.createObjectNode();
 		}
 		try {
-			return objectMapper.readTree(benefitsInfo);
+			JsonNode root = objectMapper.readTree(benefitsInfo);
+			fillDiscountRateForPointAccumulation(root);
+			return root;
 		} catch (JsonProcessingException e) {
 			throw new CardBenefitParseException("카드 혜택 JSON 형식이 올바르지 않습니다.", e);
+		}
+	}
+
+	/**
+	 * 프론트는 혜택 배지를 discountRate/discountAmount 기준으로 렌더링하는데(둘 다 없으면
+	 * description 원문이 그대로 노출됨), 적립형(POINT_ACCUMULATION) 혜택은 원본 데이터에
+	 * discountRate 대신 rewardRate로 저장돼 있어 배지가 깨진다. 적립도 결제금액 대비
+	 * 비율이라는 계산 의미는 할인과 같으므로(BenefitJsonParser와 동일 취급), discountRate가
+	 * 없을 때만 rewardRate 값을 그대로 채워 넣는다 - 원본 rewardRate 필드는 남겨 둔다.
+	 */
+	private void fillDiscountRateForPointAccumulation(JsonNode root) {
+		for (JsonNode tier : root.path("performanceTiers")) {
+			for (JsonNode benefit : tier.path("benefits")) {
+				if (!(benefit instanceof ObjectNode benefitObject)) {
+					continue;
+				}
+				if (!"POINT_ACCUMULATION".equals(benefitObject.path("discountMethod").asText())) {
+					continue;
+				}
+				if (benefitObject.has("discountRate") || !benefitObject.has("rewardRate")) {
+					continue;
+				}
+				benefitObject.set("discountRate", benefitObject.get("rewardRate"));
+			}
 		}
 	}
 
