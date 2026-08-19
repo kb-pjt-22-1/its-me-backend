@@ -695,11 +695,11 @@ class RecommendationServiceImplTest {
 
 		RecommendationCardCandidateVO cafeCard = candidate(1L, "카페카드", CAFE_CODE, 50);
 		MerchantResponseDto far = MerchantResponseDto.builder()
-			.merchantId(1L).categoryCode(CAFE_CODE).merchantName("먼 카페").distanceMeters(500.0).build();
+			.merchantId(1L).categoryCode(CAFE_CODE).merchantName("먼 카페").distanceMeters(500L).build();
 		MerchantResponseDto near = MerchantResponseDto.builder()
-			.merchantId(2L).categoryCode(CAFE_CODE).merchantName("가까운 카페").distanceMeters(50.0).build();
+			.merchantId(2L).categoryCode(CAFE_CODE).merchantName("가까운 카페").distanceMeters(50L).build();
 		MerchantResponseDto mid = MerchantResponseDto.builder()
-			.merchantId(3L).categoryCode(CAFE_CODE).merchantName("중간 카페").distanceMeters(150.0).build();
+			.merchantId(3L).categoryCode(CAFE_CODE).merchantName("중간 카페").distanceMeters(150L).build();
 
 		TodayCardRecommendationResponseDto response = recommendationService.getTodayCardRecommendation(
 			USER_ID, List.of(cafeCard), List.of(far, near, mid)

@@ -33,7 +33,7 @@ public class TodayCardRecommendationResponseDto {
 
 		private Long merchantId;
 		private String merchantName;
-		private Double distanceMeters;
+		private Long distanceMeters;
 		private String benefitLabel;
 	}
 }

@@ -107,11 +107,11 @@ class FacadeTest {
 		List<RecommendationCardCandidateVO> heldCards = List.of();
 		// 정렬 전 순서를 일부러 뒤섞는다: 먼 혜택 매장 > 가까운 비혜택 매장 > 가까운 혜택 매장.
 		NearbyMerchantRecommendationResponseDto farBenefit = NearbyMerchantRecommendationResponseDto.builder()
-			.merchantId(1L).benefitAvailable(true).distanceMeters(500.0).build();
+			.merchantId(1L).benefitAvailable(true).distanceMeters(500L).build();
 		NearbyMerchantRecommendationResponseDto nearNoBenefit = NearbyMerchantRecommendationResponseDto.builder()
-			.merchantId(2L).benefitAvailable(false).distanceMeters(50.0).build();
+			.merchantId(2L).benefitAvailable(false).distanceMeters(50L).build();
 		NearbyMerchantRecommendationResponseDto nearBenefit = NearbyMerchantRecommendationResponseDto.builder()
-			.merchantId(3L).benefitAvailable(true).distanceMeters(100.0).build();
+			.merchantId(3L).benefitAvailable(true).distanceMeters(100L).build();
 
 		when(cardService.getRecommendationCandidates(USER_ID)).thenReturn(heldCards);
 		when(recommendationService.recommendMerchants(USER_ID, heldCards, candidates))
@@ -129,11 +129,11 @@ class FacadeTest {
 		List<MerchantResponseDto> candidates = List.of(MerchantResponseDto.builder().merchantId(1L).build());
 		List<RecommendationCardCandidateVO> heldCards = List.of();
 		NearbyMerchantRecommendationResponseDto onlyBenefit = NearbyMerchantRecommendationResponseDto.builder()
-			.merchantId(1L).benefitAvailable(true).distanceMeters(300.0).build();
+			.merchantId(1L).benefitAvailable(true).distanceMeters(300L).build();
 		NearbyMerchantRecommendationResponseDto nearest = NearbyMerchantRecommendationResponseDto.builder()
-			.merchantId(2L).benefitAvailable(false).distanceMeters(20.0).build();
+			.merchantId(2L).benefitAvailable(false).distanceMeters(20L).build();
 		NearbyMerchantRecommendationResponseDto farther = NearbyMerchantRecommendationResponseDto.builder()
-			.merchantId(3L).benefitAvailable(false).distanceMeters(999.0).build();
+			.merchantId(3L).benefitAvailable(false).distanceMeters(999L).build();
 
 		when(cardService.getRecommendationCandidates(USER_ID)).thenReturn(heldCards);
 		when(recommendationService.recommendMerchants(USER_ID, heldCards, candidates))

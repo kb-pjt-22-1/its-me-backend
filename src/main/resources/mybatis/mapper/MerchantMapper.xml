@@ -13,7 +13,7 @@
          오차로 인자가 1을 살짝 넘으면 ACOS가 NULL을 반환해(실제로 같은 좌표의 매장에서 재현됨)
          그 매장의 거리가 NULL이 되어 정렬이 깨진다. -->
     <sql id="haversineDistanceMeters">
-        (6371000 * ACOS(
+        ROUND(6371000 * ACOS(
             LEAST(1, GREATEST(-1,
                 COS(RADIANS(#{lat})) * COS(RADIANS(latitude)) * COS(RADIANS(longitude) - RADIANS(#{lng}))
                 + SIN(RADIANS(#{lat})) * SIN(RADIANS(latitude))

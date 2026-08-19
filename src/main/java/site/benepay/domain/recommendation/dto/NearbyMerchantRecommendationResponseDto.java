@@ -21,7 +21,7 @@ public class NearbyMerchantRecommendationResponseDto {
 	private String address;
 	private BigDecimal latitude;
 	private BigDecimal longitude;
-	private Double distanceMeters;
+	private Long distanceMeters;
 	private String phone;
 	// 지금 당장(즉시할인) 혜택을 쓸 수 있는 매장인지 - true일 때만 recommendedCards가 채워진다.
 	private boolean benefitAvailable;

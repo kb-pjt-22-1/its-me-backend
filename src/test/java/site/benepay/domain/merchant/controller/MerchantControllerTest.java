@@ -154,7 +154,7 @@ class MerchantControllerTest {
 					.merchantId(MERCHANT_ID)
 					.merchantName(merchantResponse().getMerchantName())
 					.benefitAvailable(true)
-					.distanceMeters(42.0)
+					.distanceMeters(42L)
 					.build());
 		when(merchantService.getNearbyMerchants(37.5, 127.0, null, 20)).thenReturn(candidates);
 		when(facade.getTodayRecommendedMerchants(USER_ID, candidates, 2)).thenReturn(today);

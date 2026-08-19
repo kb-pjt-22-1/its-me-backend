@@ -109,7 +109,7 @@ class MerchantServiceImplTest {
 			.latitude(BigDecimal.valueOf(37.5))
 			.longitude(BigDecimal.valueOf(127.0))
 			.phone("02-000-0000")
-			.distanceMeters(50.0)
+			.distanceMeters(50L)
 			.build();
 	}
 
@@ -123,7 +123,7 @@ class MerchantServiceImplTest {
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).getMerchantCode()).isEqualTo("M001");
-		assertThat(result.get(0).getDistanceMeters()).isEqualTo(50.0);
+		assertThat(result.get(0).getDistanceMeters()).isEqualTo(50L);
 		verify(merchantMapper).findWithinBounds(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500);
 	}
 
@@ -160,7 +160,7 @@ class MerchantServiceImplTest {
 			.latitude(BigDecimal.valueOf(37.5))
 			.longitude(BigDecimal.valueOf(127.0))
 			.phone("02-000-0000")
-			.distanceMeters(123.4)
+			.distanceMeters(123L)
 			.build();
 		when(merchantMapper.findNearby(37.5, 127.0, null, 20)).thenReturn(List.of(nearby));
 
@@ -168,7 +168,7 @@ class MerchantServiceImplTest {
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).getMerchantCode()).isEqualTo("M001");
-		assertThat(result.get(0).getDistanceMeters()).isEqualTo(123.4);
+		assertThat(result.get(0).getDistanceMeters()).isEqualTo(123L);
 	}
 
 	@Test
