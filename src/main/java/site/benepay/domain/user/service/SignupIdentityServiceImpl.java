@@ -85,8 +85,7 @@ public class SignupIdentityServiceImpl implements SignupIdentityService {
 			throw new DuplicateUserException("identity already registered");
 		}
 
-		KbCustomerVerifyResponseDto kbCustomer =
-			kbCardClient.verifyCustomer(request.getName(), request.getBirthDate(), phoneNumber);
+		KbCustomerVerifyResponseDto kbCustomer = kbCardClient.verifyCustomer(ciHash);
 		if (!kbCustomer.isRegistered()) {
 			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, MAX_ATTEMPTS, FAILURE_WINDOW,
 				REQUEST_LOCK_DURATION);

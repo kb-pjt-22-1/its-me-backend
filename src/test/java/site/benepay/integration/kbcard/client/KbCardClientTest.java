@@ -105,7 +105,7 @@ class KbCardClientTest {
 	}
 
 	@Test
-	@DisplayName("이름/생년월일/휴대폰번호를 POST 바디로 보내 KB 실명 회원 여부를 확인한다")
+	@DisplayName("ciHash를 POST 바디로 보내 KB 실명 회원 여부를 확인한다")
 	void verifyCustomerPostsIdentityAndReturnsResponse() {
 		String url = BASE_URL + "/api/v1/customers/verify";
 		KbCustomerVerifyResponseDto expected = new KbCustomerVerifyResponseDto();
@@ -114,14 +114,12 @@ class KbCardClientTest {
 		when(restTemplate.postForObject(eq(url), any(KbCustomerVerifyRequestDto.class),
 			eq(KbCustomerVerifyResponseDto.class))).thenReturn(expected);
 
-		KbCustomerVerifyResponseDto result = kbCardClient.verifyCustomer("홍길동", "19900101", "010-1111-2222");
+		KbCustomerVerifyResponseDto result = kbCardClient.verifyCustomer(CI_HASH);
 
 		assertThat(result).isSameAs(expected);
 		ArgumentCaptor<KbCustomerVerifyRequestDto> captor = ArgumentCaptor.forClass(KbCustomerVerifyRequestDto.class);
 		verify(restTemplate).postForObject(eq(url), captor.capture(), eq(KbCustomerVerifyResponseDto.class));
-		assertThat(captor.getValue().getName()).isEqualTo("홍길동");
-		assertThat(captor.getValue().getBirthDate()).isEqualTo("19900101");
-		assertThat(captor.getValue().getPhoneNumber()).isEqualTo("010-1111-2222");
+		assertThat(captor.getValue().getCiHash()).isEqualTo(CI_HASH);
 	}
 
 	@Test
@@ -131,7 +129,7 @@ class KbCardClientTest {
 		when(restTemplate.postForObject(eq(url), any(KbCustomerVerifyRequestDto.class),
 			eq(KbCustomerVerifyResponseDto.class))).thenReturn(null);
 
-		KbCustomerVerifyResponseDto result = kbCardClient.verifyCustomer("홍길동", "19900101", "010-1111-2222");
+		KbCustomerVerifyResponseDto result = kbCardClient.verifyCustomer(CI_HASH);
 
 		assertThat(result).isNotNull();
 		assertThat(result.isRegistered()).isFalse();
@@ -145,7 +143,7 @@ class KbCardClientTest {
 		when(restTemplate.postForObject(eq(url), any(KbCustomerVerifyRequestDto.class),
 			eq(KbCustomerVerifyResponseDto.class))).thenThrow(cause);
 
-		assertThatThrownBy(() -> kbCardClient.verifyCustomer("홍길동", "19900101", "010-1111-2222"))
+		assertThatThrownBy(() -> kbCardClient.verifyCustomer(CI_HASH))
 			.isInstanceOf(KbCardIntegrationException.class)
 			.hasCause(cause);
 	}

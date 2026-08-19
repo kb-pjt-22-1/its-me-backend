@@ -82,12 +82,13 @@ public class KbCardClient {
 	}
 
 	/**
-	 * 회원가입 1단계(휴대폰 본인인증) 전용 - 이름/생년월일/휴대폰번호로 KB에 실명 등록된
-	 * 회원인지 확인한다. 카드 조회 API와 달리 원문 개인정보를 보내므로 POST+바디를 쓴다.
+	 * 회원가입 1단계(휴대폰 본인인증) 전용 - ciHash로 KB에 실명 등록된 회원인지 확인한다.
+	 * 호출부(SignupIdentityServiceImpl)가 이미 계산해 둔 ciHash를 그대로 받는다 - 원문
+	 * 이름/생년월일/휴대폰번호를 다시 보낼 필요가 없다.
 	 */
-	public KbCustomerVerifyResponseDto verifyCustomer(String name, String birthDate, String phoneNumber) {
+	public KbCustomerVerifyResponseDto verifyCustomer(String ciHash) {
 		String url = baseUrl + "/api/v1/customers/verify";
-		KbCustomerVerifyRequestDto request = new KbCustomerVerifyRequestDto(name, birthDate, phoneNumber);
+		KbCustomerVerifyRequestDto request = new KbCustomerVerifyRequestDto(ciHash);
 
 		try {
 			KbCustomerVerifyResponseDto response = restTemplate.postForObject(

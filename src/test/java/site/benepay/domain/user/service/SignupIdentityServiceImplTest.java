@@ -91,7 +91,7 @@ class SignupIdentityServiceImplTest {
 			.isInstanceOf(AccountLockedException.class);
 
 		verify(userMapper, never()).existsByCiHash(any());
-		verify(kbCardClient, never()).verifyCustomer(any(), any(), any());
+		verify(kbCardClient, never()).verifyCustomer(any());
 	}
 
 	@Test
@@ -102,7 +102,7 @@ class SignupIdentityServiceImplTest {
 		assertThatThrownBy(() -> service.requestVerification(identityRequest()))
 			.isInstanceOf(DuplicateUserException.class);
 
-		verify(kbCardClient, never()).verifyCustomer(any(), any(), any());
+		verify(kbCardClient, never()).verifyCustomer(any());
 		verify(redisLockoutService).recordFailureAndMaybeLock(
 			RedisKeys.signupIdentityFailure(PHONE_NUMBER), RedisKeys.signupIdentityLock(PHONE_NUMBER), 5,
 			Duration.ofMinutes(10), Duration.ofMinutes(10));
@@ -113,7 +113,7 @@ class SignupIdentityServiceImplTest {
 		when(redisLockoutService.isLocked(RedisKeys.signupIdentityLock(PHONE_NUMBER))).thenReturn(false);
 		when(userMapper.existsByCiHash(EXPECTED_CI_HASH)).thenReturn(false);
 		KbCustomerVerifyResponseDto notRegistered = new KbCustomerVerifyResponseDto();
-		when(kbCardClient.verifyCustomer(NAME, BIRTH_DATE, PHONE_NUMBER)).thenReturn(notRegistered);
+		when(kbCardClient.verifyCustomer(EXPECTED_CI_HASH)).thenReturn(notRegistered);
 
 		assertThatThrownBy(() -> service.requestVerification(identityRequest()))
 			.isInstanceOf(KbCustomerNotFoundException.class);
@@ -125,7 +125,7 @@ class SignupIdentityServiceImplTest {
 	void requestVerificationSavesTheCodeWithATtlAndClearsFailuresOnSuccess() {
 		when(redisLockoutService.isLocked(RedisKeys.signupIdentityLock(PHONE_NUMBER))).thenReturn(false);
 		when(userMapper.existsByCiHash(EXPECTED_CI_HASH)).thenReturn(false);
-		when(kbCardClient.verifyCustomer(NAME, BIRTH_DATE, PHONE_NUMBER)).thenReturn(registeredKbCustomer());
+		when(kbCardClient.verifyCustomer(EXPECTED_CI_HASH)).thenReturn(registeredKbCustomer());
 		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
 		service.requestVerification(identityRequest());
@@ -139,7 +139,7 @@ class SignupIdentityServiceImplTest {
 	void requestVerificationNeverExposesTheCodeWhenDevLoginIsDisabled() {
 		when(redisLockoutService.isLocked(RedisKeys.signupIdentityLock(PHONE_NUMBER))).thenReturn(false);
 		when(userMapper.existsByCiHash(EXPECTED_CI_HASH)).thenReturn(false);
-		when(kbCardClient.verifyCustomer(NAME, BIRTH_DATE, PHONE_NUMBER)).thenReturn(registeredKbCustomer());
+		when(kbCardClient.verifyCustomer(EXPECTED_CI_HASH)).thenReturn(registeredKbCustomer());
 		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
 		SignupIdentityRequestResponseDto response = service.requestVerification(identityRequest());
@@ -153,7 +153,7 @@ class SignupIdentityServiceImplTest {
 			signupVerificationStore, redisLockoutService, redisTemplate, kbCardClient, DI_HASH_SALT, true);
 		when(redisLockoutService.isLocked(RedisKeys.signupIdentityLock(PHONE_NUMBER))).thenReturn(false);
 		when(userMapper.existsByCiHash(EXPECTED_CI_HASH)).thenReturn(false);
-		when(kbCardClient.verifyCustomer(NAME, BIRTH_DATE, PHONE_NUMBER)).thenReturn(registeredKbCustomer());
+		when(kbCardClient.verifyCustomer(EXPECTED_CI_HASH)).thenReturn(registeredKbCustomer());
 		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
 		SignupIdentityRequestResponseDto response = devService.requestVerification(identityRequest());
@@ -244,7 +244,7 @@ class SignupIdentityServiceImplTest {
 	private String requestAndCaptureCode() {
 		when(redisLockoutService.isLocked(RedisKeys.signupIdentityLock(PHONE_NUMBER))).thenReturn(false);
 		when(userMapper.existsByCiHash(EXPECTED_CI_HASH)).thenReturn(false);
-		when(kbCardClient.verifyCustomer(NAME, BIRTH_DATE, PHONE_NUMBER)).thenReturn(registeredKbCustomer());
+		when(kbCardClient.verifyCustomer(EXPECTED_CI_HASH)).thenReturn(registeredKbCustomer());
 		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
 		String[] savedJson = new String[1];

@@ -26,13 +26,14 @@ public class SignUpRequestDto {
 
 	@NotBlank
 	@Size(min = 4, max = 20)
-	@Pattern(regexp = "^[a-zA-Z0-9_-]+$", message = "loginId must contain only letters, digits, '-' and '_'")
+	@Pattern(regexp = "^[a-zA-Z0-9]+$", message = "loginId must contain only letters and digits")
 	private String loginId;
 
 	@NotBlank
-	@Size(min = 8, max = 64)
-	@Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,64}$",
-		message = "password must contain at least one letter, one digit, and one special character")
+	@Size(min = 8, max = 20)
+	@Pattern(regexp = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[^A-Za-z0-9\\s]).{8,20}$",
+		message = "password must contain at least one uppercase letter, one lowercase letter, "
+			+ "one digit, and one special character")
 	private String password;
 
 	// 형식(6자리 숫자, 연속/반복 금지)은 PinValidator가 한 번 더 검증한다 - 여기서는 존재
