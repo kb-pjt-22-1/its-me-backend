@@ -131,11 +131,11 @@ class MerchantControllerTest {
 					.merchantName(merchantResponse().getMerchantName())
 					.benefitAvailable(true)
 					.build());
-		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null)).thenReturn(merchants);
+		when(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500)).thenReturn(merchants);
 		when(facade.getRecommendedMerchants(USER_ID, merchants)).thenReturn(recommended);
 
 		ResponseEntity<List<NearbyMerchantRecommendationResponseDto>> response =
-			controller.getRecommendedMerchantsInBounds(USER_ID, 37.4, 127.0, 37.6, 127.2, null);
+			controller.getRecommendedMerchantsInBounds(USER_ID, 37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null);
 
 		assertThat(response.getBody()).isEqualTo(recommended);
 		verify(facade).getRecommendedMerchants(USER_ID, merchants);

@@ -8,7 +8,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
-import lombok.Setter;
 
 @Getter
 @Builder
@@ -26,12 +25,10 @@ public class Merchant {
 	@NonNull
 	private String merchantName;
 	@NonNull
-	@Setter
 	private String address;
 	@NonNull
 	private BigDecimal latitude;
 	@NonNull
 	private BigDecimal longitude;
-	@Setter
 	private String phone;
 }
