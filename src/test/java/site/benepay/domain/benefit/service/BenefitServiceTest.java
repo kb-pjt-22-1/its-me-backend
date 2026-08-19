@@ -11,6 +11,7 @@ import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,18 +22,27 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import site.benepay.common.exception.InvalidBenefitPeriodException;
+import site.benepay.common.facade.Facade;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto.MonthlyBenefitDto;
 import site.benepay.domain.benefit.dto.CategoryBenefitStatusResponseDto;
 import site.benepay.domain.benefit.dto.DailyBenefitAmountDto;
+import site.benepay.domain.benefit.dto.ExpiringBenefitResponseDto;
+import site.benepay.domain.benefit.dto.ExpiringBenefitsResponseDto;
+import site.benepay.domain.benefit.dto.NearbyBenefitResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto.CategoryBenefitDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
 import site.benepay.domain.benefit.vo.CategoryBenefitUsageVO;
 import site.benepay.domain.benefit.vo.HeldCardBenefitVO;
 import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
+import site.benepay.domain.benefit.vo.RecentPaymentLocationVO;
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
+import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
+import site.benepay.domain.merchant.service.MerchantService;
+import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
+import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 
 @ExtendWith(MockitoExtension.class)
@@ -68,6 +78,12 @@ class BenefitServiceTest {
 	@Mock
 	private MerchantCategoryService merchantCategoryService;
 
+	@Mock
+	private MerchantService merchantService;
+
+	@Mock
+	private Facade facade;
+
 	private BenefitServiceImpl benefitService;
 	private BenefitCoachDataLoader benefitCoachDataLoader;
 
@@ -84,7 +100,9 @@ class BenefitServiceTest {
 				objectMapper,
 				recommendationParamsLoader,
 				openAiClient,
-				benefitCoachDataLoader
+				benefitCoachDataLoader,
+				merchantService,
+				facade
 			);
 	}
 
@@ -1305,5 +1323,271 @@ class BenefitServiceTest {
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).getYearMonth()).isEqualTo(currentYearMonth.toString());
+	}
+
+	// ---- getExpiringBenefits ----
+
+	private String allMerchantsBenefitsInfo(
+		String serviceName,
+		long discountAmount,
+		List<String> merchantNames
+	) {
+		String merchantNamesJson = merchantNames.isEmpty()
+			? "[]"
+			: "[\"" + String.join("\",\"", merchantNames) + "\"]";
+
+		return String.format(
+			"{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
+				+ "{\"serviceName\":\"%s\",\"benefitType\":\"ALL_MERCHANTS\","
+				+ "\"categoryCodes\":[],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountAmount\":%d,\"minimumPaymentAmount\":0,"
+				+ "\"merchantNames\":%s}]}]}",
+			serviceName,
+			discountAmount,
+			merchantNamesJson
+		);
+	}
+
+	@Test
+	void getExpiringBenefitsExcludesCategoryBenefitsAlreadyUsedThisMonth() {
+		LocalDate today = LocalDate.of(BASE_YEAR, 8, 26);
+		lenient().when(benefitMapper.findMostRecentPaymentLocationByUserId(USER_ID))
+			.thenReturn(Optional.empty());
+		YearMonth targetYearMonth = YearMonth.from(today);
+		YearMonth previousYearMonth = targetYearMonth.minusMonths(1);
+
+		when(benefitMapper.findHeldCardBenefitsByUserId(
+			USER_ID, previousYearMonth.format(YEAR_MONTH_FORMATTER)))
+			.thenReturn(List.of(
+				heldCard(USER_CARD_ID, singleTierBenefitsInfo("카페 5% 할인", "5813", 30_000L, 5), 0L)
+			));
+
+		// 이미 이번 달에 그 카테고리로 결제해서 혜택을 받은 상태 -> 후보에서 빠져야 한다.
+		when(benefitMapper.findCategoryBenefitUsageByUserId(
+			eq(USER_ID), any(LocalDateTime.class), any(LocalDateTime.class)))
+			.thenReturn(List.of(usageRow(USER_CARD_ID, "5813", 3_000L, 1)));
+
+		ExpiringBenefitsResponseDto result = benefitService.getExpiringBenefits(USER_ID, today);
+
+		assertThat(result.getBenefits()).isEmpty();
+		assertThat(result.getDaysRemaining()).isEqualTo(today.lengthOfMonth() - today.getDayOfMonth());
+		verify(benefitMapper, never()).findThisMonthMerchantNamesByUserCardId(any(), any(), any());
+	}
+
+	@Test
+	void getExpiringBenefitsIncludesAnUnusedCategoryBenefit() {
+		LocalDate today = LocalDate.of(BASE_YEAR, 8, 26);
+		lenient().when(benefitMapper.findMostRecentPaymentLocationByUserId(USER_ID))
+			.thenReturn(Optional.empty());
+		YearMonth previousYearMonth = YearMonth.from(today).minusMonths(1);
+
+		when(benefitMapper.findHeldCardBenefitsByUserId(
+			USER_ID, previousYearMonth.format(YEAR_MONTH_FORMATTER)))
+			.thenReturn(List.of(
+				heldCard(USER_CARD_ID, singleTierBenefitsInfo("카페 5% 할인", "5813", 30_000L, 5), 0L)
+			));
+
+		when(benefitMapper.findCategoryBenefitUsageByUserId(
+			eq(USER_ID), any(LocalDateTime.class), any(LocalDateTime.class)))
+			.thenReturn(List.of());
+
+		ExpiringBenefitsResponseDto result = benefitService.getExpiringBenefits(USER_ID, today);
+
+		assertThat(result.getBenefits()).hasSize(1);
+		ExpiringBenefitResponseDto benefit = result.getBenefits().get(0);
+		assertThat(benefit.getServiceName()).isEqualTo("카페 5% 할인");
+		assertThat(benefit.getAmount()).isEqualTo(30_000L);
+		assertThat(benefit.getMerchantNote()).isNull();
+	}
+
+	@Test
+	void getExpiringBenefitsChecksMerchantNamesForBrandLimitedBenefitsInsteadOfCategoryUsage() {
+		LocalDate today = LocalDate.of(BASE_YEAR, 8, 26);
+		lenient().when(benefitMapper.findMostRecentPaymentLocationByUserId(USER_ID))
+			.thenReturn(Optional.empty());
+		YearMonth previousYearMonth = YearMonth.from(today).minusMonths(1);
+
+		when(benefitMapper.findHeldCardBenefitsByUserId(
+			USER_ID, previousYearMonth.format(YEAR_MONTH_FORMATTER)))
+			.thenReturn(List.of(
+				heldCard(USER_CARD_ID,
+					allMerchantsBenefitsInfo("교보문고 할인", 2_500L, List.of("교보문고")), 0L)
+			));
+
+		when(benefitMapper.findCategoryBenefitUsageByUserId(
+			eq(USER_ID), any(LocalDateTime.class), any(LocalDateTime.class)))
+			.thenReturn(List.of());
+
+		// 이번 달에 교보문고가 아니라 다른 곳에서만 결제함 -> 이 혜택은 여전히 안 쓴 것.
+		when(benefitMapper.findThisMonthMerchantNamesByUserCardId(
+			eq(USER_CARD_ID), any(LocalDateTime.class), any(LocalDateTime.class)))
+			.thenReturn(List.of("스타벅스 강남점"));
+
+		ExpiringBenefitsResponseDto result = benefitService.getExpiringBenefits(USER_ID, today);
+
+		assertThat(result.getBenefits()).hasSize(1);
+		ExpiringBenefitResponseDto benefit = result.getBenefits().get(0);
+		assertThat(benefit.getServiceName()).isEqualTo("교보문고 할인");
+		assertThat(benefit.getAmount()).isEqualTo(2_500L);
+		assertThat(benefit.getMerchantNote()).isEqualTo("교보문고 한정");
+	}
+
+	@Test
+	void getExpiringBenefitsExcludesABrandLimitedBenefitAlreadyUsedAtThatMerchant() {
+		LocalDate today = LocalDate.of(BASE_YEAR, 8, 26);
+		lenient().when(benefitMapper.findMostRecentPaymentLocationByUserId(USER_ID))
+			.thenReturn(Optional.empty());
+		YearMonth previousYearMonth = YearMonth.from(today).minusMonths(1);
+
+		when(benefitMapper.findHeldCardBenefitsByUserId(
+			USER_ID, previousYearMonth.format(YEAR_MONTH_FORMATTER)))
+			.thenReturn(List.of(
+				heldCard(USER_CARD_ID,
+					allMerchantsBenefitsInfo("교보문고 할인", 2_500L, List.of("교보문고")), 0L)
+			));
+
+		when(benefitMapper.findCategoryBenefitUsageByUserId(
+			eq(USER_ID), any(LocalDateTime.class), any(LocalDateTime.class)))
+			.thenReturn(List.of());
+
+		when(benefitMapper.findThisMonthMerchantNamesByUserCardId(
+			eq(USER_CARD_ID), any(LocalDateTime.class), any(LocalDateTime.class)))
+			.thenReturn(List.of("교보문고"));
+
+		ExpiringBenefitsResponseDto result = benefitService.getExpiringBenefits(USER_ID, today);
+
+		assertThat(result.getBenefits()).isEmpty();
+	}
+
+	@Test
+	void getExpiringBenefitsSortsByAmountDescendingAndCapsAtThree() {
+		LocalDate today = LocalDate.of(BASE_YEAR, 8, 26);
+		lenient().when(benefitMapper.findMostRecentPaymentLocationByUserId(USER_ID))
+			.thenReturn(Optional.empty());
+		YearMonth previousYearMonth = YearMonth.from(today).minusMonths(1);
+
+		String fourBenefitsInfo =
+			"{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
+				+ "{\"serviceName\":\"편의점\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"5499\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":5,\"minimumPaymentAmount\":0,"
+				+ "\"maximumDiscountAmountPerMonth\":1500,\"monthlyCountLimit\":5},"
+				+ "{\"serviceName\":\"카페\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"5813\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":10,\"minimumPaymentAmount\":0,"
+				+ "\"maximumDiscountAmountPerMonth\":2000,\"monthlyCountLimit\":5},"
+				+ "{\"serviceName\":\"영화\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"7832\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":20,\"minimumPaymentAmount\":0,"
+				+ "\"maximumDiscountAmountPerMonth\":4000,\"monthlyCountLimit\":2},"
+				+ "{\"serviceName\":\"주유\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"5541\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":5,\"minimumPaymentAmount\":0,"
+				+ "\"maximumDiscountAmountPerMonth\":1000,\"monthlyCountLimit\":5}"
+				+ "]}]}";
+
+		when(benefitMapper.findHeldCardBenefitsByUserId(
+			USER_ID, previousYearMonth.format(YEAR_MONTH_FORMATTER)))
+			.thenReturn(List.of(heldCard(USER_CARD_ID, fourBenefitsInfo, 0L)));
+
+		when(benefitMapper.findCategoryBenefitUsageByUserId(
+			eq(USER_ID), any(LocalDateTime.class), any(LocalDateTime.class)))
+			.thenReturn(List.of());
+
+		ExpiringBenefitsResponseDto result = benefitService.getExpiringBenefits(USER_ID, today);
+
+		assertThat(result.getBenefits()).hasSize(3);
+		assertThat(result.getBenefits())
+			.extracting(ExpiringBenefitResponseDto::getServiceName)
+			.containsExactly("영화", "카페", "편의점");
+	}
+
+	@Test
+	void getExpiringBenefitsReturnsEmptyWhenTheUserHoldsNoCards() {
+		LocalDate today = LocalDate.of(BASE_YEAR, 8, 26);
+		lenient().when(benefitMapper.findMostRecentPaymentLocationByUserId(USER_ID))
+			.thenReturn(Optional.empty());
+		YearMonth previousYearMonth = YearMonth.from(today).minusMonths(1);
+
+		when(benefitMapper.findHeldCardBenefitsByUserId(
+			USER_ID, previousYearMonth.format(YEAR_MONTH_FORMATTER)))
+			.thenReturn(List.of());
+
+		ExpiringBenefitsResponseDto result = benefitService.getExpiringBenefits(USER_ID, today);
+
+		assertThat(result.getBenefits()).isEmpty();
+		verify(benefitMapper, never()).findCategoryBenefitUsageByUserId(any(), any(), any());
+	}
+
+	private RecentPaymentLocationVO recentPaymentLocation(double lat, double lng) {
+		RecentPaymentLocationVO location = new RecentPaymentLocationVO();
+		location.setLatitude(BigDecimal.valueOf(lat));
+		location.setLongitude(BigDecimal.valueOf(lng));
+		return location;
+	}
+
+	private MerchantResponseDto nearbyMerchant(Long merchantId, String merchantName, double distanceMeters) {
+		return MerchantResponseDto.builder()
+			.merchantId(merchantId)
+			.merchantName(merchantName)
+			.distanceMeters(distanceMeters)
+			.build();
+	}
+
+	@Test
+	void getExpiringBenefitsIncludesNearbyMerchantBenefitsWithinTwoKilometers() {
+		LocalDate today = LocalDate.of(BASE_YEAR, 8, 26);
+		YearMonth previousYearMonth = YearMonth.from(today).minusMonths(1);
+
+		when(benefitMapper.findHeldCardBenefitsByUserId(
+			USER_ID, previousYearMonth.format(YEAR_MONTH_FORMATTER)))
+			.thenReturn(List.of());
+		when(benefitMapper.findMostRecentPaymentLocationByUserId(USER_ID))
+			.thenReturn(Optional.of(recentPaymentLocation(37.5, 127.0)));
+
+		// 반경(2km) 밖 매장은 facade에 아예 안 넘어가야 한다.
+		MerchantResponseDto near = nearbyMerchant(1L, "스타벅스 강남점", 500.0);
+		MerchantResponseDto far = nearbyMerchant(2L, "저 멀리 매장", 3_000.0);
+		when(merchantService.getNearbyMerchants(37.5, 127.0, null, 50))
+			.thenReturn(List.of(near, far));
+
+		NearbyMerchantRecommendationResponseDto evaluated = NearbyMerchantRecommendationResponseDto.builder()
+			.merchantId(1L)
+			.merchantName("스타벅스 강남점")
+			.distanceMeters(500.0)
+			.benefitAvailable(true)
+			.recommendedCards(List.of(RecommendedCardResponseDto.builder()
+				.cardName("청춘대로 톡톡카드")
+				.benefitSummary("이번 달 확정 3,000원")
+				.build()))
+			.build();
+
+		when(facade.getRecommendedMerchants(eq(USER_ID), argThat(list -> list.size() == 1)))
+			.thenReturn(List.of(evaluated));
+
+		ExpiringBenefitsResponseDto result = benefitService.getExpiringBenefits(USER_ID, today);
+
+		assertThat(result.getNearbyMerchantBenefits()).hasSize(1);
+		NearbyBenefitResponseDto nearbyBenefit = result.getNearbyMerchantBenefits().get(0);
+		assertThat(nearbyBenefit.getMerchantName()).isEqualTo("스타벅스 강남점");
+		assertThat(nearbyBenefit.getCardName()).isEqualTo("청춘대로 톡톡카드");
+		assertThat(nearbyBenefit.getDistanceMeters()).isEqualTo(500.0);
+	}
+
+	@Test
+	void getExpiringBenefitsReturnsNoNearbyMerchantBenefitsWithoutPaymentHistory() {
+		LocalDate today = LocalDate.of(BASE_YEAR, 8, 26);
+		YearMonth previousYearMonth = YearMonth.from(today).minusMonths(1);
+
+		when(benefitMapper.findHeldCardBenefitsByUserId(
+			USER_ID, previousYearMonth.format(YEAR_MONTH_FORMATTER)))
+			.thenReturn(List.of());
+		when(benefitMapper.findMostRecentPaymentLocationByUserId(USER_ID))
+			.thenReturn(Optional.empty());
+
+		ExpiringBenefitsResponseDto result = benefitService.getExpiringBenefits(USER_ID, today);
+
+		assertThat(result.getNearbyMerchantBenefits()).isEmpty();
+		verify(merchantService, never()).getNearbyMerchants(anyDouble(), anyDouble(), any(), anyInt());
 	}
 }
