@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import site.benepay.common.facade.Facade;
 import site.benepay.domain.benefit.dto.BenefitCoachDataDto.CardData;
 import site.benepay.domain.benefit.dto.BenefitCoachDataDto.MonthlyUsageData;
 import site.benepay.domain.benefit.dto.BenefitCoachDataDto.PaymentData;
@@ -23,6 +24,7 @@ import site.benepay.domain.benefit.dto.BenefitCoachResponseDto;
 import site.benepay.domain.benefit.dto.BenefitCoachResponseDto.BenefitCoachItemDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
+import site.benepay.domain.merchant.service.MerchantService;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 
 @ExtendWith(MockitoExtension.class)
@@ -47,6 +49,12 @@ class BenefitCoachServiceTest {
 	@Mock
 	private OpenAiClient openAiClient;
 
+	@Mock
+	private MerchantService merchantService;
+
+	@Mock
+	private Facade facade;
+
 	private BenefitCoachDataLoader benefitCoachDataLoader;
 	private BenefitServiceImpl benefitService;
 
@@ -63,7 +71,9 @@ class BenefitCoachServiceTest {
 				new ObjectMapper(),
 				recommendationParamsLoader,
 				openAiClient,
-				benefitCoachDataLoader
+				benefitCoachDataLoader,
+				merchantService,
+				facade
 			);
 
 		lenient()
