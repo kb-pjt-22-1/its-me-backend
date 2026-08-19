@@ -22,7 +22,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import site.benepay.common.facade.Facade;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.TodayCardRecommendationResponseDto;
-import site.benepay.domain.recommendation.service.RecommendationService;
 
 @ExtendWith(MockitoExtension.class)
 class RecommendationControllerTest {
@@ -31,16 +30,13 @@ class RecommendationControllerTest {
 	private static final Long MERCHANT_ID = 100L;
 
 	@Mock
-	private RecommendationService recommendationService;
-
-	@Mock
 	private Facade facade;
 
 	private RecommendationController controller;
 
 	@BeforeEach
 	void setUp() {
-		controller = new RecommendationController(recommendationService, facade);
+		controller = new RecommendationController(facade);
 
 		Authentication authentication = mock(Authentication.class);
 		when(authentication.getPrincipal()).thenReturn(USER_ID);
@@ -62,13 +58,13 @@ class RecommendationControllerTest {
 			.categoryCode("5813")
 			.cards(List.of())
 			.build();
-		when(recommendationService.getCardRecommendations(USER_ID, MERCHANT_ID)).thenReturn(response);
+		when(facade.getCardRecommendations(USER_ID, MERCHANT_ID)).thenReturn(response);
 
 		ResponseEntity<MerchantCardRecommendationResponseDto> result = controller.getCardRecommendations(MERCHANT_ID);
 
 		assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(result.getBody()).isEqualTo(response);
-		verify(recommendationService).getCardRecommendations(USER_ID, MERCHANT_ID);
+		verify(facade).getCardRecommendations(USER_ID, MERCHANT_ID);
 	}
 
 	@Test

@@ -12,14 +12,12 @@ import lombok.RequiredArgsConstructor;
 import site.benepay.common.facade.Facade;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.TodayCardRecommendationResponseDto;
-import site.benepay.domain.recommendation.service.RecommendationService;
 
 @RestController
 @RequestMapping("/api/v1/recommendations")
 @RequiredArgsConstructor
 public class RecommendationController {
 
-	private final RecommendationService recommendationService;
 	private final Facade facade;
 
 	/**
@@ -35,10 +33,7 @@ public class RecommendationController {
 	) {
 		Long userId = getAuthenticatedUserId();
 
-		MerchantCardRecommendationResponseDto response =
-			recommendationService.getCardRecommendations(userId, merchantId);
-
-		return ResponseEntity.ok(response);
+		return ResponseEntity.ok(facade.getCardRecommendations(userId, merchantId));
 	}
 
 	/**
