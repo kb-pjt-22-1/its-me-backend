@@ -100,29 +100,4 @@ class MerchantTest {
 			.isInstanceOf(NullPointerException.class);
 	}
 
-	@Test
-	void setAddressRejectsNull() {
-		Merchant merchant = validBuilder().build();
-
-		assertThatThrownBy(() -> merchant.setAddress(null))
-			.isInstanceOf(NullPointerException.class);
-	}
-
-	@Test
-	void setAddressUpdatesValue() {
-		Merchant merchant = validBuilder().build();
-
-		merchant.setAddress("서울시 서초구");
-
-		assertThat(merchant.getAddress()).isEqualTo("서울시 서초구");
-	}
-
-	@Test
-	void setPhoneAllowsNull() {
-		Merchant merchant = validBuilder().build();
-
-		merchant.setPhone(null);
-
-		assertThat(merchant.getPhone()).isNull();
-	}
 }

@@ -35,10 +35,8 @@ public class MerchantServiceImpl implements MerchantService {
 	@Override
 	@Transactional(readOnly = true)
 	public List<MerchantResponseDto> getMerchants(double swLat, double swLng, double neLat, double neLng,
-		String categoryCode) {
-		return merchantMapper.findWithinBounds(swLat, swLng, neLat, neLng, categoryCode).stream()
-			.map(MerchantResponseDto::from)
-			.toList();
+		double centerLat, double centerLng, String categoryCode, int limit) {
+		return merchantMapper.findWithinBounds(swLat, swLng, neLat, neLng, centerLat, centerLng, categoryCode, limit);
 	}
 
 	@Override

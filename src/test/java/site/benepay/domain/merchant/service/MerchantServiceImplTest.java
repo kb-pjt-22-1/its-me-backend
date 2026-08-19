@@ -96,36 +96,54 @@ class MerchantServiceImplTest {
 			.isInstanceOf(MerchantNotFoundException.class);
 	}
 
-	// ---- getMerchants(bounds, categoryCode) ----
+	// ---- getMerchants(bounds, center, categoryCode, limit) ----
+
+	private MerchantResponseDto nearbyResponse(String merchantCode) {
+		return MerchantResponseDto.builder()
+			.merchantId(MERCHANT_ID)
+			.categoryCode("5812")
+			.brandId(1L)
+			.merchantCode(merchantCode)
+			.merchantName("테스트 식당")
+			.address("서울시 강남구")
+			.latitude(BigDecimal.valueOf(37.5))
+			.longitude(BigDecimal.valueOf(127.0))
+			.phone("02-000-0000")
+			.distanceMeters(50.0)
+			.build();
+	}
 
 	@Test
-	void getMerchantsWithinBoundsQueriesMapperAndMapsResult() {
-		when(merchantMapper.findWithinBounds(37.4, 127.0, 37.6, 127.2, null))
-			.thenReturn(List.of(existingMerchant("M001")));
+	void getMerchantsWithinBoundsQueriesMapperAndReturnsMapperResultDirectly() {
+		when(merchantMapper.findWithinBounds(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500))
+			.thenReturn(List.of(nearbyResponse("M001")));
 
-		List<MerchantResponseDto> result = merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null);
+		List<MerchantResponseDto> result =
+			merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500);
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).getMerchantCode()).isEqualTo("M001");
-		verify(merchantMapper).findWithinBounds(37.4, 127.0, 37.6, 127.2, null);
+		assertThat(result.get(0).getDistanceMeters()).isEqualTo(50.0);
+		verify(merchantMapper).findWithinBounds(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500);
 	}
 
 	@Test
 	void getMerchantsWithinBoundsReturnsEmptyListWhenNoneInRange() {
-		when(merchantMapper.findWithinBounds(37.4, 127.0, 37.6, 127.2, null)).thenReturn(List.of());
+		when(merchantMapper.findWithinBounds(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500)).thenReturn(List.of());
 
-		assertThat(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, null)).isEmpty();
+		assertThat(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500)).isEmpty();
 	}
 
 	@Test
-	void getMerchantsWithinBoundsPassesCategoryCodeThroughToMapper() {
-		when(merchantMapper.findWithinBounds(37.4, 127.0, 37.6, 127.2, "5812"))
-			.thenReturn(List.of(existingMerchant("M001")));
+	void getMerchantsWithinBoundsPassesCategoryCodeAndLimitThroughToMapper() {
+		when(merchantMapper.findWithinBounds(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, "5812", 500))
+			.thenReturn(List.of(nearbyResponse("M001")));
 
-		List<MerchantResponseDto> result = merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, "5812");
+		List<MerchantResponseDto> result =
+			merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, "5812", 500);
 
 		assertThat(result).hasSize(1);
-		verify(merchantMapper).findWithinBounds(37.4, 127.0, 37.6, 127.2, "5812");
+		verify(merchantMapper).findWithinBounds(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, "5812", 500);
 	}
 
 	// ---- getNearbyMerchants(lat, lng, categoryCode, limit) ----
