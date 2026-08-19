@@ -56,8 +56,6 @@ public class RecommendationServiceImpl implements RecommendationService {
 	private final ObjectMapper objectMapper;
 	private final RecommendationParamsLoader recommendationParamsLoader;
 
-	// TODO: 다른 팀원의 카드 추천 알고리즘 구현이 완료되면 이 클래스에 주입한다.
-
 	@Override
 	public MerchantCardRecommendationResponseDto getCardRecommendations(
 		Long userId,
@@ -149,7 +147,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 
 		Map<Long, Map<String, Long>> monthlyAmount = new HashMap<>();
 		Map<Long, Map<String, Integer>> monthlyCount = new HashMap<>();
-		for (RecommendationBenefitUsageVO row : recommendationMapper.findMonthlyUsageByUserId(userId, targetYearMonth)) {
+		for (RecommendationBenefitUsageVO row : recommendationMapper.findMonthlyUsageByUserId(userId,
+			targetYearMonth)) {
 			monthlyAmount.computeIfAbsent(row.getUserCardId(), k -> new HashMap<>())
 				.put(row.getBenefitServiceName(), row.getUsedAmount() == null ? 0L : row.getUsedAmount());
 			monthlyCount.computeIfAbsent(row.getUserCardId(), k -> new HashMap<>())
@@ -207,10 +206,11 @@ public class RecommendationServiceImpl implements RecommendationService {
 		TopCardsResult topCardsResult = categoryName == null
 			? TopCardsResult.EMPTY
 			: findTopCards(heldCards, merchant.getCategoryCode(), categoryName, walletSpendHistory, parsedTiers,
-				usageByCard);
+			usageByCard);
 
 		List<RecommendedCardResponseDto> recommendedCards = topCardsResult.cards().stream()
 			.map(entry -> RecommendedCardResponseDto.builder()
+				.userCardId(entry.getKey().getUserCardId())
 				.cardName(entry.getKey().getCardName())
 				.benefitSummary(entry.getValue().note())
 				.build())
@@ -219,6 +219,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		return NearbyMerchantRecommendationResponseDto.builder()
 			.merchantId(merchant.getMerchantId())
 			.categoryCode(merchant.getCategoryCode())
+			.categoryName(categoryName)
 			.brandId(merchant.getBrandId())
 			.merchantCode(merchant.getMerchantCode())
 			.merchantName(merchant.getMerchantName())

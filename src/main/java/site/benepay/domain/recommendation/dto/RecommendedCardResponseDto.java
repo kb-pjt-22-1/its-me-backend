@@ -7,6 +7,7 @@ import lombok.Getter;
 @Builder
 public class RecommendedCardResponseDto {
 
+	private Long userCardId;
 	private String cardName;
 	private String benefitSummary;
 }

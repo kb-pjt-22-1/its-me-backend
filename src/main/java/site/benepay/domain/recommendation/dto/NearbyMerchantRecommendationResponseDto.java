@@ -14,6 +14,7 @@ public class NearbyMerchantRecommendationResponseDto {
 
 	private Long merchantId;
 	private String categoryCode;
+	private String categoryName;
 	private Long brandId;
 	private String merchantCode;
 	private String merchantName;
