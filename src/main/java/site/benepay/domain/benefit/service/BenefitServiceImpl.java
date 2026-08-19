@@ -1,5 +1,8 @@
 package site.benepay.domain.benefit.service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -7,25 +10,41 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import site.benepay.common.exception.InvalidBenefitPeriodException;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto.MonthlyBenefitDto;
+import site.benepay.domain.benefit.dto.BenefitCoachDataDto.CalculatedCoachingData;
+import site.benepay.domain.benefit.dto.BenefitCoachDataDto.CardData;
+import site.benepay.domain.benefit.dto.BenefitCoachDataDto.MonthlyUsageData;
+import site.benepay.domain.benefit.dto.BenefitCoachDataDto.PaymentData;
+import site.benepay.domain.benefit.dto.BenefitCoachDataDto.SpendingPatternData;
+import site.benepay.domain.benefit.dto.BenefitCoachResponseDto;
+import site.benepay.domain.benefit.dto.BenefitCoachResponseDto.BenefitCoachItemDto;
 import site.benepay.domain.benefit.dto.CategoryBenefitStatusResponseDto;
 import site.benepay.domain.benefit.dto.DailyBenefitAmountDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto.CategoryBenefitDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
+import site.benepay.domain.benefit.service.BenefitCoachDataLoader.LoadedCoachingData;
+import site.benepay.domain.benefit.service.OpenAiClient.OpenAiCoachingItemText;
+import site.benepay.domain.benefit.service.OpenAiClient.OpenAiCoachingText;
 import site.benepay.domain.benefit.vo.CategoryBenefitUsageVO;
 import site.benepay.domain.benefit.vo.HeldCardBenefitVO;
 import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
@@ -35,9 +54,11 @@ import site.benepay.domain.recommendation.engine.BenefitEngine;
 import site.benepay.domain.recommendation.engine.BenefitJsonParser;
 import site.benepay.domain.recommendation.engine.BenefitNode;
 import site.benepay.domain.recommendation.engine.PerformanceTier;
+import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 @Transactional(readOnly = true)
 public class BenefitServiceImpl implements BenefitService {
 
@@ -47,9 +68,14 @@ public class BenefitServiceImpl implements BenefitService {
 	private static final DateTimeFormatter YEAR_MONTH_FORMATTER =
 		DateTimeFormatter.ofPattern("uuuuMM");
 
+	private static final long MINIMUM_SWITCH_SAVING_AMOUNT = 500L;
+
 	private final BenefitMapper benefitMapper;
 	private final MerchantCategoryService merchantCategoryService;
 	private final ObjectMapper objectMapper;
+	private final RecommendationParamsLoader recommendationParamsLoader;
+	private final OpenAiClient openAiClient;
+	private final BenefitCoachDataLoader benefitCoachDataLoader;
 
 	@Override
 	public List<AnnualFeeBreakEvenResponseDto> getAnnualFeeBreakEven(
@@ -332,6 +358,168 @@ public class BenefitServiceImpl implements BenefitService {
 			.build();
 	}
 
+	@Override
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	public BenefitCoachResponseDto getBenefitCoaching(
+		Long userId
+	) {
+		LocalDateTime now =
+			LocalDateTime.now(ZONE);
+
+		LoadedCoachingData loadedData =
+			benefitCoachDataLoader.load(userId, now);
+
+		if (loadedData.payments().isEmpty()) {
+			return createEmptyCoachingResponse(
+				"최근 3개월 결제 내역이 없어 분석할 소비 패턴이 없습니다."
+			);
+		}
+
+		List<SpendingPatternData> patterns =
+			createSpendingPatterns(
+				loadedData.payments()
+			);
+
+		if (loadedData.cards().isEmpty()) {
+			return createEmptyCoachingResponse(
+				"혜택 코칭에 사용할 수 있는 보유 카드가 없습니다."
+			);
+		}
+
+		List<CalculatedCoachingData> calculatedData =
+			calculateCoachingData(
+				patterns,
+				loadedData.cards(),
+				loadedData.monthlyUsages()
+			);
+
+		if (calculatedData.isEmpty()) {
+			return createEmptyCoachingResponse(
+				"현재 소비 패턴에 적용 가능한 카드 혜택이 없습니다."
+			);
+		}
+
+		/*
+		 * DataLoader의 읽기 전용 트랜잭션이 종료된 뒤
+		 * 외부 OpenAI API를 호출한다.
+		 */
+		OpenAiCoachingText coachingText;
+
+		try {
+			coachingText =
+				openAiClient.generateCoachingText(
+					calculatedData
+				);
+		} catch (IllegalStateException e) {
+			log.warn(
+				"OpenAI 코칭 텍스트 생성에 실패하여 기본 문구로 대체합니다.",
+				e
+			);
+
+			coachingText =
+				new OpenAiCoachingText(
+					"이번 주 카드 사용 전략을 준비했어요.",
+					List.of()
+				);
+		}
+
+		return BenefitCoachResponseDto.builder()
+			.summary(coachingText.summary())
+			.items(
+				createBenefitCoachItems(
+					calculatedData,
+					coachingText.items()
+				)
+			)
+			.build();
+	}
+
+	private BenefitCoachResponseDto createEmptyCoachingResponse(
+		String summary
+	) {
+		return BenefitCoachResponseDto.builder()
+			.summary(summary)
+			.items(List.of())
+			.build();
+	}
+
+	private List<BenefitCoachItemDto> createBenefitCoachItems(
+		List<CalculatedCoachingData> calculatedData,
+		List<OpenAiCoachingItemText> coachingTexts
+	) {
+		Map<Integer, OpenAiCoachingItemText> coachingTextByIndex =
+			new LinkedHashMap<>();
+
+		for (OpenAiCoachingItemText coachingText
+			: coachingTexts) {
+
+			if (coachingText.index() >= 0
+				&& coachingText.index()
+				< calculatedData.size()) {
+
+				coachingTextByIndex.putIfAbsent(
+					coachingText.index(),
+					coachingText
+				);
+			}
+		}
+
+		List<BenefitCoachItemDto> items =
+			new ArrayList<>();
+
+		for (int index = 0;
+		     index < calculatedData.size();
+		     index++) {
+
+			CalculatedCoachingData data =
+				calculatedData.get(index);
+
+			OpenAiCoachingItemText coachingText =
+				coachingTextByIndex.get(index);
+
+			String title =
+				coachingText == null
+					|| coachingText.title().isBlank()
+					? data.getCategoryName() + " 혜택 안내"
+					: coachingText.title();
+
+			String message =
+				coachingText == null
+					|| coachingText.message().isBlank()
+					? data.getRecommendedCardName()
+					  + " 사용이 유리합니다."
+					: coachingText.message();
+
+			items.add(
+				BenefitCoachItemDto.builder()
+					.title(title)
+					.message(message)
+					.recommendedCardName(
+						data.getRecommendedCardName()
+					)
+					.expectedSavingAmount(
+						data.getExpectedSavingAmount()
+					)
+					.strategyType(
+						data.getStrategyType()
+					)
+					.nextRecommendedCardName(
+						data.getNextRecommendedCardName()
+					)
+					.remainingUsageCount(
+						data.getRemainingUsageCount()
+					)
+					.expectedAdditionalSavingAmount(
+						data.getExpectedAdditionalSavingAmount()
+					)
+					.reason(data.getReason())
+					.build()
+			);
+		}
+
+		return items;
+	}
+
 	private long sumCategoryBenefits(
 		Long userId,
 		YearMonth yearMonth
@@ -360,6 +548,289 @@ public class BenefitServiceImpl implements BenefitService {
 			.sum();
 	}
 
+	private CalculatedCoachingData createCalculatedCoachingData(
+		SpendingPatternData pattern,
+		CardBenefitEvaluation evaluation,
+		StrategyDecision strategy
+	) {
+		CardData card = evaluation.card();
+		PerformanceTier tier = evaluation.tier();
+		BenefitNode benefit = evaluation.benefit();
+
+		long previousMonthSpendingAmount =
+			card.getPreviousMonthSpendingAmount() == null
+				? 0L
+				: card.getPreviousMonthSpendingAmount();
+
+		String condition = String.format(
+			"%s, 전월 실적 %,d원, %s, 최소 결제금액 %,d원",
+			tier.tierName(),
+			previousMonthSpendingAmount,
+			benefit.serviceName(),
+			benefit.minimumPaymentAmount()
+		);
+
+		return CalculatedCoachingData.builder()
+			.categoryCode(pattern.getCategoryCode())
+			.categoryName(pattern.getCategoryName())
+			.usualDayOfWeek(pattern.getUsualDayOfWeek())
+			.usualMerchantName(pattern.getUsualMerchantName())
+			.averageAmount(pattern.getAverageAmount())
+			.paymentCount(pattern.getPaymentCount())
+			.userCardId(card.getUserCardId())
+			.recommendedCardName(card.getCardName())
+			.expectedSavingAmount(
+				evaluation.expectedSavingAmount()
+			)
+			.strategyType(strategy.strategyType())
+			.nextRecommendedCardName(
+				strategy.nextRecommendedCardName()
+			)
+			.remainingUsageCount(
+				strategy.remainingUsageCount()
+			)
+			.expectedAdditionalSavingAmount(
+				strategy.expectedAdditionalSavingAmount()
+			)
+			.previousMonthSpendingAmount(
+				previousMonthSpendingAmount
+			)
+			.appliedBenefitCondition(condition)
+			.reason(strategy.reason())
+			.build();
+	}
+
+	private long calculateExpectedSavingAmount(
+		SpendingPatternData pattern,
+		CardData card,
+		PerformanceTier activeTier,
+		BenefitNode benefit,
+		List<MonthlyUsageData> monthlyUsages
+	) {
+		long paymentAmount =
+			pattern.getAverageAmount().longValue();
+
+		if (paymentAmount < benefit.minimumPaymentAmount()) {
+			return 0L;
+		}
+
+		int usedCount =
+			findUsedCount(
+				card.getUserCardId(),
+				pattern.getCategoryCode(),
+				monthlyUsages
+			);
+
+		if (benefit.monthlyCountLimit() != null
+			&& usedCount >= benefit.monthlyCountLimit()) {
+
+			return 0L;
+		}
+
+		long eligibleAmount = paymentAmount;
+
+		if (benefit.maximumEligiblePerTransaction() != null) {
+			eligibleAmount =
+				Math.min(
+					eligibleAmount,
+					benefit.maximumEligiblePerTransaction()
+				);
+		}
+
+		if (benefit.monthlyEligibleLimit() != null) {
+			eligibleAmount =
+				Math.min(
+					eligibleAmount,
+					benefit.monthlyEligibleLimit()
+				);
+		}
+
+		long expectedSavingAmount;
+
+		if (benefit.discountAmount() > 0L) {
+			expectedSavingAmount =
+				benefit.discountAmount();
+		} else {
+			boolean weekend =
+				isWeekend(pattern.getUsualDayOfWeek());
+
+			double fuelPricePerLiter =
+				recommendationParamsLoader
+					.params()
+					.constants()
+					.fuelPricePerLiter();
+
+			double effectiveRate =
+				BenefitEngine.effectiveRate(
+					benefit,
+					weekend,
+					fuelPricePerLiter
+				);
+
+			expectedSavingAmount =
+				Math.round(eligibleAmount * effectiveRate);
+		}
+
+		if (benefit.maximumDiscountPerTransaction() != null) {
+			expectedSavingAmount =
+				Math.min(
+					expectedSavingAmount,
+					benefit.maximumDiscountPerTransaction()
+				);
+		}
+
+		long categoryUsedBenefit =
+			findUsedBenefitAmount(
+				card.getUserCardId(),
+				pattern.getCategoryCode(),
+				monthlyUsages
+			);
+
+		if (benefit.monthlyDiscountLimit() != null) {
+			long remainingBenefit =
+				Math.max(
+					benefit.monthlyDiscountLimit()
+						- categoryUsedBenefit,
+					0L
+				);
+
+			expectedSavingAmount =
+				Math.min(
+					expectedSavingAmount,
+					remainingBenefit
+				);
+		}
+
+		Long combinedCap = activeTier.combinedCap();
+
+		if (!benefit.integratedLimitExcluded()
+			&& combinedCap != null) {
+
+			long totalUsedBenefit =
+				findTotalUsedBenefitAmount(
+					card.getUserCardId(),
+					monthlyUsages
+				);
+
+			long remainingCombinedBenefit =
+				Math.max(
+					combinedCap - totalUsedBenefit,
+					0L
+				);
+
+			expectedSavingAmount =
+				Math.min(
+					expectedSavingAmount,
+					remainingCombinedBenefit
+				);
+		}
+
+		return Math.max(expectedSavingAmount, 0L);
+	}
+
+	private boolean matchesMerchant(
+		SpendingPatternData pattern,
+		BenefitNode benefit
+	) {
+		if (!benefit.isMerchantLimited()) {
+			return true;
+		}
+
+		String merchantName =
+			normalizeMerchantName(
+				pattern.getUsualMerchantName()
+			);
+
+		if (merchantName.isBlank()) {
+			return false;
+		}
+
+		for (String targetMerchant : benefit.merchantNames()) {
+			String normalizedTarget =
+				normalizeMerchantName(targetMerchant);
+
+			if (merchantName.contains(normalizedTarget)
+				|| normalizedTarget.contains(merchantName)) {
+
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private String normalizeMerchantName(String merchantName) {
+		if (merchantName == null) {
+			return "";
+		}
+
+		return merchantName
+			.replace(" ", "")
+			.toLowerCase(Locale.KOREAN);
+	}
+
+	private boolean isWeekend(String dayOfWeek) {
+		DayOfWeek day =
+			DayOfWeek.valueOf(dayOfWeek);
+
+		return Objects.equals(day, DayOfWeek.SATURDAY)
+			|| Objects.equals(day, DayOfWeek.SUNDAY);
+	}
+
+	private int findUsedCount(
+		Long userCardId,
+		String categoryCode,
+		List<MonthlyUsageData> monthlyUsages
+	) {
+		for (MonthlyUsageData usage : monthlyUsages) {
+			if (userCardId.equals(usage.getUserCardId())
+				&& categoryCode.equals(usage.getCategoryCode())) {
+
+				return usage.getUsageCount() == null
+					? 0
+					: usage.getUsageCount();
+			}
+		}
+
+		return 0;
+	}
+
+	private long findUsedBenefitAmount(
+		Long userCardId,
+		String categoryCode,
+		List<MonthlyUsageData> monthlyUsages
+	) {
+		for (MonthlyUsageData usage : monthlyUsages) {
+			if (userCardId.equals(usage.getUserCardId())
+				&& categoryCode.equals(usage.getCategoryCode())) {
+
+				return usage.getUsedBenefitAmount() == null
+					? 0L
+					: usage.getUsedBenefitAmount().longValue();
+			}
+		}
+
+		return 0L;
+	}
+
+	private long findTotalUsedBenefitAmount(
+		Long userCardId,
+		List<MonthlyUsageData> monthlyUsages
+	) {
+		long totalUsedBenefitAmount = 0L;
+
+		for (MonthlyUsageData usage : monthlyUsages) {
+			if (userCardId.equals(usage.getUserCardId())
+				&& usage.getUsedBenefitAmount() != null) {
+
+				totalUsedBenefitAmount +=
+					usage.getUsedBenefitAmount().longValue();
+			}
+		}
+
+		return totalUsedBenefitAmount;
+	}
+
 	private List<CategoryBenefitDto> createCategoryBreakdown(
 		List<MonthlyCategoryBenefitVO> rows,
 		long totalBenefitAmount
@@ -378,7 +849,7 @@ public class BenefitServiceImpl implements BenefitService {
 					? 0
 					: Math.round(
 					(amount * 100f)
-						/ totalBenefitAmount
+					/ totalBenefitAmount
 				);
 
 			breakdown.add(
@@ -439,6 +910,586 @@ public class BenefitServiceImpl implements BenefitService {
 		}
 
 		return parsed;
+	}
+
+	/**
+	 * 최근 3개월 결제를 카테고리별로 집계하고,
+	 * 가장 자주 결제한 요일과 평균 결제 금액을 계산한다.
+	 */
+	private List<SpendingPatternData> createSpendingPatterns(
+		List<PaymentData> payments
+	) {
+		Map<String, SpendingPatternAccumulator> accumulatorByCategory =
+			new LinkedHashMap<>();
+
+		for (PaymentData payment : payments) {
+			SpendingPatternAccumulator accumulator =
+				accumulatorByCategory.computeIfAbsent(
+					payment.getCategoryCode(),
+					categoryCode -> new SpendingPatternAccumulator(
+						categoryCode,
+						payment.getCategoryName()
+					)
+				);
+
+			accumulator.add(payment);
+		}
+
+		List<SpendingPatternData> patterns = new ArrayList<>();
+
+		for (SpendingPatternAccumulator accumulator
+			: accumulatorByCategory.values()) {
+
+			patterns.add(accumulator.toPattern());
+		}
+
+		return patterns;
+	}
+
+	private List<CalculatedCoachingData> calculateCoachingData(
+		List<SpendingPatternData> patterns,
+		List<CardData> cards,
+		List<MonthlyUsageData> monthlyUsages
+	) {
+		List<CalculatedCoachingData> results =
+			new ArrayList<>();
+
+		for (SpendingPatternData pattern : patterns) {
+			List<CardBenefitEvaluation> evaluations =
+				evaluateCards(
+					pattern,
+					cards,
+					monthlyUsages
+				);
+
+			if (evaluations.isEmpty()) {
+				continue;
+			}
+
+			CardBenefitEvaluation bestEvaluation =
+				evaluations.get(0);
+
+			CardBenefitEvaluation usualEvaluation =
+				findEvaluationByUserCardId(
+					evaluations,
+					pattern.getUsualUserCardId()
+				);
+
+			CardBenefitEvaluation nextEvaluation =
+				findNextCardEvaluation(
+					evaluations,
+					bestEvaluation.card().getUserCardId()
+				);
+
+			StrategyDecision strategy =
+				determineStrategy(
+					pattern,
+					bestEvaluation,
+					usualEvaluation,
+					nextEvaluation,
+					monthlyUsages
+				);
+
+			results.add(
+				createCalculatedCoachingData(
+					pattern,
+					bestEvaluation,
+					strategy
+				)
+			);
+		}
+
+		return results.stream()
+			.sorted(
+				Comparator.comparingLong(
+						CalculatedCoachingData
+							::getExpectedAdditionalSavingAmount
+					)
+					.reversed()
+					.thenComparing(
+						Comparator.comparingLong(
+							CalculatedCoachingData
+								::getExpectedSavingAmount
+						).reversed()
+					)
+			)
+			.limit(3)
+			.toList();
+	}
+
+	private StrategyDecision determineStrategy(
+		SpendingPatternData pattern,
+		CardBenefitEvaluation bestEvaluation,
+		CardBenefitEvaluation usualEvaluation,
+		CardBenefitEvaluation nextEvaluation,
+		List<MonthlyUsageData> monthlyUsages
+	) {
+		Long usualUserCardId =
+			pattern.getUsualUserCardId();
+
+		Long bestUserCardId =
+			bestEvaluation.card().getUserCardId();
+
+		boolean usingBestCard =
+			usualUserCardId != null
+				&& usualUserCardId.equals(bestUserCardId);
+
+		Integer remainingUsageCount =
+			calculateRemainingUsageCount(
+				bestEvaluation,
+				pattern.getCategoryCode(),
+				monthlyUsages
+			);
+
+		if (remainingUsageCount != null
+			&& remainingUsageCount > 0
+			&& nextEvaluation != null) {
+
+			long additionalSavingAmount =
+				calculateUseThenSwitchSaving(
+					usingBestCard,
+					bestEvaluation,
+					usualEvaluation,
+					nextEvaluation
+				);
+
+			String reason = String.format(
+				"%s 혜택을 %d회 더 사용한 뒤 %s로 전환하는 전략입니다.",
+				bestEvaluation.card().getCardName(),
+				remainingUsageCount,
+				nextEvaluation.card().getCardName()
+			);
+
+			return new StrategyDecision(
+				"USE_THEN_SWITCH",
+				nextEvaluation.card().getCardName(),
+				remainingUsageCount,
+				additionalSavingAmount,
+				reason
+			);
+		}
+
+		if (!usingBestCard) {
+			long usualSavingAmount =
+				usualEvaluation == null
+					? 0L
+					: usualEvaluation.expectedSavingAmount();
+
+			long additionalSavingAmount =
+				Math.max(
+					bestEvaluation.expectedSavingAmount()
+						- usualSavingAmount,
+					0L
+				);
+
+			// 추가 혜택이 작으면 카드 전환을 강하게 권하지 않는다.
+			if (additionalSavingAmount
+				< MINIMUM_SWITCH_SAVING_AMOUNT) {
+
+				String reason = String.format(
+					"%s 사용 시 평균 결제 1회 기준 %,d원의 혜택이 예상됩니다.",
+					bestEvaluation.card().getCardName(),
+					bestEvaluation.expectedSavingAmount()
+				);
+
+				return new StrategyDecision(
+					"BENEFIT_GUIDE",
+					null,
+					remainingUsageCount,
+					additionalSavingAmount,
+					reason
+				);
+			}
+
+			String reason = String.format(
+				"기존 사용 카드보다 %s를 사용할 때 "
+					+ "1회 결제 기준 %,d원의 추가 혜택이 예상됩니다.",
+				bestEvaluation.card().getCardName(),
+				additionalSavingAmount
+			);
+
+			return new StrategyDecision(
+				"SWITCH_NOW",
+				null,
+				remainingUsageCount,
+				additionalSavingAmount,
+				reason
+			);
+		}
+
+		String reason = String.format(
+			"현재 사용 중인 %s가 해당 소비 패턴에서 가장 유리합니다.",
+			bestEvaluation.card().getCardName()
+		);
+
+		return new StrategyDecision(
+			"KEEP_USING",
+			null,
+			remainingUsageCount,
+			0L,
+			reason
+		);
+	}
+
+	private CardBenefitEvaluation findEvaluationByUserCardId(
+		List<CardBenefitEvaluation> evaluations,
+		Long userCardId
+	) {
+		if (userCardId == null) {
+			return null;
+		}
+
+		for (CardBenefitEvaluation evaluation : evaluations) {
+			if (userCardId.equals(
+				evaluation.card().getUserCardId()
+			)) {
+				return evaluation;
+			}
+		}
+
+		return null;
+	}
+
+	private CardBenefitEvaluation findNextCardEvaluation(
+		List<CardBenefitEvaluation> evaluations,
+		Long excludedUserCardId
+	) {
+		for (CardBenefitEvaluation evaluation : evaluations) {
+			if (!excludedUserCardId.equals(
+				evaluation.card().getUserCardId()
+			)) {
+				return evaluation;
+			}
+		}
+
+		return null;
+	}
+
+	private List<CardBenefitEvaluation> evaluateCards(
+		SpendingPatternData pattern,
+		List<CardData> cards,
+		List<MonthlyUsageData> monthlyUsages
+	) {
+		List<CardBenefitEvaluation> evaluations =
+			new ArrayList<>();
+
+		for (CardData card : cards) {
+			List<PerformanceTier> tiers =
+				BenefitJsonParser.parse(
+					card.getBenefitsInfo(),
+					objectMapper
+				);
+
+			if (tiers.isEmpty()) {
+				continue;
+			}
+
+			long previousMonthSpendingAmount =
+				card.getPreviousMonthSpendingAmount() == null
+					? 0L
+					: card.getPreviousMonthSpendingAmount();
+
+			PerformanceTier activeTier =
+				BenefitEngine.activeTier(
+					tiers,
+					previousMonthSpendingAmount
+				);
+
+			CardBenefitEvaluation bestCardEvaluation =
+				findBestCardEvaluation(
+					pattern,
+					card,
+					activeTier,
+					monthlyUsages
+				);
+
+			if (bestCardEvaluation != null) {
+				evaluations.add(bestCardEvaluation);
+			}
+		}
+
+		return evaluations.stream()
+			.sorted(
+				Comparator.comparingLong(
+					CardBenefitEvaluation
+						::expectedSavingAmount
+				).reversed()
+			)
+			.toList();
+	}
+
+	private CardBenefitEvaluation findBestCardEvaluation(
+		SpendingPatternData pattern,
+		CardData card,
+		PerformanceTier activeTier,
+		List<MonthlyUsageData> monthlyUsages
+	) {
+		CardBenefitEvaluation bestCardEvaluation = null;
+
+		for (BenefitNode benefit
+			: activeTier.benefitsForCategory(
+			pattern.getCategoryCode()
+		)) {
+
+			CardBenefitEvaluation evaluation =
+				createCardBenefitEvaluation(
+					pattern,
+					card,
+					activeTier,
+					benefit,
+					monthlyUsages
+				);
+
+			if (isBetterEvaluation(evaluation, bestCardEvaluation)) {
+				bestCardEvaluation = evaluation;
+			}
+		}
+
+		return bestCardEvaluation;
+	}
+
+	private CardBenefitEvaluation createCardBenefitEvaluation(
+		SpendingPatternData pattern,
+		CardData card,
+		PerformanceTier activeTier,
+		BenefitNode benefit,
+		List<MonthlyUsageData> monthlyUsages
+	) {
+		if (!matchesMerchant(pattern, benefit)) {
+			return null;
+		}
+
+		long expectedSavingAmount =
+			calculateExpectedSavingAmount(
+				pattern,
+				card,
+				activeTier,
+				benefit,
+				monthlyUsages
+			);
+
+		if (expectedSavingAmount <= 0L) {
+			return null;
+		}
+
+		return new CardBenefitEvaluation(
+			card,
+			activeTier,
+			benefit,
+			expectedSavingAmount
+		);
+	}
+
+	private boolean isBetterEvaluation(
+		CardBenefitEvaluation evaluation,
+		CardBenefitEvaluation currentBest
+	) {
+		return evaluation != null
+			&& (currentBest == null
+				|| evaluation.expectedSavingAmount()
+				> currentBest.expectedSavingAmount());
+	}
+
+	private long calculateUseThenSwitchSaving(
+		boolean usingBestCard,
+		CardBenefitEvaluation bestEvaluation,
+		CardBenefitEvaluation usualEvaluation,
+		CardBenefitEvaluation nextEvaluation
+	) {
+		if (usingBestCard) {
+			return nextEvaluation.expectedSavingAmount();
+		}
+
+		long usualSavingAmount =
+			usualEvaluation == null
+				? 0L
+				: usualEvaluation.expectedSavingAmount();
+
+		return Math.max(
+			bestEvaluation.expectedSavingAmount()
+				- usualSavingAmount,
+			0L
+		);
+	}
+
+	private Integer calculateRemainingUsageCount(
+		CardBenefitEvaluation evaluation,
+		String categoryCode,
+		List<MonthlyUsageData> monthlyUsages
+	) {
+		Integer monthlyCountLimit =
+			evaluation.benefit().monthlyCountLimit();
+
+		if (monthlyCountLimit == null) {
+			return null;
+		}
+
+		int usedCount =
+			findUsedCount(
+				evaluation.card().getUserCardId(),
+				categoryCode,
+				monthlyUsages
+			);
+
+		return Math.max(
+			monthlyCountLimit - usedCount,
+			0
+		);
+	}
+
+	private record CardBenefitEvaluation(
+		CardData card,
+		PerformanceTier tier,
+		BenefitNode benefit,
+		long expectedSavingAmount
+	) {
+	}
+
+	private record StrategyDecision(
+		String strategyType,
+		String nextRecommendedCardName,
+		Integer remainingUsageCount,
+		long expectedAdditionalSavingAmount,
+		String reason
+	) {
+	}
+
+	// 딱 한 번만 존재해야 함
+	private static final class SpendingPatternAccumulator {
+
+		private final String categoryCode;
+		private final String categoryName;
+
+		private final Map<DayOfWeek, Integer> paymentCountByDay =
+			new EnumMap<>(DayOfWeek.class);
+
+		private final Map<String, Integer> paymentCountByMerchant =
+			new LinkedHashMap<>();
+
+		private final Map<Long, Integer> paymentCountByUserCard =
+			new LinkedHashMap<>();
+
+		private BigDecimal totalAmount = BigDecimal.ZERO;
+		private int paymentCount;
+
+		private SpendingPatternAccumulator(
+			String categoryCode,
+			String categoryName
+		) {
+			this.categoryCode = categoryCode;
+			this.categoryName = categoryName;
+		}
+
+		private void add(PaymentData payment) {
+			totalAmount =
+				totalAmount.add(payment.getOriginalAmount());
+
+			paymentCount++;
+
+			DayOfWeek dayOfWeek =
+				payment.getPaymentTime().getDayOfWeek();
+
+			paymentCountByDay.merge(
+				dayOfWeek,
+				1,
+				Integer::sum
+			);
+
+			paymentCountByMerchant.merge(
+				payment.getMerchantName(),
+				1,
+				Integer::sum
+			);
+
+			if (payment.getUserCardId() != null) {
+				paymentCountByUserCard.merge(
+					payment.getUserCardId(),
+					1,
+					Integer::sum
+				);
+			}
+		}
+
+		private SpendingPatternData toPattern() {
+			BigDecimal averageAmount =
+				totalAmount.divide(
+					BigDecimal.valueOf(paymentCount),
+					0,
+					RoundingMode.HALF_UP
+				);
+
+			return SpendingPatternData.builder()
+				.categoryCode(categoryCode)
+				.categoryName(categoryName)
+				.usualDayOfWeek(
+					findUsualDayOfWeek().name()
+				)
+				.usualMerchantName(
+					findUsualMerchantName()
+				)
+				.usualUserCardId(
+					findUsualUserCardId()
+				)
+				.averageAmount(averageAmount)
+				.paymentCount(paymentCount)
+				.build();
+		}
+
+		private DayOfWeek findUsualDayOfWeek() {
+			DayOfWeek usualDayOfWeek =
+				DayOfWeek.MONDAY;
+
+			int maximumCount = -1;
+
+			for (DayOfWeek dayOfWeek
+				: DayOfWeek.values()) {
+
+				int count =
+					paymentCountByDay.getOrDefault(
+						dayOfWeek,
+						0
+					);
+
+				if (count > maximumCount) {
+					maximumCount = count;
+					usualDayOfWeek = dayOfWeek;
+				}
+			}
+
+			return usualDayOfWeek;
+		}
+
+		private String findUsualMerchantName() {
+			String usualMerchantName = null;
+			int maximumCount = -1;
+
+			for (Map.Entry<String, Integer> entry
+				: paymentCountByMerchant.entrySet()) {
+
+				if (entry.getValue() > maximumCount) {
+					maximumCount = entry.getValue();
+					usualMerchantName = entry.getKey();
+				}
+			}
+
+			return usualMerchantName;
+		}
+
+		private Long findUsualUserCardId() {
+			Long usualUserCardId = null;
+			int maximumCount = -1;
+
+			for (Map.Entry<Long, Integer> entry
+				: paymentCountByUserCard.entrySet()) {
+
+				if (entry.getValue() > maximumCount) {
+					maximumCount = entry.getValue();
+					usualUserCardId = entry.getKey();
+				}
+			}
+
+			return usualUserCardId;
+		}
 	}
 
 	@Override

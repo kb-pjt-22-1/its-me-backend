@@ -3,6 +3,7 @@ package site.benepay.domain.benefit.service;
 import java.util.List;
 
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
+import site.benepay.domain.benefit.dto.BenefitCoachResponseDto;
 import site.benepay.domain.benefit.dto.CategoryBenefitStatusResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 
@@ -31,6 +32,15 @@ public interface BenefitService {
 		Long userId,
 		String yearMonth
 	);
+
+	/**
+	 * 최근 3개월 결제 패턴과 보유 카드 혜택을 분석하여
+	 * AI 혜택 코칭 결과를 생성한다.
+	 *
+	 * @param userId 로그인 사용자 ID
+	 * @return AI 혜택 코칭 결과
+	 */
+	BenefitCoachResponseDto getBenefitCoaching(Long userId);
 
 	/**
 	 * 사용자가 보유한 전체 카드의 카테고리별 혜택 현황(금액 한도/횟수 한도 대비 소진량)을

@@ -16,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
+import site.benepay.domain.benefit.dto.BenefitCoachResponseDto;
+import site.benepay.domain.benefit.dto.BenefitCoachResponseDto.BenefitCoachItemDto;
 import site.benepay.domain.benefit.service.BenefitService;
 
 @ExtendWith(MockitoExtension.class)
@@ -105,5 +107,40 @@ class BenefitControllerTest {
 				USER_ID,
 				currentYear
 			);
+	}
+
+	@Test
+	void getBenefitCoachingReturnsServiceResponse() {
+		BenefitCoachItemDto item =
+			BenefitCoachItemDto.builder()
+				.title("토요일 주유소에는")
+				.message(
+					"NEED Global 카드를 사용하면 215원의 추가 혜택을 기대할 수 있어요."
+				)
+				.recommendedCardName("NEED Global 카드")
+				.expectedSavingAmount(215L)
+				.strategyType("BENEFIT_GUIDE")
+				.expectedAdditionalSavingAmount(215L)
+				.build();
+
+		BenefitCoachResponseDto serviceResult =
+			BenefitCoachResponseDto.builder()
+				.summary("최근 소비 패턴에 따른 카드 추천입니다.")
+				.items(List.of(item))
+				.build();
+
+		when(benefitService.getBenefitCoaching(USER_ID))
+			.thenReturn(serviceResult);
+
+		ResponseEntity<BenefitCoachResponseDto> response =
+			controller.getBenefitCoaching(USER_ID);
+
+		assertThat(response.getStatusCode())
+			.isEqualTo(HttpStatus.OK);
+		assertThat(response.getBody())
+			.isSameAs(serviceResult);
+
+		verify(benefitService)
+			.getBenefitCoaching(USER_ID);
 	}
 }
