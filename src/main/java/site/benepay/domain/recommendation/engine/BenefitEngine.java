@@ -225,7 +225,7 @@ public final class BenefitEngine {
 		double discount;
 		if (benefit.discountAmount() > 0) {
 			Double limit = benefit.monthlyCountLimit() == null
-				? null : Math.max(0.0, benefit.monthlyCountLimit() - usage.usedMonthlyCount());
+				? null : Math.max(0.0, (double) benefit.monthlyCountLimit() - usage.usedMonthlyCount());
 			if (benefit.annualCountLimit() != null) {
 				double remainingAnnual = Math.max(0, benefit.annualCountLimit() - usage.usedAnnualCount());
 				double perMonth = remainingAnnual / 12.0;
