@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import site.benepay.auth.security.jwt.JwtProperties;
 import site.benepay.common.event.UserSignedUpEvent;
 import site.benepay.common.exception.AccountLockedException;
 import site.benepay.common.exception.DuplicateUserException;
@@ -28,8 +29,10 @@ import site.benepay.common.exception.UserNotFoundException;
 import site.benepay.common.exception.WithdrawalNotConfirmedException;
 import site.benepay.common.util.RedisKeys;
 import site.benepay.domain.user.dto.ChangePasswordRequestDto;
+import site.benepay.domain.user.dto.LoginResponseDto;
 import site.benepay.domain.user.dto.RegisterPinRequestDto;
 import site.benepay.domain.user.dto.SignUpRequestDto;
+import site.benepay.domain.user.dto.TokenPairDto;
 import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
 import site.benepay.domain.user.dto.UpdateProfileRequestDto;
 import site.benepay.domain.user.dto.UserResponseDto;
@@ -43,6 +46,7 @@ import site.benepay.domain.user.vo.User;
 class UserServiceTest {
 
 	private static final Long USER_ID = 11L;
+	private static final String VALID_PIN = "481027";
 
 	@Mock
 	private UserMapper userMapper;
@@ -62,12 +66,27 @@ class UserServiceTest {
 	@Mock
 	private ApplicationEventPublisher eventPublisher;
 
+	@Mock
+	private JwtProperties jwtProperties;
+
 	private UserService userService;
 
 	@BeforeEach
 	void setUp() {
 		userService = new UserServiceImpl(userMapper, passwordEncoder, redisLockoutService, tokenService,
-			signupVerificationStore, eventPublisher);
+			signupVerificationStore, eventPublisher, jwtProperties);
+	}
+
+	private SignUpRequestDto signUpRequest(String loginId, String verificationToken) {
+		return new SignUpRequestDto(loginId, "Test1234!", VALID_PIN, verificationToken, "fcm-token");
+	}
+
+	// 토큰 발급까지 도달하는 성공 케이스 전용 - 실패 케이스 테스트는 이 스텁이 필요 없다
+	// (tokenService.issueTokenPair 호출 전에 예외가 던져지므로).
+	private void stubTokenIssuance() {
+		when(tokenService.issueTokenPair(any(User.class)))
+			.thenReturn(TokenPairDto.builder().accessToken("access-token").refreshToken("refresh-token").build());
+		when(jwtProperties.getAccessTokenExpirationMillis()).thenReturn(600_000L);
 	}
 
 	private SignupVerificationStore.VerifiedIdentity verifiedIdentity() {
@@ -93,27 +112,33 @@ class UserServiceTest {
 
 	@Test
 	void signUpSucceedsWhenNothingIsDuplicate() {
-		SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
+		SignUpRequestDto request = signUpRequest("newuser", "valid-token");
 		when(userMapper.existsByLoginId("newuser")).thenReturn(false);
 		when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
 		when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
 		when(passwordEncoder.encode("Test1234!")).thenReturn("encoded-password");
+		stubTokenIssuance();
 
-		UserResponseDto response = userService.signUp(request);
+		LoginResponseDto response = userService.signUp(request);
 
+		// 가입 성공 시 즉시 토큰을 발급한다(자동 로그인) - 프론트가 재로그인 없이 홈으로
+		// 이동할 수 있어야 하므로, login()과 동일한 응답 모양을 그대로 검증한다.
 		assertThat(response.getLoginId()).isEqualTo("newuser");
-		assertThat(response.getBirthDate()).isEqualTo("19900101");
-		assertThat(response.getRole()).isEqualTo(Role.USER);
+		assertThat(response.getTokenType()).isEqualTo("Bearer");
+		assertThat(response.getAccessToken()).isEqualTo("access-token");
+		assertThat(response.getRefreshToken()).isEqualTo("refresh-token");
 		verify(userMapper).insert(any(User.class));
 	}
 
 	@Test
 	void signUpMapsVerifiedIdentityAndRequestFieldsOntoTheInsertedUser() {
-		SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
+		SignUpRequestDto request = signUpRequest("newuser", "valid-token");
 		when(userMapper.existsByLoginId("newuser")).thenReturn(false);
 		when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
 		when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
 		when(passwordEncoder.encode("Test1234!")).thenReturn("encoded-password");
+		when(passwordEncoder.encode(VALID_PIN)).thenReturn("encoded-pin");
+		stubTokenIssuance();
 
 		userService.signUp(request);
 
@@ -121,10 +146,11 @@ class UserServiceTest {
 		verify(userMapper).insert(inserted.capture());
 
 		User user = inserted.getValue();
-		// loginId/password/fcmToken은 요청에서, name/phoneNumber/birthDate/di/ciEncrypted는
+		// loginId/password/pin/fcmToken은 요청에서, name/phoneNumber/birthDate/di/ciEncrypted는
 		// 토큰으로 복원한 검증 결과에서 온다 - 클라이언트가 개인정보를 직접 못 정하는 게 핵심이다.
 		assertThat(user.getLoginId()).isEqualTo("newuser");
 		assertThat(user.getLoginPasswordHash()).isEqualTo("encoded-password");
+		assertThat(user.getPinHash()).isEqualTo("encoded-pin");
 		assertThat(user.getFcmToken()).isEqualTo("fcm-token");
 		assertThat(user.getName()).isEqualTo("New User");
 		assertThat(user.getPhoneNumber()).isEqualTo("010-1111-2222");
@@ -139,8 +165,21 @@ class UserServiceTest {
 	}
 
 	@Test
+	void signUpWithInvalidPinFormatThrowsAndNeverInserts() {
+		SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "123456", "valid-token", "fcm-token");
+		when(userMapper.existsByLoginId("newuser")).thenReturn(false);
+		when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
+		when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
+
+		assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(InvalidPinFormatException.class);
+
+		verify(userMapper, never()).insert(any());
+		verify(eventPublisher, never()).publishEvent(any());
+	}
+
+	@Test
 	void signUpWithDuplicateLoginIdThrowsAndNeverTouchesTheVerificationToken() {
-		SignUpRequestDto request = new SignUpRequestDto("existing", "Test1234!", "valid-token", "fcm-token");
+		SignUpRequestDto request = signUpRequest("existing", "valid-token");
 		when(userMapper.existsByLoginId("existing")).thenReturn(true);
 
 		assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
@@ -153,7 +192,7 @@ class UserServiceTest {
 
 	@Test
 	void signUpWithInvalidOrExpiredTokenThrowsAndNeverInserts() {
-		SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "stale-token", "fcm-token");
+		SignUpRequestDto request = signUpRequest("newuser", "stale-token");
 		when(userMapper.existsByLoginId("newuser")).thenReturn(false);
 		when(signupVerificationStore.redeem("stale-token")).thenReturn(Optional.empty());
 
@@ -164,7 +203,7 @@ class UserServiceTest {
 
 	@Test
 	void signUpWithDuplicateDiHashThrowsAfterRedeemingTheToken() {
-		SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
+		SignUpRequestDto request = signUpRequest("newuser", "valid-token");
 		when(userMapper.existsByLoginId("newuser")).thenReturn(false);
 		when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
 		when(userMapper.existsByDiHash("di-hash")).thenReturn(true);
@@ -176,7 +215,7 @@ class UserServiceTest {
 
 	@Test
 	void signUpWithDuplicateCiHashThrowsAfterRedeemingTheToken() {
-		SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
+		SignUpRequestDto request = signUpRequest("newuser", "valid-token");
 		when(userMapper.existsByLoginId("newuser")).thenReturn(false);
 		when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
 		when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
@@ -191,11 +230,12 @@ class UserServiceTest {
 	// signUp()이 그 이벤트를 올바른 값으로, 성공했을 때만 발행하는지를 확인한다.
 	@Test
 	void signUpPublishesUserSignedUpEventAfterInsert() {
-		SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
+		SignUpRequestDto request = signUpRequest("newuser", "valid-token");
 		when(userMapper.existsByLoginId("newuser")).thenReturn(false);
 		when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
 		when(userMapper.existsByDiHash("di-hash")).thenReturn(false);
 		when(passwordEncoder.encode("Test1234!")).thenReturn("encoded-password");
+		stubTokenIssuance();
 
 		userService.signUp(request);
 
@@ -206,7 +246,7 @@ class UserServiceTest {
 
 	@Test
 	void signUpWithDuplicateLoginIdNeverPublishesEvent() {
-		SignUpRequestDto request = new SignUpRequestDto("existing", "Test1234!", "valid-token", "fcm-token");
+		SignUpRequestDto request = signUpRequest("existing", "valid-token");
 		when(userMapper.existsByLoginId("existing")).thenReturn(true);
 
 		assertThatThrownBy(() -> userService.signUp(request)).isInstanceOf(DuplicateUserException.class);
@@ -216,7 +256,7 @@ class UserServiceTest {
 
 	@Test
 	void signUpWithDuplicateDiHashNeverPublishesEvent() {
-		SignUpRequestDto request = new SignUpRequestDto("newuser", "Test1234!", "valid-token", "fcm-token");
+		SignUpRequestDto request = signUpRequest("newuser", "valid-token");
 		when(userMapper.existsByLoginId("newuser")).thenReturn(false);
 		when(signupVerificationStore.redeem("valid-token")).thenReturn(Optional.of(verifiedIdentity()));
 		when(userMapper.existsByDiHash("di-hash")).thenReturn(true);

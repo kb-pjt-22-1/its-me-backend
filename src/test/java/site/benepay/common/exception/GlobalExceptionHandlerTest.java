@@ -112,9 +112,18 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void handlePortOneVerificationReturnsBadRequest() {
+    void handleKbCustomerNotFoundReturnsUnprocessableEntity() {
         ResponseEntity<ErrorResponse> response =
-                handler.handlePortOneVerification(new PortOneVerificationException("본인인증에 실패했습니다."), request);
+                handler.handleKbCustomerNotFound(new KbCustomerNotFoundException("KB에 등록된 회원이 아닙니다."), request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+
+    @Test
+    void handleVerificationCodeInvalidReturnsBadRequest() {
+        ResponseEntity<ErrorResponse> response =
+                handler.handleVerificationCodeInvalid(
+                        new VerificationCodeInvalidException("인증번호가 올바르지 않습니다."), request);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }

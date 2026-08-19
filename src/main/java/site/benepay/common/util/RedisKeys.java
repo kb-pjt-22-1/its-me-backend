@@ -45,6 +45,28 @@ public final class RedisKeys {
         return "signup:verify:" + token;
     }
 
+    // 회원가입 1단계(휴대폰 본인인증) 전용 - 아직 userId가 없으므로 전화번호를 키로 잠근다.
+
+    public static String signupIdentityFailure(String phoneNumber) {
+        return "signup:identity:failure:" + phoneNumber;
+    }
+
+    public static String signupIdentityLock(String phoneNumber) {
+        return "signup:identity:lock:" + phoneNumber;
+    }
+
+    public static String signupOtp(String phoneNumber) {
+        return "signup:otp:" + phoneNumber;
+    }
+
+    public static String signupOtpFailure(String phoneNumber) {
+        return "signup:otp:failure:" + phoneNumber;
+    }
+
+    public static String signupOtpLock(String phoneNumber) {
+        return "signup:otp:lock:" + phoneNumber;
+    }
+
     public static String paymentToken(String paymentTokenId) {
         return "payment:token:" + paymentTokenId;
     }

@@ -118,13 +118,6 @@ public class AuthServiceImpl implements AuthService {
 
 	private LoginResponseDto issueTokensFor(User user) {
 		TokenPairDto tokens = tokenService.issueTokenPair(user);
-		return LoginResponseDto.builder()
-			.tokenType("Bearer")
-			.accessToken(tokens.getAccessToken())
-			.refreshToken(tokens.getRefreshToken())
-			.expiresIn(jwtProperties.getAccessTokenExpirationMillis() / 1000)
-			.userId(user.getUserId())
-			.loginId(user.getLoginId())
-			.build();
+		return LoginResponseDto.of(user, tokens, jwtProperties.getAccessTokenExpirationMillis() / 1000);
 	}
 }

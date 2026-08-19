@@ -2,6 +2,8 @@ package site.benepay.integration.kbcard.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -9,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -18,6 +21,8 @@ import org.springframework.web.client.RestTemplate;
 import site.benepay.common.exception.KbCardIntegrationException;
 import site.benepay.integration.kbcard.dto.KbCardResponseDto;
 import site.benepay.integration.kbcard.dto.KbCustomerCardsResponseDto;
+import site.benepay.integration.kbcard.dto.KbCustomerVerifyRequestDto;
+import site.benepay.integration.kbcard.dto.KbCustomerVerifyResponseDto;
 
 @ExtendWith(MockitoExtension.class)
 class KbCardClientTest {
@@ -95,6 +100,50 @@ class KbCardClientTest {
 			.thenThrow(cause);
 
 		assertThatThrownBy(() -> kbCardClient.findCardByReferenceId(CARD_REFERENCE_ID))
+			.isInstanceOf(KbCardIntegrationException.class)
+			.hasCause(cause);
+	}
+
+	@Test
+	@DisplayName("ciHash를 POST 바디로 보내 KB 실명 회원 여부를 확인한다")
+	void verifyCustomerPostsIdentityAndReturnsResponse() {
+		String url = BASE_URL + "/api/v1/customers/verify";
+		KbCustomerVerifyResponseDto expected = new KbCustomerVerifyResponseDto();
+		expected.setRegistered(true);
+		expected.setCustomerReferenceId("kb-customer-001");
+		when(restTemplate.postForObject(eq(url), any(KbCustomerVerifyRequestDto.class),
+			eq(KbCustomerVerifyResponseDto.class))).thenReturn(expected);
+
+		KbCustomerVerifyResponseDto result = kbCardClient.verifyCustomer(CI_HASH);
+
+		assertThat(result).isSameAs(expected);
+		ArgumentCaptor<KbCustomerVerifyRequestDto> captor = ArgumentCaptor.forClass(KbCustomerVerifyRequestDto.class);
+		verify(restTemplate).postForObject(eq(url), captor.capture(), eq(KbCustomerVerifyResponseDto.class));
+		assertThat(captor.getValue().getCiHash()).isEqualTo(CI_HASH);
+	}
+
+	@Test
+	@DisplayName("회원 확인 HTTP 응답이 null이면 registered=false인 빈 응답 DTO를 반환한다")
+	void verifyCustomerReturnsUnregisteredDtoForNullResponse() {
+		String url = BASE_URL + "/api/v1/customers/verify";
+		when(restTemplate.postForObject(eq(url), any(KbCustomerVerifyRequestDto.class),
+			eq(KbCustomerVerifyResponseDto.class))).thenReturn(null);
+
+		KbCustomerVerifyResponseDto result = kbCardClient.verifyCustomer(CI_HASH);
+
+		assertThat(result).isNotNull();
+		assertThat(result.isRegistered()).isFalse();
+	}
+
+	@Test
+	@DisplayName("회원 확인 RestClientException을 KB 연동 예외로 변환한다")
+	void verifyCustomerWrapsRestClientException() {
+		String url = BASE_URL + "/api/v1/customers/verify";
+		RestClientException cause = new RestClientException("connection failed");
+		when(restTemplate.postForObject(eq(url), any(KbCustomerVerifyRequestDto.class),
+			eq(KbCustomerVerifyResponseDto.class))).thenThrow(cause);
+
+		assertThatThrownBy(() -> kbCardClient.verifyCustomer(CI_HASH))
 			.isInstanceOf(KbCardIntegrationException.class)
 			.hasCause(cause);
 	}
