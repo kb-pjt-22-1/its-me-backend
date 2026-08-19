@@ -13,11 +13,14 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -38,7 +41,11 @@ import site.benepay.domain.benefit.dto.BenefitCoachDataDto.SpendingPatternData;
 import site.benepay.domain.benefit.dto.BenefitCoachResponseDto;
 import site.benepay.domain.benefit.dto.BenefitCoachResponseDto.BenefitCoachItemDto;
 import site.benepay.domain.benefit.dto.CategoryBenefitStatusResponseDto;
+import site.benepay.common.facade.Facade;
 import site.benepay.domain.benefit.dto.DailyBenefitAmountDto;
+import site.benepay.domain.benefit.dto.ExpiringBenefitResponseDto;
+import site.benepay.domain.benefit.dto.ExpiringBenefitsResponseDto;
+import site.benepay.domain.benefit.dto.NearbyBenefitResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto.CategoryBenefitDto;
 import site.benepay.domain.benefit.mapper.BenefitMapper;
@@ -48,8 +55,13 @@ import site.benepay.domain.benefit.service.OpenAiClient.OpenAiCoachingText;
 import site.benepay.domain.benefit.vo.CategoryBenefitUsageVO;
 import site.benepay.domain.benefit.vo.HeldCardBenefitVO;
 import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
+import site.benepay.domain.benefit.vo.RecentPaymentLocationVO;
 import site.benepay.domain.merchant.dto.MerchantCategoryResponseDto;
+import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantCategoryService;
+import site.benepay.domain.merchant.service.MerchantService;
+import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
+import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
 import site.benepay.domain.recommendation.engine.BenefitEngine;
 import site.benepay.domain.recommendation.engine.BenefitJsonParser;
 import site.benepay.domain.recommendation.engine.BenefitNode;
@@ -70,12 +82,19 @@ public class BenefitServiceImpl implements BenefitService {
 
 	private static final long MINIMUM_SWITCH_SAVING_AMOUNT = 500L;
 
+	// "최근 결제한 곳 주변" 검색 반경. findNearby 자체엔 반경 제한이 없어서(가장 가까운 N개만
+	// 줌) 넉넉히 받아와 이 값으로 걸러낸다.
+	private static final double NEARBY_RADIUS_METERS = 2_000.0;
+	private static final int NEARBY_SEARCH_LIMIT = 50;
+
 	private final BenefitMapper benefitMapper;
 	private final MerchantCategoryService merchantCategoryService;
 	private final ObjectMapper objectMapper;
 	private final RecommendationParamsLoader recommendationParamsLoader;
 	private final OpenAiClient openAiClient;
 	private final BenefitCoachDataLoader benefitCoachDataLoader;
+	private final MerchantService merchantService;
+	private final Facade facade;
 
 	@Override
 	public List<AnnualFeeBreakEvenResponseDto> getAnnualFeeBreakEven(
@@ -468,8 +487,8 @@ public class BenefitServiceImpl implements BenefitService {
 			new ArrayList<>();
 
 		for (int index = 0;
-		     index < calculatedData.size();
-		     index++) {
+			 index < calculatedData.size();
+			 index++) {
 
 			CalculatedCoachingData data =
 				calculatedData.get(index);
@@ -487,7 +506,7 @@ public class BenefitServiceImpl implements BenefitService {
 				coachingText == null
 					|| coachingText.message().isBlank()
 					? data.getRecommendedCardName()
-					  + " 사용이 유리합니다."
+					+ " 사용이 유리합니다."
 					: coachingText.message();
 
 			items.add(
@@ -849,7 +868,7 @@ public class BenefitServiceImpl implements BenefitService {
 					? 0
 					: Math.round(
 					(amount * 100f)
-					/ totalBenefitAmount
+						/ totalBenefitAmount
 				);
 
 			breakdown.add(
@@ -1286,8 +1305,8 @@ public class BenefitServiceImpl implements BenefitService {
 	) {
 		return evaluation != null
 			&& (currentBest == null
-				|| evaluation.expectedSavingAmount()
-				> currentBest.expectedSavingAmount());
+			|| evaluation.expectedSavingAmount()
+			> currentBest.expectedSavingAmount());
 	}
 
 	private long calculateUseThenSwitchSaving(
@@ -1690,5 +1709,218 @@ public class BenefitServiceImpl implements BenefitService {
 				countLimit != null && usedCount >= countLimit
 			)
 			.build();
+	}
+
+	// ==================================================================== 놓치기 쉬운 혜택 (#48)
+
+	@Override
+	public ExpiringBenefitsResponseDto getExpiringBenefits(Long userId) {
+		return getExpiringBenefits(userId, LocalDate.now(ZONE));
+	}
+
+	// 테스트에서 "말일"같은 경계값을 재현할 수 있도록 오늘 날짜를 인자로 받는 버전을 따로 둔다
+	// (BenefitEngine.remainingFactor와 같은 이유 - 내부에서 LocalDate.now()를 직접 부르면
+	// 특정 날짜를 재현하는 테스트를 만들 수 없다).
+	ExpiringBenefitsResponseDto getExpiringBenefits(
+		Long userId,
+		LocalDate today
+	) {
+		YearMonth targetYearMonth = YearMonth.from(today);
+		YearMonth previousYearMonth = targetYearMonth.minusMonths(1);
+
+		List<HeldCardBenefitVO> heldCards = benefitMapper.findHeldCardBenefitsByUserId(
+			userId,
+			previousYearMonth.format(YEAR_MONTH_FORMATTER)
+		);
+
+		if (heldCards.isEmpty()) {
+			return ExpiringBenefitsResponseDto.builder()
+				.daysRemaining(remainingDaysInMonth(today))
+				.benefits(List.of())
+				.nearbyMerchantBenefits(findNearbyMerchantBenefits(userId))
+				.build();
+		}
+
+		LocalDateTime monthStart = startOfMonth(targetYearMonth);
+		LocalDateTime monthEnd = startOfMonth(targetYearMonth.plusMonths(1));
+
+		Map<String, CategoryBenefitUsageVO> usageByCardAndCategory = groupUsageByCardAndCategory(
+			benefitMapper.findCategoryBenefitUsageByUserId(userId, monthStart, monthEnd)
+		);
+
+		List<ExpiringCandidate> candidates = new ArrayList<>();
+		for (HeldCardBenefitVO card : heldCards) {
+			candidates.addAll(
+				findUnusedBenefitCandidates(card, monthStart, monthEnd, usageByCardAndCategory)
+			);
+		}
+
+		List<ExpiringBenefitResponseDto> top3 = candidates.stream()
+			.sorted(Comparator.comparingLong(ExpiringCandidate::amount).reversed())
+			.limit(3)
+			.map(this::toExpiringBenefitResponseDto)
+			.toList();
+
+		return ExpiringBenefitsResponseDto.builder()
+			.daysRemaining(remainingDaysInMonth(today))
+			.benefits(top3)
+			.nearbyMerchantBenefits(findNearbyMerchantBenefits(userId))
+			.build();
+	}
+
+	/**
+	 * 가장 최근 승인된 결제 1건의 가맹점 위치 반경 2km 이내에서, 지금 혜택 받을 수 있는
+	 * 매장을 가까운 순으로 최대 3곳 조회한다("최근 결제한 곳 주변에서 받을 수 있는 혜택",
+	 * #48 2번 섹션). 결제 이력이 없으면 빈 리스트.
+	 */
+	private List<NearbyBenefitResponseDto> findNearbyMerchantBenefits(Long userId) {
+		Optional<RecentPaymentLocationVO> recentLocation =
+			benefitMapper.findMostRecentPaymentLocationByUserId(userId);
+
+		if (recentLocation.isEmpty()) {
+			return List.of();
+		}
+
+		RecentPaymentLocationVO location = recentLocation.get();
+		List<MerchantResponseDto> nearby = merchantService.getNearbyMerchants(
+			location.getLatitude().doubleValue(),
+			location.getLongitude().doubleValue(),
+			null,
+			NEARBY_SEARCH_LIMIT
+		);
+
+		List<MerchantResponseDto> withinRadius = nearby.stream()
+			.filter(m -> m.getDistanceMeters() != null && m.getDistanceMeters() <= NEARBY_RADIUS_METERS)
+			.toList();
+
+		if (withinRadius.isEmpty()) {
+			return List.of();
+		}
+
+		return facade.getRecommendedMerchants(userId, withinRadius).stream()
+			.filter(NearbyMerchantRecommendationResponseDto::isBenefitAvailable)
+			.sorted(Comparator.comparing(
+				NearbyMerchantRecommendationResponseDto::getDistanceMeters,
+				Comparator.nullsLast(Double::compareTo)
+			))
+			.limit(3)
+			.map(this::toNearbyBenefitResponseDto)
+			.toList();
+	}
+
+	private NearbyBenefitResponseDto toNearbyBenefitResponseDto(
+		NearbyMerchantRecommendationResponseDto merchant
+	) {
+		List<RecommendedCardResponseDto> recommendedCards = merchant.getRecommendedCards();
+		RecommendedCardResponseDto bestCard = recommendedCards.isEmpty() ? null : recommendedCards.get(0);
+
+		return NearbyBenefitResponseDto.builder()
+			.merchantName(merchant.getMerchantName())
+			.cardName(bestCard == null ? null : bestCard.getCardName())
+			.benefitSummary(bestCard == null ? null : bestCard.getBenefitSummary())
+			.distanceMeters(merchant.getDistanceMeters())
+			.build();
+	}
+
+	/**
+	 * 카드 한 장의 이번 달 적용 중인 혜택(activeTier) 전부를 훑어서 아직 안 쓴 것만 후보로
+	 * 남긴다. getCategoryBenefitStatus와 달리 ALL_MERCHANTS/브랜드 한정 혜택도 대상이다 -
+	 * categoryCodes가 있는 혜택은 카테고리 단위 사용 이력으로, 없는 혜택은 이번 달 결제한
+	 * 가맹점명으로 사용 여부를 판정한다(가맹점명 조회는 그런 혜택이 실제로 있을 때만 한다).
+	 */
+	private List<ExpiringCandidate> findUnusedBenefitCandidates(
+		HeldCardBenefitVO card,
+		LocalDateTime monthStart,
+		LocalDateTime monthEnd,
+		Map<String, CategoryBenefitUsageVO> usageByCardAndCategory
+	) {
+		List<PerformanceTier> tiers = BenefitJsonParser.parse(card.getBenefitsInfo(), objectMapper);
+		if (tiers.isEmpty()) {
+			return List.of();
+		}
+
+		long prevMonthSpend = card.getPreviousMonthSpendingAmount() == null
+			? 0L
+			: card.getPreviousMonthSpendingAmount();
+		PerformanceTier activeTier = BenefitEngine.activeTier(tiers, prevMonthSpend);
+
+		Set<String> merchantsPaidThisMonth = null;
+		List<ExpiringCandidate> candidates = new ArrayList<>();
+
+		for (BenefitNode benefit : activeTier.realBenefits()) {
+			boolean used;
+			if (!benefit.categoryCodes().isEmpty()) {
+				used = benefit.categoryCodes().stream()
+					.anyMatch(code -> usageByCardAndCategory.containsKey(usageKey(card.getUserCardId(), code)));
+			} else {
+				if (merchantsPaidThisMonth == null) {
+					merchantsPaidThisMonth = new HashSet<>(
+						benefitMapper.findThisMonthMerchantNamesByUserCardId(
+							card.getUserCardId(), monthStart, monthEnd)
+					);
+				}
+				used = benefit.isMerchantLimited()
+					? benefit.merchantNames().stream().anyMatch(merchantsPaidThisMonth::contains)
+					: !merchantsPaidThisMonth.isEmpty();
+			}
+
+			if (used) {
+				continue;
+			}
+
+			Long amount = displayAmount(benefit);
+			if (amount == null || amount <= 0) {
+				// 리터당 주유 할인처럼 정액/정률로 딱 떨어지지 않는 혜택은 표시금액이 없어 제외한다.
+				continue;
+			}
+
+			candidates.add(new ExpiringCandidate(card.getCardName(), benefit, amount));
+		}
+
+		return candidates;
+	}
+
+	/**
+	 * 화면 표시용 금액. monthlyDiscountLimit(월 한도) > discountAmount(정액 할인) >
+	 * maximumDiscountPerTransaction(건당 한도) 순으로 존재하는 첫 값을 쓴다 - "이번 달
+	 * 놓치는 금액"이라는 화면 취지상 월 단위로 이미 확정된 숫자를 최우선으로 하고,
+	 * 건당 한도는 월 환산이 안 돼서 최후순위로 둔다.
+	 */
+	private Long displayAmount(BenefitNode benefit) {
+		if (benefit.monthlyDiscountLimit() != null) {
+			return benefit.monthlyDiscountLimit();
+		}
+		if (benefit.discountAmount() > 0) {
+			return benefit.discountAmount();
+		}
+		return benefit.maximumDiscountPerTransaction();
+	}
+
+	private ExpiringBenefitResponseDto toExpiringBenefitResponseDto(ExpiringCandidate candidate) {
+		return ExpiringBenefitResponseDto.builder()
+			.cardName(candidate.cardName())
+			.serviceName(candidate.benefit().serviceName())
+			.amount(candidate.amount())
+			.merchantNote(
+				candidate.benefit().isMerchantLimited()
+					? candidate.benefit().merchantNote()
+					: null
+			)
+			.build();
+	}
+
+	/**
+	 * 오늘을 포함하지 않고, 이번 달 마감까지 남은 일수. BenefitEngine.remainingFactor와
+	 * 동일한 계산식으로 통일했다.
+	 */
+	private int remainingDaysInMonth(LocalDate today) {
+		return today.lengthOfMonth() - today.getDayOfMonth();
+	}
+
+	private record ExpiringCandidate(
+		String cardName,
+		BenefitNode benefit,
+		long amount
+	) {
 	}
 }

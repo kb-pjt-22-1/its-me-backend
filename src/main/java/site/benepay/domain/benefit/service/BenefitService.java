@@ -5,6 +5,7 @@ import java.util.List;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.BenefitCoachResponseDto;
 import site.benepay.domain.benefit.dto.CategoryBenefitStatusResponseDto;
+import site.benepay.domain.benefit.dto.ExpiringBenefitsResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 
 public interface BenefitService {
@@ -55,4 +56,13 @@ public interface BenefitService {
 		Long userId,
 		String yearMonth
 	);
+
+	/**
+	 * 이번 달 적용 중인 혜택 중 아직 안 쓴 것을 금액 큰 순으로 최대 3개 조회한다("놓치기 쉬운
+	 * 혜택", #48). 카테고리 한정 혜택뿐 아니라 브랜드 한정/ALL_MERCHANTS 혜택도 대상이다.
+	 *
+	 * @param userId 로그인 사용자 ID
+	 * @return 미사용 혜택 상위 3개 + 이번 달 남은 일수
+	 */
+	ExpiringBenefitsResponseDto getExpiringBenefits(Long userId);
 }

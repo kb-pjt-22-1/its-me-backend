@@ -2,6 +2,7 @@ package site.benepay.domain.benefit.mapper;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.apache.ibatis.annotations.Param;
 
@@ -12,6 +13,7 @@ import site.benepay.domain.benefit.dto.DailyBenefitAmountDto;
 import site.benepay.domain.benefit.vo.CategoryBenefitUsageVO;
 import site.benepay.domain.benefit.vo.HeldCardBenefitVO;
 import site.benepay.domain.benefit.vo.MonthlyCategoryBenefitVO;
+import site.benepay.domain.benefit.vo.RecentPaymentLocationVO;
 
 public interface BenefitMapper {
 
@@ -97,5 +99,33 @@ public interface BenefitMapper {
 		@Param("userId") Long userId,
 		@Param("startPaymentTime") LocalDateTime startPaymentTime,
 		@Param("endPaymentTime") LocalDateTime endPaymentTime
+	);
+
+	/**
+	 * 카드 한 장이 이번 달 결제한 가맹점명 목록(중복 제거)을 조회한다. 놓치기 쉬운 혜택(#48)
+	 * 전용 - categoryCodes가 비어있는(브랜드 한정 또는 ALL_MERCHANTS) 혜택은
+	 * findCategoryBenefitUsageByUserId(카테고리 단위)로는 사용 여부를 알 수 없어서,
+	 * 가맹점명 자체로 대조한다.
+	 *
+	 * @param userCardId 보유 카드 ID
+	 * @param startPaymentTime 조회 시작 시각
+	 * @param endPaymentTime 조회 종료 시각, 해당 시각은 포함하지 않음
+	 * @return 이번 달 결제한 가맹점명 목록
+	 */
+	List<String> findThisMonthMerchantNamesByUserCardId(
+		@Param("userCardId") Long userCardId,
+		@Param("startPaymentTime") LocalDateTime startPaymentTime,
+		@Param("endPaymentTime") LocalDateTime endPaymentTime
+	);
+
+	/**
+	 * 가장 최근 승인된 결제 1건의 가맹점 위경도를 조회한다("최근 결제한 곳 주변에서 받을
+	 * 수 있는 혜택", #48 2번 섹션 전용). 결제 이력이 없으면 빈 값.
+	 *
+	 * @param userId 로그인 사용자 ID
+	 * @return 최근 결제 가맹점의 위경도
+	 */
+	Optional<RecentPaymentLocationVO> findMostRecentPaymentLocationByUserId(
+		@Param("userId") Long userId
 	);
 }
