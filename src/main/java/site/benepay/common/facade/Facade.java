@@ -62,7 +62,7 @@ public class Facade {
 			.sorted(
 				Comparator.comparing(NearbyMerchantRecommendationResponseDto::isBenefitAvailable).reversed()
 					.thenComparing(NearbyMerchantRecommendationResponseDto::getDistanceMeters,
-						Comparator.nullsLast(Double::compareTo))
+						Comparator.nullsLast(Long::compareTo))
 			)
 			.limit(limit)
 			.toList();

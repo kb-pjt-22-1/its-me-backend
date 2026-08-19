@@ -238,7 +238,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.filter(entry -> entry.getValue().total() > 0)
 			.sorted(Comparator.comparing(
 				(Map.Entry<MerchantResponseDto, Mode3Result> entry) -> entry.getKey().getDistanceMeters(),
-				Comparator.nullsLast(Double::compareTo)
+				Comparator.nullsLast(Long::compareTo)
 			))
 			.limit(TODAY_CARD_NEARBY_LIMIT)
 			.map(entry -> TodayCardRecommendationResponseDto.NearbyMerchant.builder()
