@@ -308,19 +308,25 @@ public final class BenefitEngine {
 		return Math.max(discount, 0L);
 	}
 
+	/** tierDiscountForCategory가 실제로 고른 혜택 노드까지 같이 담는다 - 짧은 설명 문구를
+	 * 만들 때(formatShortDescription) 어느 혜택이 선정됐는지 알아야 하기 때문이다. */
+	private record TierBenefit(long discount, BenefitNode benefit) {
+		private static final TierBenefit NONE = new TierBenefit(0L, null);
+	}
+
 	/**
-	 * 이 구간이 이 카테고리에서 주는 월 할인액 추정치. 이 카테고리를 커버하는 혜택이 여럿이면
-	 * (Python의 allocate()를 카테고리 하나로 단순화해) 이 지출로 가장 큰 할인을 주는 혜택
-	 * 하나만 고른다 - 같은 지출이 여러 혜택에 중복 계상되지 않는다. 모드 3의 now(활성 구간)와
-	 * gain(다음/기준 구간 차이) 양쪽에서 재사용한다.
+	 * 이 구간이 이 카테고리에서 주는 월 할인액 추정치와, 그 추정에 쓰인 혜택 노드. 이
+	 * 카테고리를 커버하는 혜택이 여럿이면(Python의 allocate()를 카테고리 하나로 단순화해)
+	 * 이 지출로 가장 큰 할인을 주는 혜택 하나만 고른다 - 같은 지출이 여러 혜택에 중복
+	 * 계상되지 않는다. 모드 3의 now(활성 구간)와 gain(다음/기준 구간 차이) 양쪽에서 재사용한다.
 	 */
-	private static long tierDiscountForCategory(
+	private static TierBenefit bestTierBenefit(
 		PerformanceTier tier, String categoryCode, String categoryName, long ticket, RecommendationParams params,
 		Map<String, BenefitUsage> usageByServiceName
 	) {
 		List<BenefitNode> covering = tier.benefitsForCategory(categoryCode);
 		if (covering.isEmpty()) {
-			return 0L;
+			return TierBenefit.NONE;
 		}
 		BenefitNode best = null;
 		long bestDiscount = 0L;
@@ -335,7 +341,48 @@ public final class BenefitEngine {
 		if (!best.integratedLimitExcluded() && tier.combinedCap() != null) {
 			bestDiscount = Math.min(bestDiscount, tier.combinedCap());
 		}
-		return bestDiscount;
+		return new TierBenefit(bestDiscount, best);
+	}
+
+	private static long tierDiscountForCategory(
+		PerformanceTier tier, String categoryCode, String categoryName, long ticket, RecommendationParams params,
+		Map<String, BenefitUsage> usageByServiceName
+	) {
+		return bestTierBenefit(tier, categoryCode, categoryName, ticket, params, usageByServiceName).discount();
+	}
+
+	/**
+	 * "카페 10% 할인 · 최대 1,000원" 같은 짧은 사용자 노출용 문구. note()는 계산 근거를 전부
+	 * 보여주는 디버그용이라 "오늘의 추천" 카드처럼 한 줄로 보여줘야 하는 자리에는 너무 길다 -
+	 * 혜택 노드 하나의 조건(정률/정액/적립/리터당, 건당 상한)만 뽑아 요약한다. benefit이
+	 * null이면(이 카테고리를 커버하는 혜택이 없으면) null을 반환한다.
+	 */
+	private static String formatShortDescription(String categoryName, BenefitNode benefit) {
+		if (benefit == null) {
+			return null;
+		}
+
+		String label = "POINT_ACCUMULATION".equals(benefit.discountMethod()) ? "적립" : "할인";
+		String amountPart;
+		if (PER_LITER_METHODS.contains(benefit.discountMethod())) {
+			amountPart = String.format("%s 리터당 %,d원 %s", categoryName, benefit.weekdayDiscountPerLiter(), label);
+		} else if (benefit.discountAmount() > 0) {
+			amountPart = String.format("%,d원 %s", benefit.discountAmount(), label);
+		} else {
+			amountPart = String.format("%s %s%% %s", categoryName, formatRate(benefit.discountRate()), label);
+		}
+
+		if (benefit.maximumDiscountPerTransaction() != null) {
+			return amountPart + String.format(" · 최대 %,d원", benefit.maximumDiscountPerTransaction());
+		}
+		return amountPart;
+	}
+
+	private static String formatRate(double rate) {
+		if (rate == Math.rint(rate)) {
+			return String.valueOf((long) rate);
+		}
+		return String.valueOf(rate);
 	}
 
 	// ==================================================================== 모드 3
@@ -387,13 +434,15 @@ public final class BenefitEngine {
 		}
 
 		PerformanceTier active = activeTier(tiers, prevMonthSpend);
-		long now = tierDiscountForCategory(active, categoryCode, categoryName, typicalAmount, params,
-			usageByServiceName);
+		TierBenefit activeBenefit =
+			bestTierBenefit(active, categoryCode, categoryName, typicalAmount, params, usageByServiceName);
+		long now = activeBenefit.discount();
 
 		PerformanceTier next = nextTier(tiers, currentMonthSpend, categoryCode);
 		if (next == null) {
 			return new Mode3Result(now, 0.0, 1.0, 1.0, 1.0, 0L, 0L, now,
-				"이미 최고 구간 확보 · 이번 달 확정 이득만 존재");
+				"이미 최고 구간 확보 · 이번 달 확정 이득만 존재",
+				formatShortDescription(categoryName, activeBenefit.benefit()));
 		}
 
 		RecommendationParams.Constants constants = params.constants();
@@ -407,11 +456,11 @@ public final class BenefitEngine {
 		);
 
 		PerformanceTier baseline = baselineTier(tiers, currentMonthSpend);
-		long nextDiscount = tierDiscountForCategory(next, categoryCode, categoryName, typicalAmount, params,
-			usageByServiceName);
+		TierBenefit nextBenefit =
+			bestTierBenefit(next, categoryCode, categoryName, typicalAmount, params, usageByServiceName);
 		long baselineDiscount =
 			tierDiscountForCategory(baseline, categoryCode, categoryName, typicalAmount, params, usageByServiceName);
-		long gain = nextDiscount - baselineDiscount;
+		long gain = nextBenefit.discount() - baselineDiscount;
 
 		double future = prob.pFill() * Math.max(0, gain);
 		double total = now + beta * future;
@@ -420,7 +469,13 @@ public final class BenefitEngine {
 			"이번 달 확정 %,d원 + 다음 달 기대 %,.0f원(성사확률 %.0f%% × 이득 %+,d원) = 총 %,.0f원",
 			now, future, prob.pFill() * 100, gain, total
 		);
+		// 이번 달 확정 구간에 이 카테고리 혜택이 없으면(now=0이라 activeBenefit이 비어있으면)
+		// 다음 구간의 혜택으로 대신 설명한다 - "카드 자체는 이 카테고리 혜택이 있다"는
+		// 사실은 항상 보여줘야 완전히 빈 문구가 되지 않는다.
+		String shortDescription = formatShortDescription(
+			categoryName, activeBenefit.benefit() != null ? activeBenefit.benefit() : nextBenefit.benefit());
 
-		return new Mode3Result(now, future, prob.pFill(), prob.pFlow(), prob.pHist(), gap, gain, total, note);
+		return new Mode3Result(now, future, prob.pFill(), prob.pFlow(), prob.pHist(), gap, gain, total, note,
+			shortDescription);
 	}
 }

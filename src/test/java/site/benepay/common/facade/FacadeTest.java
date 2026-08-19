@@ -14,8 +14,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import site.benepay.domain.card.service.CardService;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantService;
+import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
-import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
 import site.benepay.domain.recommendation.dto.TodayCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.service.RecommendationService;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
@@ -69,6 +69,26 @@ class FacadeTest {
 		assertThat(result).isEqualTo(recommended);
 		verify(cardService).getRecommendationCandidates(USER_ID);
 		verify(recommendationService).recommendMerchants(USER_ID, heldCards, merchants);
+	}
+
+	@Test
+	void getCardRecommendationsAsksCardServiceForHeldCardsThenDelegatesToRecommendationService() {
+		Long merchantId = 7L;
+		List<RecommendationCardCandidateVO> heldCards = List.of(new RecommendationCardCandidateVO());
+		MerchantCardRecommendationResponseDto response = MerchantCardRecommendationResponseDto.builder()
+			.merchantId(merchantId)
+			.merchantName("테스트 식당")
+			.cards(List.of())
+			.build();
+
+		when(cardService.getRecommendationCandidates(USER_ID)).thenReturn(heldCards);
+		when(recommendationService.getCardRecommendations(USER_ID, merchantId, heldCards)).thenReturn(response);
+
+		MerchantCardRecommendationResponseDto result = facade.getCardRecommendations(USER_ID, merchantId);
+
+		assertThat(result).isEqualTo(response);
+		verify(cardService).getRecommendationCandidates(USER_ID);
+		verify(recommendationService).getCardRecommendations(USER_ID, merchantId, heldCards);
 	}
 
 	@Test
@@ -127,60 +147,30 @@ class FacadeTest {
 	}
 
 	// ---- getTodayCardRecommendation(userId, lat, lng) ----
+	// 실제 "지갑 전체 기준 최적 카드" 산정 로직은 recommendationService 안으로 옮겨졌으므로
+	// (RecommendationServiceImplTest 참고), 여기서는 Facade가 카드/매장 두 도메인을 모아서
+	// 그대로 넘기는지만 검증한다.
 
 	@Test
-	void getTodayCardRecommendationLooksUpNearbyMerchantsItselfThenPicksTheNearestBenefitMerchantAsFeatured() {
+	void getTodayCardRecommendationAsksCardAndMerchantServicesThenDelegatesToRecommendationService() {
 		double lat = 37.5;
 		double lng = 127.0;
+		List<RecommendationCardCandidateVO> heldCards = List.of(new RecommendationCardCandidateVO());
 		List<MerchantResponseDto> candidates = List.of(MerchantResponseDto.builder().merchantId(1L).build());
-		List<RecommendationCardCandidateVO> heldCards = List.of();
+		TodayCardRecommendationResponseDto response = TodayCardRecommendationResponseDto.builder()
+			.userCardId(20L).cardName("가까운 카드").categoryName("편의점").benefitLabel("10% 할인")
+			.nearbyMerchants(List.of())
+			.build();
 
-		RecommendedCardResponseDto farCard = RecommendedCardResponseDto.builder()
-			.userCardId(10L).cardName("먼 카드").benefitSummary("5% 할인").build();
-		RecommendedCardResponseDto nearCard = RecommendedCardResponseDto.builder()
-			.userCardId(20L).cardName("가까운 카드").benefitSummary("10% 할인").build();
-		NearbyMerchantRecommendationResponseDto farBenefit = NearbyMerchantRecommendationResponseDto.builder()
-			.merchantId(1L).merchantName("먼 매장").categoryName("카페").benefitAvailable(true)
-			.distanceMeters(500.0).recommendedCards(List.of(farCard)).build();
-		NearbyMerchantRecommendationResponseDto nearNoBenefit = NearbyMerchantRecommendationResponseDto.builder()
-			.merchantId(2L).merchantName("혜택 없는 매장").benefitAvailable(false).distanceMeters(50.0).build();
-		NearbyMerchantRecommendationResponseDto nearBenefit = NearbyMerchantRecommendationResponseDto.builder()
-			.merchantId(3L).merchantName("가까운 매장").categoryName("편의점").benefitAvailable(true)
-			.distanceMeters(100.0).recommendedCards(List.of(nearCard)).build();
-
-		when(merchantService.getNearbyMerchants(lat, lng, null, 20)).thenReturn(candidates);
 		when(cardService.getRecommendationCandidates(USER_ID)).thenReturn(heldCards);
-		when(recommendationService.recommendMerchants(USER_ID, heldCards, candidates))
-			.thenReturn(List.of(farBenefit, nearNoBenefit, nearBenefit));
+		when(merchantService.getNearbyMerchants(lat, lng, null, 20)).thenReturn(candidates);
+		when(recommendationService.getTodayCardRecommendation(USER_ID, heldCards, candidates)).thenReturn(response);
 
 		TodayCardRecommendationResponseDto result = facade.getTodayCardRecommendation(USER_ID, lat, lng);
 
-		assertThat(result.getUserCardId()).isEqualTo(20L);
-		assertThat(result.getCardName()).isEqualTo("가까운 카드");
-		assertThat(result.getCategoryName()).isEqualTo("편의점");
-		assertThat(result.getBenefitLabel()).isEqualTo("10% 할인");
-		assertThat(result.getNearbyMerchants()).extracting(TodayCardRecommendationResponseDto.NearbyMerchant::getMerchantId)
-			.containsExactly(1L);
+		assertThat(result).isEqualTo(response);
+		verify(cardService).getRecommendationCandidates(USER_ID);
 		verify(merchantService).getNearbyMerchants(lat, lng, null, 20);
-	}
-
-	@Test
-	void getTodayCardRecommendationReturnsEmptyWhenNoMerchantHasAnyBenefit() {
-		double lat = 37.5;
-		double lng = 127.0;
-		List<MerchantResponseDto> candidates = List.of(MerchantResponseDto.builder().merchantId(1L).build());
-		List<RecommendationCardCandidateVO> heldCards = List.of();
-		NearbyMerchantRecommendationResponseDto noBenefit = NearbyMerchantRecommendationResponseDto.builder()
-			.merchantId(1L).benefitAvailable(false).distanceMeters(50.0).build();
-
-		when(merchantService.getNearbyMerchants(lat, lng, null, 20)).thenReturn(candidates);
-		when(cardService.getRecommendationCandidates(USER_ID)).thenReturn(heldCards);
-		when(recommendationService.recommendMerchants(USER_ID, heldCards, candidates)).thenReturn(List.of(noBenefit));
-
-		TodayCardRecommendationResponseDto result = facade.getTodayCardRecommendation(USER_ID, lat, lng);
-
-		assertThat(result.getUserCardId()).isNull();
-		assertThat(result.getCardName()).isNull();
-		assertThat(result.getNearbyMerchants()).isEmpty();
+		verify(recommendationService).getTodayCardRecommendation(USER_ID, heldCards, candidates);
 	}
 }

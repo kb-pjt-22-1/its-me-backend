@@ -9,8 +9,8 @@ import lombok.RequiredArgsConstructor;
 import site.benepay.domain.card.service.CardService;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantService;
+import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
-import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
 import site.benepay.domain.recommendation.dto.TodayCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.service.RecommendationService;
 import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
@@ -21,8 +21,6 @@ public class Facade {
 
 	// "오늘의 추천"(MerchantController)과 동일한 후보 풀 크기 - 가까운 순 20곳을 전부 혜택 평가한다.
 	private static final int TODAY_CARD_CANDIDATE_POOL = 20;
-	// "가까운 혜택 매장" 목록에 대표 매장 외 몇 곳을 더 보여줄지.
-	private static final int TODAY_CARD_NEARBY_LIMIT = 2;
 
 	private final CardService cardService;
 	private final MerchantService merchantService;
@@ -38,6 +36,18 @@ public class Facade {
 			heldCards,
 			merchants
 		);
+	}
+
+	/**
+	 * 매장 상세 "이 매장 추천 카드": 보유 카드 전체를 이 매장 카테고리 기준으로 비교한다.
+	 * RecommendationController(추천 도메인)는 카드 도메인을 모르므로, 보유 카드 조회는 여기서
+	 * 하고 컨트롤러는 Facade만 의존한다.
+	 */
+	public MerchantCardRecommendationResponseDto getCardRecommendations(Long userId, Long merchantId) {
+		List<RecommendationCardCandidateVO> heldCards =
+			cardService.getRecommendationCandidates(userId);
+
+		return recommendationService.getCardRecommendations(userId, merchantId, heldCards);
 	}
 
 	/**
@@ -59,50 +69,17 @@ public class Facade {
 	}
 
 	/**
-	 * 홈 화면 "오늘의 카드 추천": 사용자 현재 위치에서 가까운 매장 후보를 이 Facade가 직접
-	 * 조회한다 - RecommendationController(추천 도메인)는 매장 도메인을 모르므로, 매장 조회는
-	 * 여기(도메인 간 조율 계층)에서 하고 컨트롤러는 Facade만 의존한다. 후보 중 지금 당장
-	 * 혜택받을 수 있는(benefitAvailable=true) 매장만 남겨 가장 가까운 곳을 대표로 삼고, 그 매장의
-	 * 1순위 카드를 추천 카드로 보여준다. 대표 매장 다음으로 가까운 혜택 매장을 최대
-	 * {@value #TODAY_CARD_NEARBY_LIMIT}곳까지 "가까운 혜택 매장"으로 함께 반환한다. 혜택 매장이
-	 * 하나도 없으면 필드가 전부 비어있는 빈 추천을 반환한다 - "오늘의 추천"과 달리 혜택 없는
-	 * 매장으로 자리를 채우지 않는다(이 위젯은 "혜택"이 핵심이라 채워봐야 의미가 없다).
+	 * 홈 화면 "오늘의 카드 추천": 사용자 현재 위치에서 가까운 매장 후보와 보유 카드를 이
+	 * Facade가 모아서 recommendationService에 넘긴다 - RecommendationController(추천 도메인)는
+	 * 카드/매장 도메인을 모르므로, 두 도메인 조회는 여기(도메인 간 조율 계층)에서 하고 실제
+	 * "오늘 쓸 카드" 산정(지갑 전체 기준, 매장과 무관)은 recommendationService가 맡는다.
 	 */
 	public TodayCardRecommendationResponseDto getTodayCardRecommendation(Long userId, double lat, double lng) {
+		List<RecommendationCardCandidateVO> heldCards =
+			cardService.getRecommendationCandidates(userId);
 		List<MerchantResponseDto> candidates =
 			merchantService.getNearbyMerchants(lat, lng, null, TODAY_CARD_CANDIDATE_POOL);
 
-		List<NearbyMerchantRecommendationResponseDto> benefitMerchants = getRecommendedMerchants(userId, candidates)
-			.stream()
-			.filter(NearbyMerchantRecommendationResponseDto::isBenefitAvailable)
-			.sorted(Comparator.comparing(NearbyMerchantRecommendationResponseDto::getDistanceMeters,
-				Comparator.nullsLast(Double::compareTo)))
-			.toList();
-
-		if (benefitMerchants.isEmpty()) {
-			return TodayCardRecommendationResponseDto.empty();
-		}
-
-		NearbyMerchantRecommendationResponseDto featured = benefitMerchants.get(0);
-		RecommendedCardResponseDto topCard = featured.getRecommendedCards().get(0);
-
-		List<TodayCardRecommendationResponseDto.NearbyMerchant> nearby = benefitMerchants.stream()
-			.skip(1)
-			.limit(TODAY_CARD_NEARBY_LIMIT)
-			.map(merchant -> TodayCardRecommendationResponseDto.NearbyMerchant.builder()
-				.merchantId(merchant.getMerchantId())
-				.merchantName(merchant.getMerchantName())
-				.distanceMeters(merchant.getDistanceMeters())
-				.benefitLabel(merchant.getRecommendedCards().get(0).getBenefitSummary())
-				.build())
-			.toList();
-
-		return TodayCardRecommendationResponseDto.builder()
-			.userCardId(topCard.getUserCardId())
-			.cardName(topCard.getCardName())
-			.categoryName(featured.getCategoryName())
-			.benefitLabel(topCard.getBenefitSummary())
-			.nearbyMerchants(nearby)
-			.build();
+		return recommendationService.getTodayCardRecommendation(userId, heldCards, candidates);
 	}
 }

@@ -529,4 +529,74 @@ class BenefitEngineTest {
 
 		assertThat(application).isEqualTo(BenefitApplication.NONE);
 	}
+
+	// ---------------------------------------------------------------- shortDescription
+
+	@Test
+	void shortDescriptionForRateBasedBenefitWithoutCap() {
+		List<PerformanceTier> tiers = oneTierCard(0, 10, null, 0, null);
+
+		Mode3Result result = evaluatePriority(tiers, 0L, Map.of(), Map.of(), TODAY, 1.0);
+
+		assertThat(result.shortDescription()).isEqualTo("카페 10% 할인");
+	}
+
+	@Test
+	void shortDescriptionIncludesCapWhenMaximumDiscountPerTransactionIsSet() {
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			10, 0L, 0L, 0L, 0, null, 1_000L, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		Mode3Result result = evaluatePriority(tiers, 0L, Map.of(), Map.of(), TODAY, 1.0);
+
+		assertThat(result.shortDescription()).isEqualTo("카페 10% 할인 · 최대 1,000원");
+	}
+
+	@Test
+	void shortDescriptionForFlatDiscountAmountBenefit() {
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "CASHBACK",
+			0, 3_000L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		Mode3Result result = evaluatePriority(tiers, 0L, Map.of(), Map.of(), TODAY, 1.0);
+
+		assertThat(result.shortDescription()).isEqualTo("3,000원 할인");
+	}
+
+	@Test
+	void shortDescriptionUsesPointLabelForPointAccumulation() {
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "POINT_ACCUMULATION",
+			5, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		Mode3Result result = evaluatePriority(tiers, 0L, Map.of(), Map.of(), TODAY, 1.0);
+
+		assertThat(result.shortDescription()).isEqualTo("카페 5% 적립");
+	}
+
+	@Test
+	void shortDescriptionIsNullWhenCategoryHasNoBenefitAtAll() {
+		List<PerformanceTier> tiers = oneTierCard(0, 10, null, 0, null); // CAFE만 커버
+
+		Mode3Result result = BenefitEngine.evaluatePriority(
+			tiers, 0L, 0L, "9999", "다른카테고리", TICKET, Map.of(), Map.of(), TEST_PARAMS, TODAY, 1.0, Map.of()
+		);
+
+		assertThat(result.shortDescription()).isNull();
+	}
+
+	@Test
+	void shortDescriptionFallsBackToNextTierBenefitWhenActiveTierDoesNotCoverCategory() {
+		// 0구간은 카페 혜택이 없고, 1구간(다음 구간)만 카페를 커버한다 - 실제로 홈 화면에서
+		// now=0인데도 카드의 일반적인 혜택 문구는 계속 보여야 하는 상황을 재현한다.
+		PerformanceTier tier0 = new PerformanceTier(null, "0구간", 0, null, null, null, List.of());
+		PerformanceTier tier1 = new PerformanceTier(null, "1구간", 500_000, null, null, null,
+			List.of(rateBenefit(CAFE, 10, null, 0)));
+		List<PerformanceTier> tiers = List.of(tier0, tier1);
+
+		Mode3Result result = evaluatePriority(tiers, 0L, Map.of(), Map.of(), TODAY, 1.0);
+
+		assertThat(result.now()).isZero();
+		assertThat(result.shortDescription()).isEqualTo("카페 10% 할인");
+	}
 }
