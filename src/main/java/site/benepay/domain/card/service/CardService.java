@@ -45,6 +45,8 @@ public class CardService {
 	// 카드 실적 기준 월 계산을 위한 한국 시간대
 	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
+	private static final String USER_CARD_NOT_FOUND_MESSAGE = "보유 카드를 찾을 수 없습니다.";
+
 	private final CardMapper cardMapper;
 	private final ObjectMapper objectMapper;
 
@@ -63,7 +65,7 @@ public class CardService {
 	 */
 	public CardDetailResponseDto getCardDetail(Long userId, Long userCardId) {
 		UserCardDetailVO card = cardMapper.findDetailByUserCardId(userId, userCardId)
-			.orElseThrow(() -> new UserCardNotFoundException("보유 카드를 찾을 수 없습니다."));
+			.orElseThrow(() -> new UserCardNotFoundException(USER_CARD_NOT_FOUND_MESSAGE));
 
 		return CardDetailResponseDto.builder()
 			.userCardId(card.getUserCardId())
@@ -89,7 +91,7 @@ public class CardService {
 	 */
 	public CardBenefitResponseDto getCardBenefits(Long userId, Long userCardId) {
 		UserCardBenefitVO benefit = cardMapper.findBenefitsByUserCardId(userId, userCardId)
-			.orElseThrow(() -> new UserCardNotFoundException("보유 카드를 찾을 수 없습니다."));
+			.orElseThrow(() -> new UserCardNotFoundException(USER_CARD_NOT_FOUND_MESSAGE));
 		JsonNode benefitsJson = parseBenefitsInfo(benefit.getBenefitsInfo());
 
 		return CardBenefitResponseDto.builder()
@@ -114,7 +116,7 @@ public class CardService {
 				yearMonth
 			).orElseThrow(() ->
 				new UserCardNotFoundException(
-					"보유 카드를 찾을 수 없습니다."
+					USER_CARD_NOT_FOUND_MESSAGE
 				)
 			);
 
