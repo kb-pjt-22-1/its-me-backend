@@ -15,14 +15,15 @@ import site.benepay.common.util.TokenExtractor;
 import site.benepay.domain.user.dto.DevLoginRequestDto;
 import site.benepay.domain.user.dto.LoginRequestDto;
 import site.benepay.domain.user.dto.LoginResponseDto;
-import site.benepay.domain.user.dto.PortOneVerifyRequestDto;
-import site.benepay.domain.user.dto.PortOneVerifyResponseDto;
 import site.benepay.domain.user.dto.RefreshRequestDto;
 import site.benepay.domain.user.dto.RefreshResponseDto;
 import site.benepay.domain.user.dto.SignUpRequestDto;
-import site.benepay.domain.user.dto.UserResponseDto;
+import site.benepay.domain.user.dto.SignupIdentityConfirmRequestDto;
+import site.benepay.domain.user.dto.SignupIdentityConfirmResponseDto;
+import site.benepay.domain.user.dto.SignupIdentityRequestDto;
+import site.benepay.domain.user.dto.SignupIdentityRequestResponseDto;
 import site.benepay.domain.user.service.AuthService;
-import site.benepay.domain.user.service.PortOneService;
+import site.benepay.domain.user.service.SignupIdentityService;
 import site.benepay.domain.user.service.UserService;
 
 @RestController
@@ -31,16 +32,42 @@ public class AuthController {
 
 	private final UserService userService;
 	private final AuthService authService;
-	private final PortOneService portOneService;
+	private final SignupIdentityService signupIdentityService;
 
-	public AuthController(UserService userService, AuthService authService, PortOneService portOneService) {
+	public AuthController(UserService userService, AuthService authService,
+		SignupIdentityService signupIdentityService) {
 		this.userService = userService;
 		this.authService = authService;
-		this.portOneService = portOneService;
+		this.signupIdentityService = signupIdentityService;
 	}
 
+	/**
+	 * 회원가입 1단계: 휴대폰 본인인증 - 인증번호 발송. 이름+생년월일+휴대폰번호로 내부 중복
+	 * 가입 여부와 KB Mock Server 실명 회원 여부를 확인한 뒤에만 인증번호를 발급한다.
+	 */
+	@PostMapping("/signup/identity")
+	public ResponseEntity<SignupIdentityRequestResponseDto> requestSignupIdentity(
+		@Valid @RequestBody SignupIdentityRequestDto request) {
+		return ResponseEntity.ok(signupIdentityService.requestVerification(request));
+	}
+
+	/**
+	 * 회원가입 1단계: 인증번호 검증. 성공하면 검증된 신원 정보를 가리키는 1회용
+	 * verificationToken을 돌려준다 - /signup 호출 시 그대로 다시 보내면 된다.
+	 */
+	@PostMapping("/signup/identity/confirm")
+	public ResponseEntity<SignupIdentityConfirmResponseDto> confirmSignupIdentity(
+		@Valid @RequestBody SignupIdentityConfirmRequestDto request) {
+		return ResponseEntity.ok(signupIdentityService.confirmVerification(request));
+	}
+
+	/**
+	 * 회원가입 2~3단계(아이디/비밀번호/PIN) 최종 제출. 성공 시 토큰을 즉시 발급한다(자동
+	 * 로그인) - 프론트는 재로그인 없이 바로 홈으로 이동하면 된다. 4단계(KB 카드 자동 연동)는
+	 * UserService.signUp() 내부에서 발행하는 이벤트로 백그라운드에서 이어서 처리된다.
+	 */
 	@PostMapping("/signup")
-	public ResponseEntity<UserResponseDto> signUp(@Valid @RequestBody SignUpRequestDto request) {
+	public ResponseEntity<LoginResponseDto> signUp(@Valid @RequestBody SignUpRequestDto request) {
 		return ResponseEntity.status(HttpStatus.CREATED).body(userService.signUp(request));
 	}
 
@@ -70,11 +97,5 @@ public class AuthController {
 		String accessToken = TokenExtractor.extractBearerToken(servletRequest);
 		authService.logout(accessToken, userId);
 		return ResponseEntity.noContent().build();
-	}
-
-	@PostMapping("/portone/verify")
-	public ResponseEntity<PortOneVerifyResponseDto> verifyIdentity(
-		@Valid @RequestBody PortOneVerifyRequestDto request) {
-		return ResponseEntity.ok(portOneService.verify(request));
 	}
 }

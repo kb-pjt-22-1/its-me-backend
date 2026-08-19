@@ -21,8 +21,9 @@ public final class Sha256Util {
 	}
 
 	/**
-	 * 솔트 없는 SHA-256. CI 해시(users.ci_hash)에 쓴다 - 카드 서비스가 같은 값
-	 * (SHA-256(UTF-8(name)))으로 ci_hash를 매칭 키로 쓰므로, 이쪽에 솔트를 넣으면 그 매칭이 깨진다.
+	 * 솔트 없는 SHA-256. CI 해시(users.ci_hash)에 쓴다 - 값은 name+birthDate+phoneNumber를
+	 * 이어붙인 문자열이고(SignupIdentityServiceImpl 참고), 카드 서비스(KB Mock Server)도
+	 * 같은 조합으로 ci_hash를 채워 매칭 키로 쓰므로, 이쪽에 솔트를 넣으면 그 매칭이 깨진다.
 	 */
 	public static String hash(String value) {
 		try {

@@ -9,6 +9,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import site.benepay.auth.security.jwt.JwtProperties;
 import site.benepay.common.event.UserSignedUpEvent;
 import site.benepay.common.exception.AccountLockedException;
 import site.benepay.common.exception.DuplicateUserException;
@@ -19,8 +20,10 @@ import site.benepay.common.exception.UserNotFoundException;
 import site.benepay.common.exception.WithdrawalNotConfirmedException;
 import site.benepay.common.util.RedisKeys;
 import site.benepay.domain.user.dto.ChangePasswordRequestDto;
+import site.benepay.domain.user.dto.LoginResponseDto;
 import site.benepay.domain.user.dto.RegisterPinRequestDto;
 import site.benepay.domain.user.dto.SignUpRequestDto;
+import site.benepay.domain.user.dto.TokenPairDto;
 import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
 import site.benepay.domain.user.dto.UpdateProfileRequestDto;
 import site.benepay.domain.user.dto.UserResponseDto;
@@ -44,21 +47,24 @@ public class UserServiceImpl implements UserService {
 	private final TokenService tokenService;
 	private final SignupVerificationStore signupVerificationStore;
 	private final ApplicationEventPublisher eventPublisher;
+	private final JwtProperties jwtProperties;
 
 	public UserServiceImpl(UserMapper userMapper, PasswordEncoder passwordEncoder,
 		RedisLockoutService redisLockoutService, TokenService tokenService,
-		SignupVerificationStore signupVerificationStore, ApplicationEventPublisher eventPublisher) {
+		SignupVerificationStore signupVerificationStore, ApplicationEventPublisher eventPublisher,
+		JwtProperties jwtProperties) {
 		this.userMapper = userMapper;
 		this.passwordEncoder = passwordEncoder;
 		this.redisLockoutService = redisLockoutService;
 		this.tokenService = tokenService;
 		this.signupVerificationStore = signupVerificationStore;
 		this.eventPublisher = eventPublisher;
+		this.jwtProperties = jwtProperties;
 	}
 
 	@Override
 	@Transactional
-	public UserResponseDto signUp(SignUpRequestDto request) {
+	public LoginResponseDto signUp(SignUpRequestDto request) {
 		if (userMapper.existsByLoginId(request.getLoginId())) {
 			throw new DuplicateUserException("login id already in use: " + request.getLoginId());
 		}
@@ -67,7 +73,7 @@ public class UserServiceImpl implements UserService {
 			.redeem(request.getVerificationToken())
 			.orElseThrow(() -> new InvalidTokenException("identity verification token is invalid or expired"));
 
-		// PortOne 인증 시점에 이미 한 번 걸렀지만, 그 사이 다른 요청이 같은 DI로 먼저
+		// 휴대폰 본인인증 시점에 이미 한 번 걸렀지만, 그 사이 다른 요청이 같은 DI로 먼저
 		// 가입했을 수 있어 여기서 한 번 더 확인한다. 최종 방어선은 어차피 users.di UNIQUE다.
 		if (userMapper.existsByDiHash(identity.diHash)) {
 			throw new DuplicateUserException("identity already registered");
@@ -78,9 +84,12 @@ public class UserServiceImpl implements UserService {
 			throw new DuplicateUserException("identity already registered");
 		}
 
+		PinValidator.validate(request.getPin());
+
 		User user = User.builder()
 			.loginId(request.getLoginId())
 			.loginPasswordHash(passwordEncoder.encode(request.getPassword()))
+			.pinHash(passwordEncoder.encode(request.getPin()))
 			.name(identity.name)
 			.phoneNumber(identity.phoneNumber)
 			.birthDate(identity.birthDate)
@@ -104,7 +113,10 @@ public class UserServiceImpl implements UserService {
 			new UserSignedUpEvent(user.getUserId(), user.getCiHash())
 		);
 
-		return UserResponseDto.from(user);
+		// 가입 성공 시 바로 토큰을 발급한다(자동 로그인) - 프론트가 재로그인 없이 홈으로
+		// 이동할 수 있게 하기 위함. login과 동일한 발급 로직(TokenService.issueTokenPair)이다.
+		TokenPairDto tokens = tokenService.issueTokenPair(user);
+		return LoginResponseDto.of(user, tokens, jwtProperties.getAccessTokenExpirationMillis() / 1000);
 	}
 
 	@Override

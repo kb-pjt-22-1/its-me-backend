@@ -13,8 +13,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import site.benepay.common.util.RedisKeys;
 
 /**
- * PortOne 인증이 끝난 시점부터 회원가입이 끝나는 시점까지, 검증된 신원 정보(이름·전화번호·
- * 생년월일·CI·DI)를 프론트가 아니라 서버가 들고 있게 하는 다리 역할.
+ * 휴대폰 본인인증(SignupIdentityServiceImpl - 인증번호 검증)이 끝난 시점부터 회원가입이
+ * 끝나는 시점까지, 검증된 신원 정보(이름·전화번호·생년월일·CI·DI)를 프론트가 아니라 서버가
+ * 들고 있게 하는 다리 역할.
  *
  * <p>왜 이렇게 하나: 검증된 값을 프론트에 그대로 돌려주고 회원가입 때 다시 받으면, 그 값을
  * 어디서든 손에 넣은 사람이 본인 인증 없이 "그 사람인 척" 가입할 수 있다(재사용 공격). 값

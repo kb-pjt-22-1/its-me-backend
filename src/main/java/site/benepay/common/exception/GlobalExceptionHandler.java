@@ -57,8 +57,14 @@ public class GlobalExceptionHandler {
 		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
 	}
 
-	@ExceptionHandler(PortOneVerificationException.class)
-	public ResponseEntity<ErrorResponse> handlePortOneVerification(PortOneVerificationException ex,
+	@ExceptionHandler(KbCustomerNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handleKbCustomerNotFound(KbCustomerNotFoundException ex,
+		HttpServletRequest request) {
+		return errorResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
+	}
+
+	@ExceptionHandler(VerificationCodeInvalidException.class)
+	public ResponseEntity<ErrorResponse> handleVerificationCodeInvalid(VerificationCodeInvalidException ex,
 		HttpServletRequest request) {
 		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
 	}
