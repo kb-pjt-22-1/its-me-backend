@@ -244,8 +244,7 @@ class PaymentTokenServiceImplTest {
 		assertThat(inserted.getUserCardId()).isEqualTo(USER_CARD_ID);
 		assertThat(inserted.getDiscountAmount()).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(inserted.getOriginalAmount()).isEqualByComparingTo(inserted.getFinalAmount());
-		assertThat(inserted.getOriginalAmount()).isGreaterThanOrEqualTo(BigDecimal.valueOf(1000));
-		assertThat(inserted.getOriginalAmount()).isLessThanOrEqualTo(BigDecimal.valueOf(50000));
+		assertThat(inserted.getOriginalAmount()).isEqualByComparingTo(BigDecimal.valueOf(50_000));
 		assertThat(inserted.getPaymentStatus()).isEqualTo("APPROVED");
 	}
 

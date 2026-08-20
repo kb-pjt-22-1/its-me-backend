@@ -8,7 +8,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -49,11 +48,8 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 	private static final String STATUS_APPROVED = "APPROVED";
 	private static final String PAYMENT_METHOD_BARCODE = "BARCODE";
 
-	// 결제완료 버튼엔 금액 입력이 없어서(실제 스캔이 불가능한 구조), 데모용으로 이 범위 안에서
-	// 무작위 금액을 만든다. 100원 단위로 반올림해서 그럴듯한 값처럼 보이게 한다.
-	private static final int MIN_AMOUNT = 1_000;
-	private static final int MAX_AMOUNT = 50_000;
-	private static final int AMOUNT_UNIT = 100;
+	// 결제완료 버튼엔 금액 입력이 없어서(실제 스캔이 불가능한 구조), 데모용으로 항상 이 금액으로 고정한다.
+	private static final long FIXED_ORIGINAL_AMOUNT = 50_000L;
 
 	private final PaymentTokenStore paymentTokenStore;
 	private final PaymentMapper paymentMapper;
@@ -98,7 +94,7 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 		// 발급 시점에 가맹점을 이미 알던 흐름(매장 페이지 경유)이면 그 값을 쓰고,
 		// 몰랐던 흐름(결제 페이지 직접 진입)이면 데모용으로 무작위 가맹점을 고른다.
 		Long merchantId = token.getMerchantId() != null ? token.getMerchantId() : randomMerchantId();
-		BigDecimal originalAmount = randomAmount();
+		BigDecimal originalAmount = BigDecimal.valueOf(FIXED_ORIGINAL_AMOUNT);
 
 		BenefitApplication application = resolveBenefitApplication(token.getUserCardId(), merchantId, originalAmount);
 		BigDecimal discountAmount = BigDecimal.valueOf(application.discountAmount());
@@ -198,12 +194,6 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 	private Long randomMerchantId() {
 		return paymentMapper.findRandomMerchantId()
 			.orElseThrow(() -> new IllegalStateException("등록된 가맹점이 없어 결제를 완료할 수 없습니다."));
-	}
-
-	private BigDecimal randomAmount() {
-		int steps = (MAX_AMOUNT - MIN_AMOUNT) / AMOUNT_UNIT;
-		int amount = MIN_AMOUNT + ThreadLocalRandom.current().nextInt(steps + 1) * AMOUNT_UNIT;
-		return BigDecimal.valueOf(amount);
 	}
 
 	@Override
