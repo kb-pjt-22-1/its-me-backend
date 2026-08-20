@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -11,12 +12,16 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import site.benepay.common.facade.Facade;
+import site.benepay.common.util.RedisKeys;
 import site.benepay.domain.benefit.dto.BenefitCoachDataDto.CardData;
 import site.benepay.domain.benefit.dto.BenefitCoachDataDto.MonthlyUsageData;
 import site.benepay.domain.benefit.dto.BenefitCoachDataDto.PaymentData;
@@ -55,6 +60,12 @@ class BenefitCoachServiceTest {
 	@Mock
 	private Facade facade;
 
+	@Mock
+	private StringRedisTemplate redisTemplate;
+
+	@Mock
+	private ValueOperations<String, String> valueOperations;
+
 	private BenefitCoachDataLoader benefitCoachDataLoader;
 	private BenefitServiceImpl benefitService;
 
@@ -73,8 +84,13 @@ class BenefitCoachServiceTest {
 				openAiClient,
 				benefitCoachDataLoader,
 				merchantService,
-				facade
+				facade,
+				redisTemplate
 			);
+
+		// 캐시 미스로 고정 - 이 클래스의 테스트들은 "매번 새로 계산"하는 경로 자체를 검증하는
+		// 것이라, 캐시 히트/저장 동작은 별도 테스트(캐시 관련 섹션)에서만 다룬다.
+		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
 
 		lenient()
 			.when(openAiClient.generateCoachingText(anyList()))
@@ -413,6 +429,60 @@ class BenefitCoachServiceTest {
 
 		verify(openAiClient)
 			.generateCoachingText(anyList());
+	}
+
+	// ---- Redis 캐시 ----
+
+	@Test
+	void returnsCachedResponseWithoutRecomputingWhenCacheHit() throws Exception {
+		BenefitCoachResponseDto cached = BenefitCoachResponseDto.builder()
+			.summary("캐시된 요약")
+			.items(List.of(
+				BenefitCoachItemDto.builder()
+					.title("캐시된 제목")
+					.message("캐시된 메시지")
+					.build()))
+			.build();
+		String cachedJson = new ObjectMapper().writeValueAsString(cached);
+
+		when(valueOperations.get(RedisKeys.benefitCoach(USER_ID))).thenReturn(cachedJson);
+
+		BenefitCoachResponseDto response = benefitService.getBenefitCoaching(USER_ID);
+
+		assertThat(response.getSummary()).isEqualTo("캐시된 요약");
+		assertThat(response.getItems()).hasSize(1);
+		assertThat(response.getItems().get(0).getTitle()).isEqualTo("캐시된 제목");
+
+		verifyNoInteractions(benefitMapper);
+		verify(openAiClient, never()).generateCoachingText(anyList());
+		verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
+	}
+
+	@Test
+	void cachesTheComputedResponseWithATtlOfAtMostAWeekAfterACacheMiss() {
+		stubCoachingData(
+			payment(RECOMMENDED_USER_CARD_ID),
+			List.of(
+				card(
+					RECOMMENDED_USER_CARD_ID,
+					"NEED Global 카드",
+					215L,
+					null
+				)
+			),
+			List.of()
+		);
+		when(valueOperations.get(RedisKeys.benefitCoach(USER_ID))).thenReturn(null);
+
+		benefitService.getBenefitCoaching(USER_ID);
+
+		ArgumentCaptor<Duration> ttlCaptor = ArgumentCaptor.forClass(Duration.class);
+		verify(valueOperations).set(eq(RedisKeys.benefitCoach(USER_ID)), anyString(), ttlCaptor.capture());
+
+		// "다음 월요일 0시까지" - 오늘이 월요일이어도 최소한 즉시 만료(0)는 아니어야 하고,
+		// 아무리 늦어도 7일을 넘지 않아야 한다.
+		assertThat(ttlCaptor.getValue()).isPositive();
+		assertThat(ttlCaptor.getValue()).isLessThanOrEqualTo(Duration.ofDays(7));
 	}
 
 	private BenefitCoachItemDto getSingleCoachingItem() {

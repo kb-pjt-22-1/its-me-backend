@@ -3,6 +3,7 @@ package site.benepay.domain.benefit.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -22,15 +23,18 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import site.benepay.common.exception.InvalidBenefitPeriodException;
+import site.benepay.common.util.RedisKeys;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto.MonthlyBenefitDto;
 import site.benepay.domain.benefit.dto.BenefitCoachDataDto.CalculatedCoachingData;
@@ -95,6 +99,7 @@ public class BenefitServiceImpl implements BenefitService {
 	private final BenefitCoachDataLoader benefitCoachDataLoader;
 	private final MerchantService merchantService;
 	private final Facade facade;
+	private final StringRedisTemplate redisTemplate;
 
 	@Override
 	public List<AnnualFeeBreakEvenResponseDto> getAnnualFeeBreakEven(
@@ -380,6 +385,64 @@ public class BenefitServiceImpl implements BenefitService {
 	@Override
 	@Transactional(propagation = Propagation.NOT_SUPPORTED)
 	public BenefitCoachResponseDto getBenefitCoaching(
+		Long userId
+	) {
+		String cacheKey = RedisKeys.benefitCoach(userId);
+
+		BenefitCoachResponseDto cached = readCachedCoaching(cacheKey);
+		if (cached != null) {
+			return cached;
+		}
+
+		BenefitCoachResponseDto response = computeBenefitCoaching(userId);
+		cacheCoaching(cacheKey, response);
+		return response;
+	}
+
+	/**
+	 * OpenAI 호출은 유저당 실비용이 든다. 매장 GEO 인덱스처럼 전체를 미리 배치로 채우는 대신,
+	 * 캐시가 없을 때만(=그 주 첫 방문) 계산하고 다음 월요일 00시까지 TTL을 걸어 저장한다 -
+	 * 결과적으로 매주 월요일에 재계산되지만, 그 주에 화면을 안 여는 유저에게는 계산 자체가
+	 * 안 일어나 비용이 없다.
+	 *
+	 * <p>이 TTL 동안은 이번 달 혜택 소진량이나 신규 카드 등록이 반영되지 않을 수 있다 - 정확도보다
+	 * 비용/응답속도를 우선한 의도적인 트레이드오프다.
+	 */
+	private BenefitCoachResponseDto readCachedCoaching(String cacheKey) {
+		String cachedJson = redisTemplate.opsForValue().get(cacheKey);
+		if (cachedJson == null) {
+			return null;
+		}
+
+		try {
+			return objectMapper.readValue(cachedJson, BenefitCoachResponseDto.class);
+		} catch (JsonProcessingException e) {
+			log.warn("AI 혜택 코치 캐시 역직렬화에 실패해 새로 계산합니다.", e);
+			return null;
+		}
+	}
+
+	private void cacheCoaching(String cacheKey, BenefitCoachResponseDto response) {
+		try {
+			String json = objectMapper.writeValueAsString(response);
+			redisTemplate.opsForValue().set(cacheKey, json, ttlUntilNextMonday(LocalDateTime.now(ZONE)));
+		} catch (JsonProcessingException e) {
+			log.warn("AI 혜택 코치 결과 캐싱에 실패해 이번 응답은 캐시 없이 반환합니다.", e);
+		}
+	}
+
+	// 오늘이 월요일이어도 "다음 월요일"까지 최대 7일을 잡는다 - 0을 주면 캐시가 즉시 만료돼
+	// 그날 하루 종일 매 요청마다 재계산하게 된다.
+	// LocalDateTime끼리 그냥 빼면(Duration.between) 시간대 정보가 없어 SonarQube가 신뢰성
+	// 버그(S8700)로 잡는다 - 같은 ZONE으로 명시적으로 붙여서 계산한다.
+	private Duration ttlUntilNextMonday(LocalDateTime now) {
+		LocalDate today = now.toLocalDate();
+		int daysUntilNextMonday = 8 - today.getDayOfWeek().getValue();
+		LocalDateTime nextMonday = today.plusDays(daysUntilNextMonday).atStartOfDay();
+		return Duration.between(now.atZone(ZONE), nextMonday.atZone(ZONE));
+	}
+
+	private BenefitCoachResponseDto computeBenefitCoaching(
 		Long userId
 	) {
 		LocalDateTime now =

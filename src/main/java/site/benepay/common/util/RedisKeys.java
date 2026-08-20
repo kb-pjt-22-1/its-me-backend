@@ -85,4 +85,11 @@ public final class RedisKeys {
 		return "merchants:geo:" + categoryCode;
 	}
 
+	// AI 혜택 코치 결과 캐시. 계산 자체(OpenAI 호출)가 유저당 실비용이라, 매장 GEO 인덱스처럼
+	// 전체를 미리 채워두는 배치 대신 지연 계산으로 간다 - 그 주에 화면을 안 여는 유저에게는
+	// 아예 계산이 안 일어난다(BenefitServiceImpl.getBenefitCoaching 참고).
+	public static String benefitCoach(Long userId) {
+		return "benefit:coach:" + userId;
+	}
+
 }
