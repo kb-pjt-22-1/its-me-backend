@@ -25,6 +25,7 @@ import site.benepay.domain.user.dto.RegisterPinRequestDto;
 import site.benepay.domain.user.dto.SignUpRequestDto;
 import site.benepay.domain.user.dto.TokenPairDto;
 import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
+import site.benepay.domain.user.dto.UpdateFcmTokenRequestDto;
 import site.benepay.domain.user.dto.UpdateProfileRequestDto;
 import site.benepay.domain.user.dto.UserResponseDto;
 import site.benepay.domain.user.dto.VerifyPasswordRequestDto;
@@ -136,6 +137,13 @@ public class UserServiceImpl implements UserService {
 		// 트랜잭션 안이라 결과는 같지만, 아예 self-invocation이 없도록 조회를 직접 한다.
 		User updatedUser = findActiveUser(userId);
 		return UserResponseDto.from(updatedUser);
+	}
+
+	@Override
+	@Transactional
+	public void updateFcmToken(Long userId, UpdateFcmTokenRequestDto request) {
+		findActiveUser(userId);
+		userMapper.updateFcmToken(userId, request.getFcmToken());
 	}
 
 	@Override

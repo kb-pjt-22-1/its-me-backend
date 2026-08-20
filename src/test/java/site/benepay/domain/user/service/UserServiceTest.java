@@ -34,6 +34,7 @@ import site.benepay.domain.user.dto.RegisterPinRequestDto;
 import site.benepay.domain.user.dto.SignUpRequestDto;
 import site.benepay.domain.user.dto.TokenPairDto;
 import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
+import site.benepay.domain.user.dto.UpdateFcmTokenRequestDto;
 import site.benepay.domain.user.dto.UpdateProfileRequestDto;
 import site.benepay.domain.user.dto.UserResponseDto;
 import site.benepay.domain.user.dto.VerifyPasswordRequestDto;
@@ -415,6 +416,28 @@ class UserServiceTest {
 		assertThatThrownBy(() -> userService.updateProfile(USER_ID, request)).isInstanceOf(UserNotFoundException.class);
 
 		verify(userMapper, never()).updateProfile(any(), any());
+	}
+
+	// ---- FCM 토큰 갱신 ----
+
+	@Test
+	void updateFcmTokenUpdatesToken() {
+		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser(null)));
+		UpdateFcmTokenRequestDto request = new UpdateFcmTokenRequestDto("new-fcm-token");
+
+		userService.updateFcmToken(USER_ID, request);
+
+		verify(userMapper).updateFcmToken(USER_ID, "new-fcm-token");
+	}
+
+	@Test
+	void updateFcmTokenThrowsWhenUserDoesNotExist() {
+		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.empty());
+		UpdateFcmTokenRequestDto request = new UpdateFcmTokenRequestDto("new-fcm-token");
+
+		assertThatThrownBy(() -> userService.updateFcmToken(USER_ID, request)).isInstanceOf(UserNotFoundException.class);
+
+		verify(userMapper, never()).updateFcmToken(any(), any());
 	}
 
 	// ---- PIN registration ----
