@@ -1,6 +1,7 @@
 package site.benepay.domain.merchant.service;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.math.BigDecimal;
@@ -12,8 +13,20 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.geo.Distance;
+import org.springframework.data.geo.GeoResult;
+import org.springframework.data.geo.GeoResults;
+import org.springframework.data.geo.Point;
+import org.springframework.data.redis.connection.RedisGeoCommands.GeoLocation;
+import org.springframework.data.redis.connection.RedisGeoCommands.GeoSearchCommandArgs;
+import org.springframework.data.redis.core.GeoOperations;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.domain.geo.GeoReference;
+import org.springframework.data.redis.domain.geo.GeoShape;
+import org.springframework.data.redis.domain.geo.Metrics;
 
 import site.benepay.common.exception.MerchantNotFoundException;
+import site.benepay.common.util.RedisKeys;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.mapper.MerchantMapper;
 import site.benepay.domain.merchant.vo.Merchant;
@@ -26,16 +39,22 @@ class MerchantServiceImplTest {
 	@Mock
 	private MerchantMapper merchantMapper;
 
+	@Mock
+	private StringRedisTemplate redisTemplate;
+
+	@Mock
+	private GeoOperations<String, String> geoOperations;
+
 	private MerchantServiceImpl merchantService;
 
 	@BeforeEach
 	void setUp() {
-		merchantService = new MerchantServiceImpl(merchantMapper);
+		merchantService = new MerchantServiceImpl(merchantMapper, redisTemplate);
 	}
 
-	private Merchant existingMerchant(String merchantCode) {
+	private Merchant existingMerchant(Long merchantId, String merchantCode) {
 		return Merchant.builder()
-			.merchantId(MERCHANT_ID)
+			.merchantId(merchantId)
 			.categoryCode("5812")
 			.brandId(1L)
 			.merchantCode(merchantCode)
@@ -45,6 +64,22 @@ class MerchantServiceImplTest {
 			.longitude(BigDecimal.valueOf(127.0))
 			.phone("02-000-0000")
 			.build();
+	}
+
+	private Merchant existingMerchant(String merchantCode) {
+		return existingMerchant(MERCHANT_ID, merchantCode);
+	}
+
+	@SuppressWarnings("unchecked")
+	private GeoResults<GeoLocation<String>> geoResultsOf(long merchantId, double distanceMeters) {
+		GeoLocation<String> location = new GeoLocation<>(String.valueOf(merchantId), new Point(127.0, 37.5));
+		GeoResult<GeoLocation<String>> result = new GeoResult<>(location, new Distance(distanceMeters, Metrics.METERS));
+		return new GeoResults<>(List.of(result));
+	}
+
+	@SuppressWarnings("unchecked")
+	private GeoResults<GeoLocation<String>> emptyGeoResults() {
+		return new GeoResults<>(List.of());
 	}
 
 	// ---- getMerchants(categoryCode) ----
@@ -96,27 +131,14 @@ class MerchantServiceImplTest {
 			.isInstanceOf(MerchantNotFoundException.class);
 	}
 
-	// ---- getMerchants(bounds, center, categoryCode, limit) ----
-
-	private MerchantResponseDto nearbyResponse(String merchantCode) {
-		return MerchantResponseDto.builder()
-			.merchantId(MERCHANT_ID)
-			.categoryCode("5812")
-			.brandId(1L)
-			.merchantCode(merchantCode)
-			.merchantName("테스트 식당")
-			.address("서울시 강남구")
-			.latitude(BigDecimal.valueOf(37.5))
-			.longitude(BigDecimal.valueOf(127.0))
-			.phone("02-000-0000")
-			.distanceMeters(50L)
-			.build();
-	}
+	// ---- getMerchants(bounds, center, categoryCode, limit) - Redis GEO 검색 경로 ----
 
 	@Test
-	void getMerchantsWithinBoundsQueriesMapperAndReturnsMapperResultDirectly() {
-		when(merchantMapper.findWithinBounds(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500))
-			.thenReturn(List.of(nearbyResponse("M001")));
+	void getMerchantsWithinBoundsSearchesTheAllCategoryGeoKeyAndHydratesFromMysql() {
+		when(redisTemplate.opsForGeo()).thenReturn(geoOperations);
+		when(geoOperations.search(eq(RedisKeys.MERCHANT_GEO_ALL), any(GeoReference.class), any(GeoShape.class),
+			any(GeoSearchCommandArgs.class))).thenReturn(geoResultsOf(MERCHANT_ID, 50));
+		when(merchantMapper.findByIds(List.of(MERCHANT_ID))).thenReturn(List.of(existingMerchant("M001")));
 
 		List<MerchantResponseDto> result =
 			merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500);
@@ -124,45 +146,41 @@ class MerchantServiceImplTest {
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).getMerchantCode()).isEqualTo("M001");
 		assertThat(result.get(0).getDistanceMeters()).isEqualTo(50L);
-		verify(merchantMapper).findWithinBounds(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500);
 	}
 
 	@Test
-	void getMerchantsWithinBoundsReturnsEmptyListWhenNoneInRange() {
-		when(merchantMapper.findWithinBounds(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500)).thenReturn(List.of());
+	void getMerchantsWithinBoundsReturnsEmptyListWhenRedisHasNoResultsWithoutQueryingMysql() {
+		when(redisTemplate.opsForGeo()).thenReturn(geoOperations);
+		when(geoOperations.search(eq(RedisKeys.MERCHANT_GEO_ALL), any(GeoReference.class), any(GeoShape.class),
+			any(GeoSearchCommandArgs.class))).thenReturn(emptyGeoResults());
 
 		assertThat(merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, null, 500)).isEmpty();
+		verify(merchantMapper, never()).findByIds(any());
 	}
 
 	@Test
-	void getMerchantsWithinBoundsPassesCategoryCodeAndLimitThroughToMapper() {
-		when(merchantMapper.findWithinBounds(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, "5812", 500))
-			.thenReturn(List.of(nearbyResponse("M001")));
+	void getMerchantsWithinBoundsSearchesTheCategorySpecificGeoKeyWhenCategoryCodeGiven() {
+		when(redisTemplate.opsForGeo()).thenReturn(geoOperations);
+		when(geoOperations.search(eq(RedisKeys.merchantGeoCategory("5812")), any(GeoReference.class),
+			any(GeoShape.class), any(GeoSearchCommandArgs.class))).thenReturn(geoResultsOf(MERCHANT_ID, 50));
+		when(merchantMapper.findByIds(List.of(MERCHANT_ID))).thenReturn(List.of(existingMerchant("M001")));
 
 		List<MerchantResponseDto> result =
 			merchantService.getMerchants(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, "5812", 500);
 
 		assertThat(result).hasSize(1);
-		verify(merchantMapper).findWithinBounds(37.4, 127.0, 37.6, 127.2, 37.5, 127.1, "5812", 500);
+		verify(geoOperations).search(eq(RedisKeys.merchantGeoCategory("5812")), any(GeoReference.class),
+			any(GeoShape.class), any(GeoSearchCommandArgs.class));
 	}
 
-	// ---- getNearbyMerchants(lat, lng, categoryCode, limit) ----
+	// ---- getNearbyMerchants(lat, lng, categoryCode, limit) - Redis GEO 검색 경로 ----
 
 	@Test
-	void getNearbyMerchantsMapsDistanceMetersThrough() {
-		MerchantResponseDto nearby = MerchantResponseDto.builder()
-			.merchantId(MERCHANT_ID)
-			.categoryCode("5812")
-			.brandId(1L)
-			.merchantCode("M001")
-			.merchantName("테스트 식당")
-			.address("서울시 강남구")
-			.latitude(BigDecimal.valueOf(37.5))
-			.longitude(BigDecimal.valueOf(127.0))
-			.phone("02-000-0000")
-			.distanceMeters(123L)
-			.build();
-		when(merchantMapper.findNearby(37.5, 127.0, null, 20)).thenReturn(List.of(nearby));
+	void getNearbyMerchantsSearchesTheAllCategoryGeoKeyAndHydratesFromMysql() {
+		when(redisTemplate.opsForGeo()).thenReturn(geoOperations);
+		when(geoOperations.search(eq(RedisKeys.MERCHANT_GEO_ALL), any(GeoReference.class), any(GeoShape.class),
+			any(GeoSearchCommandArgs.class))).thenReturn(geoResultsOf(MERCHANT_ID, 123));
+		when(merchantMapper.findByIds(List.of(MERCHANT_ID))).thenReturn(List.of(existingMerchant("M001")));
 
 		List<MerchantResponseDto> result = merchantService.getNearbyMerchants(37.5, 127.0, null, 20);
 
@@ -172,10 +190,24 @@ class MerchantServiceImplTest {
 	}
 
 	@Test
-	void getNearbyMerchantsPassesCategoryCodeAndLimitThroughToMapper() {
-		when(merchantMapper.findNearby(37.5, 127.0, "5812", 2)).thenReturn(List.of());
+	void getNearbyMerchantsSearchesTheCategorySpecificGeoKeyWhenCategoryCodeGiven() {
+		when(redisTemplate.opsForGeo()).thenReturn(geoOperations);
+		when(geoOperations.search(eq(RedisKeys.merchantGeoCategory("5812")), any(GeoReference.class),
+			any(GeoShape.class), any(GeoSearchCommandArgs.class))).thenReturn(emptyGeoResults());
 
 		assertThat(merchantService.getNearbyMerchants(37.5, 127.0, "5812", 2)).isEmpty();
-		verify(merchantMapper).findNearby(37.5, 127.0, "5812", 2);
+		verify(geoOperations).search(eq(RedisKeys.merchantGeoCategory("5812")), any(GeoReference.class),
+			any(GeoShape.class), any(GeoSearchCommandArgs.class));
+	}
+
+	@Test
+	void getNearbyMerchantsSkipsIdsThatRedisHasButMysqlNoLongerHas() {
+		// 새벽 배치 이후 매장이 삭제된 것처럼, Redis 인덱스엔 있지만 MySQL엔 없는 상태를 흉내낸다.
+		when(redisTemplate.opsForGeo()).thenReturn(geoOperations);
+		when(geoOperations.search(eq(RedisKeys.MERCHANT_GEO_ALL), any(GeoReference.class), any(GeoShape.class),
+			any(GeoSearchCommandArgs.class))).thenReturn(geoResultsOf(MERCHANT_ID, 10));
+		when(merchantMapper.findByIds(List.of(MERCHANT_ID))).thenReturn(List.of());
+
+		assertThat(merchantService.getNearbyMerchants(37.5, 127.0, null, 20)).isEmpty();
 	}
 }
