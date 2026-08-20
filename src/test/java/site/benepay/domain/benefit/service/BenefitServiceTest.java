@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -84,6 +85,9 @@ class BenefitServiceTest {
 	@Mock
 	private Facade facade;
 
+	@Mock
+	private StringRedisTemplate redisTemplate;
+
 	private BenefitServiceImpl benefitService;
 	private BenefitCoachDataLoader benefitCoachDataLoader;
 
@@ -102,7 +106,8 @@ class BenefitServiceTest {
 				openAiClient,
 				benefitCoachDataLoader,
 				merchantService,
-				facade
+				facade,
+				redisTemplate
 			);
 	}
 
