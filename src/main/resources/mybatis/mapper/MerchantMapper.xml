@@ -7,20 +7,6 @@
         , brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude, phone
     </sql>
 
-    <!-- Haversine 공식으로 기준 좌표(lat/lng)에서 각 매장까지의 실거리(m)를 계산한다.
-         findNearby/findWithinBounds가 공유한다 - 기준점의 의미(사용자 위치 vs bounds 중심)는
-         달라도 계산식은 같다. COS 인자를 LEAST/GREATEST로 [-1, 1]에 clamp하는 이유: 부동소수점
-         오차로 인자가 1을 살짝 넘으면 ACOS가 NULL을 반환해(실제로 같은 좌표의 매장에서 재현됨)
-         그 매장의 거리가 NULL이 되어 정렬이 깨진다. -->
-    <sql id="haversineDistanceMeters">
-        ROUND(6371000 * ACOS(
-            LEAST(1, GREATEST(-1,
-                COS(RADIANS(#{lat})) * COS(RADIANS(latitude)) * COS(RADIANS(longitude) - RADIANS(#{lng}))
-                + SIN(RADIANS(#{lat})) * SIN(RADIANS(latitude))
-            ))
-        )) AS distance_meters
-    </sql>
-
     <select id="findAll" resultType="site.benepay.domain.merchant.vo.Merchant">
         SELECT
         <include refid="merchantColumns"/>
@@ -41,38 +27,16 @@
         WHERE merchant_id = #{merchantId}
     </select>
 
-    <!-- 지도 화면(bounds) 사각형 범위 안의 매장 조회. 기준 좌표(lat/lng, 여기선 bounds 중심)에서
-         가까운 순으로 limit개까지만 반환한다 - bounds가 넓어져도(축소된 지도) 응답이 무한정
-         커지지 않는다. -->
-    <select id="findWithinBounds" resultType="site.benepay.domain.merchant.dto.MerchantResponseDto">
+    <!-- Redis GEO 검색(MerchantGeoSyncScheduler/MerchantServiceImpl 참고)이 뽑아준 merchant_id
+         목록으로 나머지 컬럼을 채운다. 거리 계산·정렬·limit은 전부 Redis 쪽에서 이미 끝났다. -->
+    <select id="findByIds" resultType="site.benepay.domain.merchant.vo.Merchant">
         SELECT
         <include refid="merchantColumns"/>
-        , <include refid="haversineDistanceMeters"/>
         FROM merchants
-        WHERE latitude BETWEEN #{swLat} AND #{neLat}
-        AND longitude BETWEEN #{swLng} AND #{neLng}
-        <if test="categoryCode != null">
-            AND category_code = #{categoryCode}
-        </if>
-        ORDER BY distance_meters ASC
-        LIMIT #{limit}
-    </select>
-
-    <!-- 홈 화면 "오늘의 추천" 후보 조회. 기준 좌표(lat/lng, 여기선 사용자 위치)에서 가까운 순으로
-         limit개만 뽑는다 - 혜택 판단(benefitAvailable)은 이후 Facade가 하므로 여기선 필터링
-         없이 거리순 후보만 넉넉히 확보한다. -->
-    <select id="findNearby" resultType="site.benepay.domain.merchant.dto.MerchantResponseDto">
-        SELECT
-        <include refid="merchantColumns"/>
-        , <include refid="haversineDistanceMeters"/>
-        FROM merchants
-        <where>
-            <if test="categoryCode != null">
-                category_code = #{categoryCode}
-            </if>
-        </where>
-        ORDER BY distance_meters ASC
-        LIMIT #{limit}
+        WHERE merchant_id IN
+        <foreach collection="merchantIds" item="merchantId" open="(" separator="," close=")">
+            #{merchantId}
+        </foreach>
     </select>
 
 </mapper>

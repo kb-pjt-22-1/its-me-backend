@@ -25,8 +25,9 @@ import site.benepay.domain.merchant.vo.Merchant;
 /**
  * MySQL merchants 테이블(정본)의 좌표를 Redis GEO 인덱스로 매일 새벽 복제한다.
  *
- * <p>조회 경로(findNearby/findWithinBounds)가 매번 Haversine으로 전체 테이블을 스캔하는
- * 대신, 이 배치가 미리 만들어 둔 GEO 인덱스에서 O(log N) 반경 검색을 쓰게 하는 것이 목적이다.
+ * <p>조회 경로(MerchantServiceImpl.getNearbyMerchants/getMerchants)가 매번 Haversine으로
+ * 전체 테이블을 스캔하는 대신, 이 배치가 미리 만들어 둔 GEO 인덱스에서 O(log N) 반경 검색을
+ * 쓰게 하는 것이 목적이다.
  *
  * <p>인스턴스가 여러 대로 늘어나도 같은 새벽 시간에 배치가 중복 실행되지 않도록 Redis
  * SET NX 락을 쓴다 - 지금은 인스턴스가 1대뿐이라 당장 충돌은 없지만, 나중에 인스턴스가
