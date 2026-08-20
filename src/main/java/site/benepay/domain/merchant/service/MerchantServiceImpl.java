@@ -4,7 +4,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+<<<<<<< Updated upstream
 import java.util.Objects;
+=======
+import java.util.function.Function;
+>>>>>>> Stashed changes
 import java.util.stream.Collectors;
 
 import org.springframework.data.geo.Distance;
@@ -42,7 +46,11 @@ public class MerchantServiceImpl implements MerchantService {
 	private static final double METERS_PER_DEGREE_LATITUDE = 111_320.0;
 
 	private final MerchantMapper merchantMapper;
+<<<<<<< Updated upstream
 	private final StringRedisTemplate redisTemplate;
+=======
+	private final MerchantGeoQueryService merchantGeoQueryService;
+>>>>>>> Stashed changes
 
 	@Override
 	@Transactional(readOnly = true)
@@ -64,6 +72,7 @@ public class MerchantServiceImpl implements MerchantService {
 	@Transactional(readOnly = true)
 	public List<MerchantResponseDto> getMerchants(double swLat, double swLng, double neLat, double neLng,
 		double centerLat, double centerLng, String categoryCode, int limit) {
+<<<<<<< Updated upstream
 
 		// centerLat/centerLng가 bounds의 정중앙이라고 가정한다 - 지도 SDK의 뷰포트 중심이
 		// 보통 그 값이다. BYBOX는 FROMLONLAT 지점을 중심으로 폭/높이만큼 대칭으로 뻗는
@@ -79,11 +88,17 @@ public class MerchantServiceImpl implements MerchantService {
 			new Distance(heightMeters, Metrics.METERS)));
 
 		return searchGeoIndex(reference, shape, categoryCode, limit);
+=======
+		Map<Long, Long> distanceByMerchantId = merchantGeoQueryService.searchWithinBounds(
+			swLat, swLng, neLat, neLng, centerLat, centerLng, categoryCode, limit);
+		return toResponseDtos(distanceByMerchantId);
+>>>>>>> Stashed changes
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public List<MerchantResponseDto> getNearbyMerchants(double lat, double lng, String categoryCode, int limit) {
+<<<<<<< Updated upstream
 		GeoReference<String> reference = GeoReference.fromCoordinate(lng, lat);
 		GeoShape shape = GeoShape.byRadius(new Distance(EFFECTIVELY_UNBOUNDED_RADIUS_METERS, Metrics.METERS));
 
@@ -128,6 +143,26 @@ public class MerchantServiceImpl implements MerchantService {
 			// 사이에 조회가 들어오면 merchantsById에 없는 id가 섞일 수 있다 - 조용히 건너뛴다.
 			.filter(Objects::nonNull)
 			.map(merchant -> MerchantResponseDto.from(merchant, distanceMetersByMerchantId.get(merchant.getMerchantId())))
+=======
+		Map<Long, Long> distanceByMerchantId = merchantGeoQueryService.searchNearby(lat, lng, categoryCode, limit);
+		return toResponseDtos(distanceByMerchantId);
+	}
+
+	// Redis GEO 검색 결과(merchantId → 거리, 가까운 순)에 대해 상세 정보만 MySQL에서 PK IN
+	// 조회로 채워 넣는다. MySQL IN 조회는 순서를 보장하지 않으므로, Redis가 이미 정해 둔
+	// 가까운 순서를 기준으로 다시 조립한다. 동기화 배치 이후 삭제된 매장은 조용히 건너뛴다.
+	private List<MerchantResponseDto> toResponseDtos(Map<Long, Long> distanceByMerchantId) {
+		if (distanceByMerchantId.isEmpty()) {
+			return List.of();
+		}
+		Map<Long, Merchant> merchantsById = merchantMapper.findByIds(List.copyOf(distanceByMerchantId.keySet()))
+			.stream()
+			.collect(Collectors.toMap(Merchant::getMerchantId, Function.identity()));
+
+		return distanceByMerchantId.entrySet().stream()
+			.filter(entry -> merchantsById.containsKey(entry.getKey()))
+			.map(entry -> MerchantResponseDto.from(merchantsById.get(entry.getKey()), entry.getValue()))
+>>>>>>> Stashed changes
 			.toList();
 	}
 }

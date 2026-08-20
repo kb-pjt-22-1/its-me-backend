@@ -27,9 +27,27 @@
         WHERE merchant_id = #{merchantId}
     </select>
 
+<<<<<<< Updated upstream
     <!-- Redis GEO 검색(MerchantGeoSyncScheduler/MerchantServiceImpl 참고)이 뽑아준 merchant_id
          목록으로 나머지 컬럼을 채운다. 거리 계산·정렬·limit은 전부 Redis 쪽에서 이미 끝났다. -->
     <select id="findByIds" resultType="site.benepay.domain.merchant.vo.Merchant">
+=======
+    <!-- Redis GEO 검색이 추려낸 merchantId들의 상세 정보 일괄 조회 (PK IN 조회라 순서는 보장 안 함) -->
+    <select id="findByIds" resultType="site.benepay.domain.merchant.vo.Merchant">
+        SELECT
+        <include refid="merchantColumns"/>
+        FROM merchants
+        WHERE merchant_id IN
+        <foreach item="merchantId" collection="merchantIds" open="(" separator="," close=")">
+            #{merchantId}
+        </foreach>
+    </select>
+
+    <!-- 지도 화면(bounds) 사각형 범위 안의 매장 조회. 기준 좌표(lat/lng, 여기선 bounds 중심)에서
+         가까운 순으로 limit개까지만 반환한다 - bounds가 넓어져도(축소된 지도) 응답이 무한정
+         커지지 않는다. -->
+    <select id="findWithinBounds" resultType="site.benepay.domain.merchant.dto.MerchantResponseDto">
+>>>>>>> Stashed changes
         SELECT
         <include refid="merchantColumns"/>
         FROM merchants

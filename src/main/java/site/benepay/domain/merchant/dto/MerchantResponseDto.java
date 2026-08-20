@@ -27,6 +27,12 @@ public class MerchantResponseDto {
 		return from(merchant, null);
 	}
 
+<<<<<<< Updated upstream
+=======
+	// Redis GEO 검색(MerchantGeoQueryService)에서 온 거리를 실어야 하는 조회 경로(findNearby/
+	// findWithinBounds 대체 경로)에서 사용한다. 거리는 Redis GEOSEARCH가 이미 계산해 주므로
+	// 여기서는 그대로 실어 보내기만 한다.
+>>>>>>> Stashed changes
 	public static MerchantResponseDto from(Merchant merchant, Long distanceMeters) {
 		return MerchantResponseDto.builder()
 			.merchantId(merchant.getMerchantId())
