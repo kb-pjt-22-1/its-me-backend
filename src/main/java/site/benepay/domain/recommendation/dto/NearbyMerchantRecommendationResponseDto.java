@@ -22,7 +22,6 @@ public class NearbyMerchantRecommendationResponseDto {
 	private BigDecimal latitude;
 	private BigDecimal longitude;
 	private Long distanceMeters;
-	private String phone;
 	// 지금 당장(즉시할인) 혜택을 쓸 수 있는 매장인지 - true일 때만 recommendedCards가 채워진다.
 	private boolean benefitAvailable;
 	// 총 기대 가치(now + beta*future) 내림차순 상위 3장까지 - benefitAvailable=false면 빈 리스트다.

@@ -17,7 +17,6 @@ public class MerchantResponseDto {
 	private String address;
 	private BigDecimal latitude;
 	private BigDecimal longitude;
-	private String phone;
 	// 위치 기반 조회(MerchantServiceImpl의 Redis GEO 검색 경로)에서만 채워진다. 그 외 조회
 	// 경로에서는 null. 소수점 없이 반올림된 값 - 응답에 "123.0m" 같은 소수점이 노출되지 않게
 	// Long으로 받는다.
@@ -40,7 +39,6 @@ public class MerchantResponseDto {
 			.address(merchant.getAddress())
 			.latitude(merchant.getLatitude())
 			.longitude(merchant.getLongitude())
-			.phone(merchant.getPhone())
 			.distanceMeters(distanceMeters)
 			.build();
 	}

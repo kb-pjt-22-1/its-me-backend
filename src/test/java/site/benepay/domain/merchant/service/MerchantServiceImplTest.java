@@ -61,7 +61,6 @@ class MerchantServiceImplTest {
 			.address("서울시 강남구")
 			.latitude(BigDecimal.valueOf(37.5))
 			.longitude(BigDecimal.valueOf(127.0))
-			.phone("02-000-0000")
 			.build();
 	}
 

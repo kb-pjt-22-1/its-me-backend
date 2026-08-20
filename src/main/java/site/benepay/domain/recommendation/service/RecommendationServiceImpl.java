@@ -424,7 +424,6 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.latitude(merchant.getLatitude())
 			.longitude(merchant.getLongitude())
 			.distanceMeters(merchant.getDistanceMeters())
-			.phone(merchant.getPhone())
 			.benefitAvailable(!recommendedCards.isEmpty())
 			.recommendedCards(recommendedCards)
 			.typicalPaymentAmount(recommendedCards.isEmpty() ? null : topCardsResult.typicalAmount())

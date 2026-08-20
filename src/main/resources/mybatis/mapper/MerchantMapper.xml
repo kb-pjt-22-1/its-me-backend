@@ -4,7 +4,7 @@
 
     <sql id="merchantColumns">
         merchant_id
-        , brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude, phone
+        , brand_id, category_code, merchant_code, merchant_name, address, latitude, longitude
     </sql>
 
     <select id="findAll" resultType="site.benepay.domain.merchant.vo.Merchant">
