@@ -433,11 +433,13 @@ public class BenefitServiceImpl implements BenefitService {
 
 	// 오늘이 월요일이어도 "다음 월요일"까지 최대 7일을 잡는다 - 0을 주면 캐시가 즉시 만료돼
 	// 그날 하루 종일 매 요청마다 재계산하게 된다.
+	// LocalDateTime끼리 그냥 빼면(Duration.between) 시간대 정보가 없어 SonarQube가 신뢰성
+	// 버그(S8700)로 잡는다 - 같은 ZONE으로 명시적으로 붙여서 계산한다.
 	private Duration ttlUntilNextMonday(LocalDateTime now) {
 		LocalDate today = now.toLocalDate();
 		int daysUntilNextMonday = 8 - today.getDayOfWeek().getValue();
 		LocalDateTime nextMonday = today.plusDays(daysUntilNextMonday).atStartOfDay();
-		return Duration.between(now, nextMonday);
+		return Duration.between(now.atZone(ZONE), nextMonday.atZone(ZONE));
 	}
 
 	private BenefitCoachResponseDto computeBenefitCoaching(
