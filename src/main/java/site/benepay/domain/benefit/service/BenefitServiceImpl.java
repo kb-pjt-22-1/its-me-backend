@@ -17,7 +17,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -810,6 +809,10 @@ public class BenefitServiceImpl implements BenefitService {
 		return Math.max(expectedSavingAmount, 0L);
 	}
 
+	// 실제 매칭 로직(정규화 + 부분 문자열 비교)은 BenefitNode.matchesMerchant로 옮겼다 -
+	// 추천/결제 엔진과 같은 판정 기준을 한 곳에서 관리한다. 다만 여기서는 usualMerchantName이
+	// null/공백이면(어느 매장에서 주로 쓰는지 모름) "매칭 안 됨"으로 봐야 한다 - BenefitNode
+	// 쪽의 null 처리(매장 미특정 = 필터 통과)와 의도가 달라서 위임 전에 따로 걸러낸다.
 	private boolean matchesMerchant(
 		SpendingPatternData pattern,
 		BenefitNode benefit
@@ -818,37 +821,12 @@ public class BenefitServiceImpl implements BenefitService {
 			return true;
 		}
 
-		String merchantName =
-			normalizeMerchantName(
-				pattern.getUsualMerchantName()
-			);
-
-		if (merchantName.isBlank()) {
+		String merchantName = pattern.getUsualMerchantName();
+		if (merchantName == null || merchantName.isBlank()) {
 			return false;
 		}
 
-		for (String targetMerchant : benefit.merchantNames()) {
-			String normalizedTarget =
-				normalizeMerchantName(targetMerchant);
-
-			if (merchantName.contains(normalizedTarget)
-				|| normalizedTarget.contains(merchantName)) {
-
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	private String normalizeMerchantName(String merchantName) {
-		if (merchantName == null) {
-			return "";
-		}
-
-		return merchantName
-			.replace(" ", "")
-			.toLowerCase(Locale.KOREAN);
+		return benefit.matchesMerchant(merchantName);
 	}
 
 	private boolean isWeekend(String dayOfWeek) {
