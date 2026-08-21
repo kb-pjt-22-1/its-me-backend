@@ -122,13 +122,6 @@ public class GlobalExceptionHandler {
 		return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
 	}
 
-	@ExceptionHandler(DevLoginDisabledException.class)
-	public ResponseEntity<ErrorResponse> handleDevLoginDisabled(DevLoginDisabledException ex,
-		HttpServletRequest request) {
-		// 예외 메시지를 그대로 쓰지 않는다. 없는 경로를 쳤을 때와 응답이 같아야 감추는 의미가 있다.
-		return errorResponse(HttpStatus.NOT_FOUND, "찾을 수 없습니다.", request);
-	}
-
 	@ExceptionHandler(WithdrawalNotConfirmedException.class)
 	public ResponseEntity<ErrorResponse> handleWithdrawalNotConfirmed(WithdrawalNotConfirmedException ex,
 		HttpServletRequest request) {
