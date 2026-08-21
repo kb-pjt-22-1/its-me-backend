@@ -13,8 +13,8 @@ public interface MerchantMapper {
 
 	Optional<Merchant> findByMerchantId(@Param("merchantId") Long merchantId);
 
-	// Redis GEO 검색(MerchantServiceImpl)이 좌표 순 merchant_id 목록을 뽑아준 뒤, 그 PK로
-	// 나머지 컬럼을 채우는 용도 - 거리 계산은 이미 Redis가 끝냈으므로 여기선 안 한다. IN절이라
-	// 반환 순서가 보장되지 않으므로, 호출부가 Redis가 준 순서대로 다시 정렬해서 써야 한다.
+	// Redis GEO 검색(MerchantGeoQueryService)이 반경 검색으로 이미 추려낸 merchantId들의 상세
+	// 정보만 가져올 때 쓴다. 거리 계산이나 정렬은 Redis 쪽에서 끝난 뒤라 여기서는 순서 없이
+	// PK로만 조회한다.
 	List<Merchant> findByIds(@Param("merchantIds") List<Long> merchantIds);
 }

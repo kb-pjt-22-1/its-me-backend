@@ -143,10 +143,12 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 
 	/**
 	 * 이 결제에 실제로 적용할 혜택을 계산한다. 카드의 benefits_info/전월 실적, 가맹점의
-	 * categoryCode, 이번 달/올해 이미 소진한 사용량(card_benefit_monthly_usage)을 모아
-	 * BenefitEngine.selectPaymentBenefit에 넘긴다. 카드 정보를 못 찾는 등 계산 재료가
-	 * 없으면(정상 흐름에서는 발생하지 않음 - 소유권은 이미 검증됨) 혜택 미적용으로 처리해
-	 * 결제 자체는 막지 않는다.
+	 * categoryCode·이름, 이번 달/올해 이미 소진한 사용량(card_benefit_monthly_usage)을 모아
+	 * BenefitEngine.selectPaymentBenefit에 넘긴다. 가맹점 이름을 같이 넘기는 이유는
+	 * MERCHANT_BRAND처럼 특정 매장에만 한정된 혜택(예: "아웃백 10% 할인")이 categoryCode만으로는
+	 * 걸러지지 않기 때문이다 - 안 넘기면 같은 업종의 다른 매장 결제에도 할인이 잘못 적용된다.
+	 * 카드 정보를 못 찾는 등 계산 재료가 없으면(정상 흐름에서는 발생하지 않음 - 소유권은 이미
+	 * 검증됨) 혜택 미적용으로 처리해 결제 자체는 막지 않는다.
 	 */
 	private BenefitApplication resolveBenefitApplication(Long userCardId, Long merchantId, BigDecimal originalAmount) {
 		MerchantResponseDto merchant = merchantService.getMerchant(merchantId);
@@ -169,7 +171,8 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 			buildUsageMap(userCardId, targetYearMonth, currentYearMonth.getYear());
 
 		return BenefitEngine.selectPaymentBenefit(
-			tiers, prevMonthSpend, merchant.getCategoryCode(), originalAmount.longValueExact(), usageByServiceName
+			tiers, prevMonthSpend, merchant.getCategoryCode(), merchant.getMerchantName(),
+			originalAmount.longValueExact(), usageByServiceName
 		);
 	}
 

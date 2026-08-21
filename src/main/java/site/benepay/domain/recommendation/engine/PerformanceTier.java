@@ -41,11 +41,24 @@ public record PerformanceTier(
 	}
 
 	/**
-	 * 이 구간 안에서 주어진 업종 코드를 커버하는 혜택들.
+	 * 이 구간 안에서 주어진 업종 코드를 커버하는 혜택들. 특정 매장을 판정하는 게 아니라
+	 * 업종 단위로만 훑는 자리(예: 카테고리별 혜택 현황)에서 쓴다 - MERCHANT_BRAND처럼 매장이
+	 * 한정된 혜택도 그대로 포함된다.
 	 */
 	public List<BenefitNode> benefitsForCategory(String categoryCode) {
+		return benefitsForCategory(categoryCode, null);
+	}
+
+	/**
+	 * 이 구간 안에서 주어진 업종 코드를 커버하면서 실제로 이 매장에 적용되는 혜택들.
+	 * MERCHANT_BRAND처럼 특정 매장에만 한정된 혜택(예: "아웃백 10% 할인")은 categoryCodes
+	 * 매칭만으로 걸러지지 않으므로, 특정 매장을 놓고 판정하는 자리(추천 목록, 결제)는 반드시
+	 * 이 오버로드를 써야 한다. merchantName이 null이면 매장 제한 혜택도 통과한다(지갑 전체
+	 * 기준 계산처럼 특정 매장이 없는 경우).
+	 */
+	public List<BenefitNode> benefitsForCategory(String categoryCode, String merchantName) {
 		return realBenefits().stream()
-			.filter(b -> b.coversCategory(categoryCode))
+			.filter(b -> b.coversCategory(categoryCode) && b.matchesMerchant(merchantName))
 			.collect(Collectors.toList());
 	}
 }

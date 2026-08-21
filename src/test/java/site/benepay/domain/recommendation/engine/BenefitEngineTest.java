@@ -48,7 +48,7 @@ class BenefitEngineTest {
 			? 0L
 			: cardSpendHistory.get(java.util.Collections.max(cardSpendHistory.keySet()));
 		return BenefitEngine.evaluatePriority(
-			tiers, prevMonthSpend, currentMonthSpend, CAFE, "카페", TICKET,
+			tiers, prevMonthSpend, currentMonthSpend, CAFE, null, "카페", TICKET,
 			cardSpendHistory, walletSpendHistory, TEST_PARAMS, today, beta, usageByServiceName
 		);
 	}
@@ -144,6 +144,30 @@ class BenefitEngineTest {
 
 		assertThat(r.future()).isZero();
 		assertThat(r.total()).isCloseTo(r.now(), within(1e-6));
+	}
+
+	@Test
+	void evaluatePriorityExcludesMerchantLimitedBenefitAtADifferentMerchant() {
+		// recommendMerchants("오늘의 추천")가 재현하던 버그: 아웃백 한정 혜택이 다른 음식점을
+		// 평가할 때도 now/gain에 반영되면 안 된다.
+		String restaurant = "5812";
+		BenefitNode outbackOnly = new BenefitNode("외식 할인", "MERCHANT_BRAND", List.of(restaurant),
+			"CASHBACK_DISCOUNT", 10, 0L, 0L, 0L, 0, null, null, null, null, null, null,
+			List.of("아웃백"), false, null);
+		List<PerformanceTier> tiers =
+			List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(outbackOnly)));
+
+		Mode3Result atOutback = BenefitEngine.evaluatePriority(
+			tiers, 0, 0, restaurant, "아웃백", "음식점", TICKET, Map.of(), Map.of(), TEST_PARAMS, TODAY, 1.0, Map.of()
+		);
+		Mode3Result atOtherRestaurant = BenefitEngine.evaluatePriority(
+			tiers, 0, 0, restaurant, "맥도날드", "음식점", TICKET, Map.of(), Map.of(), TEST_PARAMS, TODAY, 1.0, Map.of()
+		);
+
+		assertThat(atOutback.now()).isGreaterThan(0L);
+		assertThat(atOtherRestaurant.now()).isZero();
+		assertThat(atOtherRestaurant.total()).isZero();
+		assertThat(atOtherRestaurant.note()).contains("혜택 자체가 없음");
 	}
 
 	@Test
@@ -267,7 +291,8 @@ class BenefitEngineTest {
 		Map<String, Long> walletHistory = Map.of("202511", 600_000L, "202512", 600_000L);
 
 		Mode3Result withWeights = BenefitEngine.evaluatePriority(
-			tiers, 1_000L, 0, CAFE, "카페", TICKET, cardHistory, walletHistory, paramsWithWeights, TODAY, 1.0, Map.of()
+			tiers, 1_000L, 0, CAFE, null, "카페", TICKET, cardHistory, walletHistory, paramsWithWeights, TODAY, 1.0,
+			Map.of()
 		);
 		Mode3Result withoutWeights = evaluatePriority(tiers, 0, cardHistory, walletHistory, TODAY, 1.0);
 
@@ -295,7 +320,7 @@ class BenefitEngineTest {
 		);
 
 		Mode3Result r = BenefitEngine.evaluatePriority(
-			tiers, 0, 0, CAFE, "카페", TICKET, Map.of(), Map.of(), paramsWithHistogram, TODAY, 1.0, Map.of()
+			tiers, 0, 0, CAFE, null, "카페", TICKET, Map.of(), Map.of(), paramsWithHistogram, TODAY, 1.0, Map.of()
 		);
 
 		// usable = 10,000 * (20/30) ≈ 6,667원, 할인 = 6,667 * 20% ≈ 1,333원.
@@ -456,7 +481,7 @@ class BenefitEngineTest {
 		List<PerformanceTier> tiers =
 			List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(lowRate, highRate)));
 
-		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, 10_000L, Map.of());
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
 
 		assertThat(application.serviceName()).isEqualTo("고율카페");
 		assertThat(application.discountAmount()).isEqualTo(1_500L);
@@ -468,7 +493,7 @@ class BenefitEngineTest {
 			50, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
 		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(point)));
 
-		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, 10_000L, Map.of());
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
 
 		assertThat(application).isEqualTo(BenefitApplication.NONE);
 	}
@@ -480,7 +505,7 @@ class BenefitEngineTest {
 			List.of(), false, null);
 		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(perLiter)));
 
-		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, 10_000L, Map.of());
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
 
 		assertThat(application).isEqualTo(BenefitApplication.NONE);
 	}
@@ -490,7 +515,7 @@ class BenefitEngineTest {
 		BenefitNode benefit = rateBenefit(CAFE, 50, null, 20_000L);
 		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
 
-		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, 10_000L, Map.of());
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
 
 		assertThat(application).isEqualTo(BenefitApplication.NONE);
 	}
@@ -502,7 +527,7 @@ class BenefitEngineTest {
 		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
 
 		Map<String, BenefitUsage> usage = Map.of("카페", new BenefitUsage(0L, 2, 0));
-		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, 10_000L, usage);
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, usage);
 
 		assertThat(application).isEqualTo(BenefitApplication.NONE);
 	}
@@ -515,7 +540,7 @@ class BenefitEngineTest {
 
 		// 정률 50%면 5,000원인데 월 한도 3,000원 중 이미 2,500원을 써서 잔여 500원만 남았다.
 		Map<String, BenefitUsage> usage = Map.of("카페", new BenefitUsage(2_500L, 0, 0));
-		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, 10_000L, usage);
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, usage);
 
 		assertThat(application.serviceName()).isEqualTo("카페");
 		assertThat(application.discountAmount()).isEqualTo(500L);
@@ -525,9 +550,30 @@ class BenefitEngineTest {
 	void selectPaymentBenefitReturnsNoneWhenCategoryHasNoCoveringBenefit() {
 		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of()));
 
-		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, 10_000L, Map.of());
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
 
 		assertThat(application).isEqualTo(BenefitApplication.NONE);
+	}
+
+	@Test
+	void selectPaymentBenefitExcludesMerchantLimitedBenefitAtADifferentMerchant() {
+		// 실제 버그 재현: "직장인 보너스 체크카드"의 아웃백 10% 할인이 실제 결제 시점에
+		// 아웃백이 아닌 다른 음식점(같은 5812 업종)에도 잘못 적용되던 문제.
+		String restaurant = "5812";
+		BenefitNode outbackOnly = new BenefitNode("외식 할인", "MERCHANT_BRAND", List.of(restaurant),
+			"CASHBACK_DISCOUNT", 10, 0L, 0L, 0L, 0, null, null, null, null, null, null,
+			List.of("아웃백"), false, null);
+		List<PerformanceTier> tiers =
+			List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(outbackOnly)));
+
+		BenefitApplication atOutback =
+			BenefitEngine.selectPaymentBenefit(tiers, 0, restaurant, "아웃백", 30_000L, Map.of());
+		BenefitApplication atOtherRestaurant =
+			BenefitEngine.selectPaymentBenefit(tiers, 0, restaurant, "맥도날드", 30_000L, Map.of());
+
+		assertThat(atOutback.serviceName()).isEqualTo("외식 할인");
+		assertThat(atOutback.discountAmount()).isEqualTo(3_000L);
+		assertThat(atOtherRestaurant).isEqualTo(BenefitApplication.NONE);
 	}
 
 	// ---------------------------------------------------------------- shortDescription
@@ -579,7 +625,7 @@ class BenefitEngineTest {
 		List<PerformanceTier> tiers = oneTierCard(0, 10, null, 0, null); // CAFE만 커버
 
 		Mode3Result result = BenefitEngine.evaluatePriority(
-			tiers, 0L, 0L, "9999", "다른카테고리", TICKET, Map.of(), Map.of(), TEST_PARAMS, TODAY, 1.0, Map.of()
+			tiers, 0L, 0L, "9999", null, "다른카테고리", TICKET, Map.of(), Map.of(), TEST_PARAMS, TODAY, 1.0, Map.of()
 		);
 
 		assertThat(result.shortDescription()).isNull();
