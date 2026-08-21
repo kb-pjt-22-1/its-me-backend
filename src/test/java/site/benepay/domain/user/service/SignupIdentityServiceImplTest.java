@@ -119,6 +119,43 @@ class SignupIdentityServiceImplTest {
 			.isInstanceOf(KbCustomerNotFoundException.class);
 
 		verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
+		// dev-login이 꺼져 있으면(운영 환경 기본값) Mock Server에 새 고객을 만들어달라고
+		// 요청하지 않는다 - 이 편의 기능은 devLoginEnabled일 때만 켜진다.
+		verify(kbCardClient, never()).registerCustomer(any());
+	}
+
+	// (테스트용) 실제 본인인증기관 연동이 없는 로컬/테스트 환경에서는, 미리 심어둔 시드
+	// 신원이 아니어도 회원가입을 끝까지 테스트할 수 있어야 한다 - Mock Server에 등록된
+	// 회원이 아니면 devLoginEnabled일 때만 그 자리에서 새 고객을 만들어 계속 진행한다.
+	@Test
+	void requestVerificationAutoRegistersUnknownKbCustomerWhenDevLoginIsEnabled() {
+		SignupIdentityServiceImpl devService = new SignupIdentityServiceImpl(userMapper, encryptor,
+			signupVerificationStore, redisLockoutService, redisTemplate, kbCardClient, DI_HASH_SALT, true);
+		when(redisLockoutService.isLocked(RedisKeys.signupIdentityLock(PHONE_NUMBER))).thenReturn(false);
+		when(userMapper.existsByCiHash(EXPECTED_CI_HASH)).thenReturn(false);
+		when(kbCardClient.verifyCustomer(EXPECTED_CI_HASH)).thenReturn(new KbCustomerVerifyResponseDto());
+		when(kbCardClient.registerCustomer(EXPECTED_CI_HASH)).thenReturn(registeredKbCustomer());
+		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+		SignupIdentityRequestResponseDto response = devService.requestVerification(identityRequest());
+
+		assertThat(response).isNotNull();
+		verify(kbCardClient).registerCustomer(EXPECTED_CI_HASH);
+		verify(redisLockoutService).clearFailuresAndLock(
+			RedisKeys.signupIdentityFailure(PHONE_NUMBER), RedisKeys.signupIdentityLock(PHONE_NUMBER));
+	}
+
+	@Test
+	void requestVerificationStillRejectsWhenDevLoginEnabledButMockServerCannotRegisterEither() {
+		SignupIdentityServiceImpl devService = new SignupIdentityServiceImpl(userMapper, encryptor,
+			signupVerificationStore, redisLockoutService, redisTemplate, kbCardClient, DI_HASH_SALT, true);
+		when(redisLockoutService.isLocked(RedisKeys.signupIdentityLock(PHONE_NUMBER))).thenReturn(false);
+		when(userMapper.existsByCiHash(EXPECTED_CI_HASH)).thenReturn(false);
+		when(kbCardClient.verifyCustomer(EXPECTED_CI_HASH)).thenReturn(new KbCustomerVerifyResponseDto());
+		when(kbCardClient.registerCustomer(EXPECTED_CI_HASH)).thenReturn(new KbCustomerVerifyResponseDto());
+
+		assertThatThrownBy(() -> devService.requestVerification(identityRequest()))
+			.isInstanceOf(KbCustomerNotFoundException.class);
 	}
 
 	@Test

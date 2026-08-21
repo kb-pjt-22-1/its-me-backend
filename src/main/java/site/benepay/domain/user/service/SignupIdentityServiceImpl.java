@@ -87,9 +87,20 @@ public class SignupIdentityServiceImpl implements SignupIdentityService {
 
 		KbCustomerVerifyResponseDto kbCustomer = kbCardClient.verifyCustomer(ciHash);
 		if (!kbCustomer.isRegistered()) {
-			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, MAX_ATTEMPTS, FAILURE_WINDOW,
-				REQUEST_LOCK_DURATION);
-			throw new KbCustomerNotFoundException("KB에 등록된 회원이 아닙니다.");
+			// (테스트용) 실제 본인인증기관/카드사 연동이 없는 로컬·테스트 환경에서는, 미리
+			// 심어둔 몇 개의 시드 신원(mock-test-identities.txt)이 아니면 항상 "KB에
+			// 등록된 회원이 아닙니다"로 막혀서 다른 사람이 임의로 회원가입을 테스트해볼 수
+			// 없었다. dev-login과 같은 조건(devLoginEnabled)에서만, 등록된 회원이 아니면
+			// 그 자리에서 Mock Server에 새 고객+카드를 만들어 회원가입을 계속 진행한다.
+			// 운영 환경(devLoginEnabled=false)에서는 이 블록이 실행되지 않고 원래대로 막힌다.
+			if (devLoginEnabled) {
+				kbCustomer = kbCardClient.registerCustomer(ciHash);
+			}
+			if (!kbCustomer.isRegistered()) {
+				redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, MAX_ATTEMPTS, FAILURE_WINDOW,
+					REQUEST_LOCK_DURATION);
+				throw new KbCustomerNotFoundException("KB에 등록된 회원이 아닙니다.");
+			}
 		}
 
 		redisLockoutService.clearFailuresAndLock(failureKey, lockKey);
