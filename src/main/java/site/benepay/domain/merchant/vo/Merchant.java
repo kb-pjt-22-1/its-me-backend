@@ -30,5 +30,4 @@ public class Merchant {
 	private BigDecimal latitude;
 	@NonNull
 	private BigDecimal longitude;
-	private String phone;
 }

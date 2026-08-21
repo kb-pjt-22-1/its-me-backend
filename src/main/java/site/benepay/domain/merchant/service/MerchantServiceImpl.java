@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.springframework.data.geo.Distance;
@@ -42,7 +42,7 @@ public class MerchantServiceImpl implements MerchantService {
 	private static final double METERS_PER_DEGREE_LATITUDE = 111_320.0;
 
 	private final MerchantMapper merchantMapper;
-	private final StringRedisTemplate redisTemplate;
+	private final MerchantGeoQueryService merchantGeoQueryService;
 
 	@Override
 	@Transactional(readOnly = true)
@@ -64,70 +64,32 @@ public class MerchantServiceImpl implements MerchantService {
 	@Transactional(readOnly = true)
 	public List<MerchantResponseDto> getMerchants(double swLat, double swLng, double neLat, double neLng,
 		double centerLat, double centerLng, String categoryCode, int limit) {
-
-		// centerLat/centerLng가 bounds의 정중앙이라고 가정한다 - 지도 SDK의 뷰포트 중심이
-		// 보통 그 값이다. BYBOX는 FROMLONLAT 지점을 중심으로 폭/높이만큼 대칭으로 뻗는
-		// 사각형이라, 이 가정이 깨지면(중심이 한쪽으로 치우치면) 원래의 sw~ne 사각형과
-		// 완전히 일치하지는 않는다 - 다만 "중심에서 가까운 순 정렬 + limit" 의미 자체는 그대로다.
-		double heightMeters = Math.abs(neLat - swLat) * METERS_PER_DEGREE_LATITUDE;
-		double widthMeters = Math.abs(neLng - swLng) * METERS_PER_DEGREE_LATITUDE
-			* Math.cos(Math.toRadians(centerLat));
-
-		GeoReference<String> reference = GeoReference.fromCoordinate(centerLng, centerLat);
-		GeoShape shape = GeoShape.byBox(new BoundingBox(
-			new Distance(widthMeters, Metrics.METERS),
-			new Distance(heightMeters, Metrics.METERS)));
-
-		return searchGeoIndex(reference, shape, categoryCode, limit);
+		Map<Long, Long> distanceByMerchantId = merchantGeoQueryService.searchWithinBounds(
+			swLat, swLng, neLat, neLng, centerLat, centerLng, categoryCode, limit);
+		return toResponseDtos(distanceByMerchantId);
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public List<MerchantResponseDto> getNearbyMerchants(double lat, double lng, String categoryCode, int limit) {
-		GeoReference<String> reference = GeoReference.fromCoordinate(lng, lat);
-		GeoShape shape = GeoShape.byRadius(new Distance(EFFECTIVELY_UNBOUNDED_RADIUS_METERS, Metrics.METERS));
-
-		return searchGeoIndex(reference, shape, categoryCode, limit);
+		Map<Long, Long> distanceByMerchantId = merchantGeoQueryService.searchNearby(lat, lng, categoryCode, limit);
+		return toResponseDtos(distanceByMerchantId);
 	}
 
-	/**
-	 * Redis GEO 인덱스(MerchantGeoSyncScheduler가 매일 새벽 MySQL에서 재적재)에서 좌표순
-	 * merchant_id + 거리를 뽑은 뒤, 그 PK로 MySQL에서 나머지 컬럼을 채워 응답 DTO로 조립한다.
-	 * MySQL은 IN절 순서를 보장하지 않으므로 Redis가 준 순서로 다시 맞춘다.
-	 */
-	private List<MerchantResponseDto> searchGeoIndex(GeoReference<String> reference, GeoShape shape,
-		String categoryCode, int limit) {
-
-		String geoKey = categoryCode == null ? RedisKeys.MERCHANT_GEO_ALL : RedisKeys.merchantGeoCategory(categoryCode);
-		GeoSearchCommandArgs args = GeoSearchCommandArgs.newGeoSearchArgs()
-			.includeDistance()
-			.sortAscending()
-			.limit(limit);
-
-		GeoResults<GeoLocation<String>> geoResults = redisTemplate.opsForGeo().search(geoKey, reference, shape, args);
-		List<GeoResult<GeoLocation<String>>> content = geoResults.getContent();
-		if (content.isEmpty()) {
+	// Redis GEO 검색 결과(merchantId → 거리, 가까운 순)에 대해 상세 정보만 MySQL에서 PK IN
+	// 조회로 채워 넣는다. MySQL IN 조회는 순서를 보장하지 않으므로, Redis가 이미 정해 둔
+	// 가까운 순서를 기준으로 다시 조립한다. 동기화 배치 이후 삭제된 매장은 조용히 건너뛴다.
+	private List<MerchantResponseDto> toResponseDtos(Map<Long, Long> distanceByMerchantId) {
+		if (distanceByMerchantId.isEmpty()) {
 			return List.of();
 		}
+		Map<Long, Merchant> merchantsById = merchantMapper.findByIds(List.copyOf(distanceByMerchantId.keySet()))
+			.stream()
+			.collect(Collectors.toMap(Merchant::getMerchantId, Function.identity()));
 
-		List<Long> orderedIds = new ArrayList<>(content.size());
-		Map<Long, Long> distanceMetersByMerchantId = new LinkedHashMap<>();
-		for (GeoResult<GeoLocation<String>> result : content) {
-			Long merchantId = Long.valueOf(result.getContent().getName());
-			long distanceMeters = Math.round(result.getDistance().in(Metrics.METERS).getValue());
-			orderedIds.add(merchantId);
-			distanceMetersByMerchantId.put(merchantId, distanceMeters);
-		}
-
-		Map<Long, Merchant> merchantsById = merchantMapper.findByIds(orderedIds).stream()
-			.collect(Collectors.toMap(Merchant::getMerchantId, merchant -> merchant));
-
-		return orderedIds.stream()
-			.map(merchantsById::get)
-			// 새벽 배치 이후 매장이 삭제되는 등, Redis 인덱스와 MySQL이 아주 잠깐 어긋나 있는
-			// 사이에 조회가 들어오면 merchantsById에 없는 id가 섞일 수 있다 - 조용히 건너뛴다.
-			.filter(Objects::nonNull)
-			.map(merchant -> MerchantResponseDto.from(merchant, distanceMetersByMerchantId.get(merchant.getMerchantId())))
+		return distanceByMerchantId.entrySet().stream()
+			.filter(entry -> merchantsById.containsKey(entry.getKey()))
+			.map(entry -> MerchantResponseDto.from(merchantsById.get(entry.getKey()), entry.getValue()))
 			.toList();
 	}
 }

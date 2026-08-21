@@ -17,8 +17,7 @@ class MerchantTest {
 			.merchantName("테스트 식당")
 			.address("서울시 강남구")
 			.latitude(BigDecimal.valueOf(37.5))
-			.longitude(BigDecimal.valueOf(127.0))
-			.phone("02-000-0000");
+			.longitude(BigDecimal.valueOf(127.0));
 	}
 
 	@Test
@@ -33,15 +32,13 @@ class MerchantTest {
 		assertThat(merchant.getAddress()).isEqualTo("서울시 강남구");
 		assertThat(merchant.getLatitude()).isEqualByComparingTo(BigDecimal.valueOf(37.5));
 		assertThat(merchant.getLongitude()).isEqualByComparingTo(BigDecimal.valueOf(127.0));
-		assertThat(merchant.getPhone()).isEqualTo("02-000-0000");
 	}
 
 	@Test
-	void builderAllowsNullMerchantIdAndPhone() {
-		Merchant merchant = validBuilder().merchantId(null).phone(null).build();
+	void builderAllowsNullMerchantId() {
+		Merchant merchant = validBuilder().merchantId(null).build();
 
 		assertThat(merchant.getMerchantId()).isNull();
-		assertThat(merchant.getPhone()).isNull();
 	}
 
 	@Test
