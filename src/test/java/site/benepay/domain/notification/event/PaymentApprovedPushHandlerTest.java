@@ -2,6 +2,9 @@ package site.benepay.domain.notification.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 
@@ -15,7 +18,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import site.benepay.domain.notification.dto.PushNotificationMessage;
+import site.benepay.domain.notification.service.NotificationHistoryStore;
 import site.benepay.domain.notification.service.PushNotificationSender;
+import site.benepay.domain.notification.vo.NotificationType;
 import site.benepay.domain.payment.event.PaymentApprovedEvent;
 
 @ExtendWith(MockitoExtension.class)
@@ -27,10 +32,13 @@ class PaymentApprovedPushHandlerTest {
 	@Mock
 	private PushNotificationSender pushNotificationSender;
 
+	@Mock
+	private NotificationHistoryStore notificationHistoryStore;
+
 	private PaymentApprovedPushHandler handler;
 
 	private PaymentApprovedPushHandler newHandler() {
-		return new PaymentApprovedPushHandler(pushNotificationSender);
+		return new PaymentApprovedPushHandler(pushNotificationSender, notificationHistoryStore);
 	}
 
 	@Test
@@ -49,6 +57,9 @@ class PaymentApprovedPushHandlerTest {
 		assertThat(message.userId()).isEqualTo(USER_ID);
 		assertThat(message.body()).isEqualTo("스타벅스 강남점에서 15,000원 결제했어요.");
 		assertThat(message.data()).containsEntry("paymentId", "100");
+
+		verify(notificationHistoryStore).record(
+			eq(USER_ID), eq(NotificationType.PAYMENT_APPROVED), anyString(), eq(message.body()), eq(PAYMENT_ID));
 	}
 
 	@Test
@@ -75,8 +86,26 @@ class PaymentApprovedPushHandlerTest {
 			BigDecimal.valueOf(15000), BigDecimal.ZERO, null, USER_ID, "스타벅스 강남점"
 		);
 		doThrow(new IllegalStateException("FCM이 설정되지 않아 푸시 알림을 보낼 수 없습니다."))
-			.when(pushNotificationSender).send(org.mockito.ArgumentMatchers.any());
+			.when(pushNotificationSender).send(any());
 
 		assertThatCode(() -> handler.handle(event)).doesNotThrowAnyException();
+
+		verify(notificationHistoryStore).record(eq(USER_ID), eq(NotificationType.PAYMENT_APPROVED), anyString(),
+			anyString(), eq(PAYMENT_ID));
+	}
+
+	@Test
+	void doesNotPropagateWhenHistoryStorageFails() {
+		handler = newHandler();
+		PaymentApprovedEvent event = new PaymentApprovedEvent(
+			PAYMENT_ID, 2L, "5813", LocalDateTime.of(2026, 8, 21, 12, 0),
+			BigDecimal.valueOf(15000), BigDecimal.ZERO, null, USER_ID, "스타벅스 강남점"
+		);
+		doThrow(new IllegalStateException("Redis 다운")).when(notificationHistoryStore)
+			.record(any(), any(), any(), any(), any());
+
+		assertThatCode(() -> handler.handle(event)).doesNotThrowAnyException();
+
+		verify(pushNotificationSender).send(any());
 	}
 }

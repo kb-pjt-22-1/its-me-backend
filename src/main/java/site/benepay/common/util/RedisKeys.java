@@ -99,4 +99,14 @@ public final class RedisKeys {
 		return "notification:nearby-merchant:" + userId + ":" + merchantId;
 	}
 
+	// 알림 이력(NotificationHistoryStore) - 정렬용 Sorted Set(score=생성시각 epoch)과
+	// 본문용 Hash를 분리해서 관리한다. 자세한 이유는 NotificationHistoryStore 클래스 주석 참고.
+	public static String notificationHistory(Long userId) {
+		return "notifications:history:" + userId;
+	}
+
+	public static String notificationItems(Long userId) {
+		return "notifications:items:" + userId;
+	}
+
 }

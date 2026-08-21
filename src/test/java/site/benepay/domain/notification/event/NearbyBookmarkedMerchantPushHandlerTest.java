@@ -30,7 +30,9 @@ import site.benepay.common.util.RedisKeys;
 import site.benepay.domain.bookmark.mapper.BookmarkMapper;
 import site.benepay.domain.bookmark.vo.Bookmark;
 import site.benepay.domain.notification.dto.PushNotificationMessage;
+import site.benepay.domain.notification.service.NotificationHistoryStore;
 import site.benepay.domain.notification.service.PushNotificationSender;
+import site.benepay.domain.notification.vo.NotificationType;
 
 @ExtendWith(MockitoExtension.class)
 class NearbyBookmarkedMerchantPushHandlerTest {
@@ -55,11 +57,15 @@ class NearbyBookmarkedMerchantPushHandlerTest {
 	@Mock
 	private PushNotificationSender pushNotificationSender;
 
+	@Mock
+	private NotificationHistoryStore notificationHistoryStore;
+
 	private NearbyBookmarkedMerchantPushHandler handler;
 
 	@BeforeEach
 	void setUp() {
-		handler = new NearbyBookmarkedMerchantPushHandler(bookmarkMapper, redisTemplate, pushNotificationSender);
+		handler = new NearbyBookmarkedMerchantPushHandler(
+			bookmarkMapper, redisTemplate, pushNotificationSender, notificationHistoryStore);
 	}
 
 	private Bookmark bookmark(Long merchantId) {
@@ -92,7 +98,7 @@ class NearbyBookmarkedMerchantPushHandlerTest {
 
 		handler.handle(new UserLocationUpdatedEvent(USER_ID, LAT, LNG));
 
-		verifyNoInteractions(redisTemplate, pushNotificationSender);
+		verifyNoInteractions(redisTemplate, pushNotificationSender, notificationHistoryStore);
 	}
 
 	@Test
@@ -105,6 +111,8 @@ class NearbyBookmarkedMerchantPushHandlerTest {
 		handler.handle(new UserLocationUpdatedEvent(USER_ID, LAT, LNG));
 
 		verify(pushNotificationSender).send(any(PushNotificationMessage.class));
+		verify(notificationHistoryStore).record(
+			eq(USER_ID), eq(NotificationType.NEARBY_MERCHANT), anyString(), anyString(), eq(MERCHANT_ID));
 		verify(valueOperations).set(eq(RedisKeys.nearbyMerchantFlag(USER_ID, MERCHANT_ID)), anyString(),
 			eq(Duration.ofDays(1)));
 	}
@@ -186,6 +194,23 @@ class NearbyBookmarkedMerchantPushHandlerTest {
 		assertThatCode(() -> handler.handle(new UserLocationUpdatedEvent(USER_ID, LAT, LNG)))
 			.doesNotThrowAnyException();
 
+		verify(valueOperations).set(eq(RedisKeys.nearbyMerchantFlag(USER_ID, MERCHANT_ID)), anyString(),
+			eq(Duration.ofDays(1)));
+	}
+
+	@Test
+	void stillSetsFlagAndKeepsProcessingWhenHistoryStorageFails() {
+		when(bookmarkMapper.findActiveByUserId(USER_ID)).thenReturn(List.of(bookmark(MERCHANT_ID)));
+		stubGeoSearch(geoResultsWithin(MERCHANT_ID));
+		when(redisTemplate.hasKey(RedisKeys.nearbyMerchantFlag(USER_ID, MERCHANT_ID))).thenReturn(false);
+		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+		doThrow(new IllegalStateException("Redis 다운")).when(notificationHistoryStore)
+			.record(any(), any(), any(), any(), any());
+
+		assertThatCode(() -> handler.handle(new UserLocationUpdatedEvent(USER_ID, LAT, LNG)))
+			.doesNotThrowAnyException();
+
+		verify(pushNotificationSender).send(any(PushNotificationMessage.class));
 		verify(valueOperations).set(eq(RedisKeys.nearbyMerchantFlag(USER_ID, MERCHANT_ID)), anyString(),
 			eq(Duration.ofDays(1)));
 	}
