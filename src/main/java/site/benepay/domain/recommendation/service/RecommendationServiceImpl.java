@@ -77,7 +77,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		}
 
 		List<CardBenefitComparisonResponseDto> cards =
-			compareCardsForMerchant(userId, heldCards, merchant.getCategoryCode());
+			compareCardsForMerchant(userId, heldCards, merchant.getCategoryCode(), merchant.getMerchantName());
 
 		return MerchantCardRecommendationResponseDto.builder()
 			.merchantId(merchant.getMerchantId())
@@ -97,7 +97,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 	private List<CardBenefitComparisonResponseDto> compareCardsForMerchant(
 		Long userId,
 		List<RecommendationCardCandidateVO> heldCards,
-		String categoryCode
+		String categoryCode,
+		String merchantName
 	) {
 		if (heldCards.isEmpty()) {
 			return Collections.emptyList();
@@ -131,8 +132,9 @@ public class RecommendationServiceImpl implements RecommendationService {
 		List<Map.Entry<RecommendationCardCandidateVO, Mode3Result>> evaluated = heldCards.stream()
 			.map(candidate -> Map.entry(candidate, typicalAmount == null
 				? new Mode3Result(0L, 0.0, 0.0, 0.0, 0.0, 0L, 0L, 0.0, "이 카테고리 통상 결제액 기준이 없어 비교할 수 없음", null)
-				: scorePriority(candidate, categoryCode, categoryName, typicalAmount, walletSpendHistory,
-					parsedTiers.get(candidate), usageByCard.getOrDefault(candidate.getUserCardId(), Map.of()))))
+				: scorePriority(candidate, categoryCode, merchantName, categoryName, typicalAmount,
+					walletSpendHistory, parsedTiers.get(candidate),
+					usageByCard.getOrDefault(candidate.getUserCardId(), Map.of()))))
 			.toList();
 
 		Long bestUserCardId = evaluated.stream()
@@ -142,7 +144,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.orElse(null);
 
 		return evaluated.stream()
-			.map(entry -> toComparison(entry.getKey(), entry.getValue(), categoryCode,
+			.map(entry -> toComparison(entry.getKey(), entry.getValue(), categoryCode, merchantName,
 				parsedTiers.get(entry.getKey()), bestUserCardId))
 			.toList();
 	}
@@ -159,13 +161,15 @@ public class RecommendationServiceImpl implements RecommendationService {
 		RecommendationCardCandidateVO candidate,
 		Mode3Result result,
 		String categoryCode,
+		String merchantName,
 		List<PerformanceTier> tiers,
 		Long bestUserCardId
 	) {
-		boolean benefitApplicable = tiers.stream().anyMatch(tier -> !tier.benefitsForCategory(categoryCode).isEmpty());
+		boolean benefitApplicable =
+			tiers.stream().anyMatch(tier -> !tier.benefitsForCategory(categoryCode, merchantName).isEmpty());
 		boolean performanceMet = result.now() > 0;
 		Long minimumPaymentAmount = tiers.stream()
-			.flatMap(tier -> tier.benefitsForCategory(categoryCode).stream())
+			.flatMap(tier -> tier.benefitsForCategory(categoryCode, merchantName).stream())
 			.map(BenefitNode::minimumPaymentAmount)
 			.max(Long::compareTo)
 			.orElse(null);
@@ -231,7 +235,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 		List<TodayCardRecommendationResponseDto.NearbyMerchant> nearby = nearbyMerchantCandidates.stream()
 			.filter(merchant -> typicalAmountByCategory.containsKey(merchant.getCategoryCode()))
 			.map(merchant -> Map.entry(merchant, scorePriority(
-				best.card(), merchant.getCategoryCode(), categoryNames.get(merchant.getCategoryCode()),
+				best.card(), merchant.getCategoryCode(), merchant.getMerchantName(),
+				categoryNames.get(merchant.getCategoryCode()),
 				typicalAmountByCategory.get(merchant.getCategoryCode()), walletSpendHistory, bestCardTiers,
 				usageByCard.getOrDefault(best.card().getUserCardId(), Map.of())
 			)))
@@ -286,7 +291,9 @@ public class RecommendationServiceImpl implements RecommendationService {
 			Map<String, BenefitUsage> usage = usageByCard.getOrDefault(candidate.getUserCardId(), Map.of());
 			for (Map.Entry<String, Long> category : typicalAmountByCategory.entrySet()) {
 				String categoryCode = category.getKey();
-				Mode3Result result = scorePriority(candidate, categoryCode, categoryNames.get(categoryCode),
+				// 매장이 특정되지 않은 지갑 전체 기준 계산이라 merchantName=null - MERCHANT_BRAND
+				// 혜택도 "이 카테고리 어딘가에서는 유리하다"는 잠재력으로는 그대로 반영한다.
+				Mode3Result result = scorePriority(candidate, categoryCode, null, categoryNames.get(categoryCode),
 					category.getValue(), walletSpendHistory, parsedTiers.get(candidate), usage);
 				if (result.total() > 0 && (best == null || result.total() > best.result().total())) {
 					best = new WalletBestPick(candidate, categoryCode, result);
@@ -402,8 +409,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 		String categoryName = categoryNames.get(merchant.getCategoryCode());
 		TopCardsResult topCardsResult = categoryName == null
 			? TopCardsResult.EMPTY
-			: findTopCards(heldCards, merchant.getCategoryCode(), categoryName, walletSpendHistory, parsedTiers,
-			usageByCard);
+			: findTopCards(heldCards, merchant.getCategoryCode(), merchant.getMerchantName(), categoryName,
+			walletSpendHistory, parsedTiers, usageByCard);
 
 		List<RecommendedCardResponseDto> recommendedCards = topCardsResult.cards().stream()
 			.map(entry -> RecommendedCardResponseDto.builder()
@@ -442,6 +449,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 	private TopCardsResult findTopCards(
 		List<RecommendationCardCandidateVO> heldCards,
 		String categoryCode,
+		String merchantName,
 		String categoryName,
 		Map<String, Long> walletSpendHistory,
 		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers,
@@ -459,7 +467,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		List<Map.Entry<RecommendationCardCandidateVO, Mode3Result>> cards = heldCards.stream()
 			.map(candidate -> Map.entry(
 				candidate,
-				scorePriority(candidate, categoryCode, categoryName, typicalAmount, walletSpendHistory,
+				scorePriority(candidate, categoryCode, merchantName, categoryName, typicalAmount, walletSpendHistory,
 					parsedTiers.get(candidate),
 					usageByCard.getOrDefault(candidate.getUserCardId(), Map.of()))
 			))
@@ -507,11 +515,13 @@ public class RecommendationServiceImpl implements RecommendationService {
 	/**
 	 * 카드 한 장에 대해 모드 3을 평가한다. prevMonthSpend(activeTier 기준)는 이 카드
 	 * spendHistory의 가장 최신 달 값이고, currentMonthSpend(baselineTier/nextTier 기준)는
-	 * 진행 중인 이번 달 누적이다.
+	 * 진행 중인 이번 달 누적이다. merchantName은 MERCHANT_BRAND 혜택을 거르는 데 쓰인다 -
+	 * 특정 매장이 없는 지갑 전체 기준 호출(findWalletBestPick)이면 null을 넘긴다.
 	 */
 	private Mode3Result scorePriority(
 		RecommendationCardCandidateVO candidate,
 		String categoryCode,
+		String merchantName,
 		String categoryName,
 		long typicalAmount,
 		Map<String, Long> walletSpendHistory,
@@ -524,7 +534,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		long currentMonthSpend = candidate.getCurrentMonthSpend() == null ? 0L : candidate.getCurrentMonthSpend();
 
 		return BenefitEngine.evaluatePriority(
-			tiers, prevMonthSpend, currentMonthSpend, categoryCode, categoryName, typicalAmount,
+			tiers, prevMonthSpend, currentMonthSpend, categoryCode, merchantName, categoryName, typicalAmount,
 			spendHistory, walletSpendHistory, recommendationParamsLoader.params(), LocalDate.now(APP_ZONE),
 			PRIORITY_BETA, usageByServiceName
 		);

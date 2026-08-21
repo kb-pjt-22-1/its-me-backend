@@ -63,13 +63,15 @@ public final class BenefitEngine {
 	}
 
 	/**
-	 * 이번 달 누적 실적 기준으로 아직 안 열렸고, 이 카테고리에 혜택이 있는 다음 구간.
+	 * 이번 달 누적 실적 기준으로 아직 안 열렸고, 이 카테고리(+매장)에 혜택이 있는 다음 구간.
 	 * Python 원본은 카테고리 구분 없이 "혜택이 있는 다음 구간"을 고르지만, 이 포팅은
 	 * 카테고리 하나로 스코프를 좁혔으므로 이 카테고리를 커버하는지까지 확인한다.
 	 */
-	public static PerformanceTier nextTier(List<PerformanceTier> tiers, long currentMonthSpend, String categoryCode) {
+	public static PerformanceTier nextTier(List<PerformanceTier> tiers, long currentMonthSpend, String categoryCode,
+		String merchantName) {
 		return tiers.stream()
-			.filter(t -> t.minimumSpending() > currentMonthSpend && !t.benefitsForCategory(categoryCode).isEmpty())
+			.filter(t -> t.minimumSpending() > currentMonthSpend
+				&& !t.benefitsForCategory(categoryCode, merchantName).isEmpty())
 			.min(Comparator.comparingLong(PerformanceTier::minimumSpending))
 			.orElse(null);
 	}
@@ -256,7 +258,8 @@ public final class BenefitEngine {
 	 *
 	 * <p>POINT_ACCUMULATION(적립형)은 결제금액을 깎지 않고 포인트로 쌓이는 것이라 이 결제의
 	 * discountAmount로 취급하면 데이터가 왜곡돼 제외한다. PER_LITER_*는 리터 단위 계산인데
-	 * 결제 API에 리터 정보가 없어 계산할 수 없어 제외한다. 카테고리를 커버하는 나머지 혜택 중
+	 * 결제 API에 리터 정보가 없어 계산할 수 없어 제외한다. 카테고리를 커버하고 이 매장에도
+	 * 실제로 적용되는(merchantName, BenefitNode.matchesMerchant 참고) 나머지 혜택 중
 	 * 최소결제금액을 충족하고 월/연 횟수 한도가 아직 안 찬 것들 가운데 할인액이 가장 큰 하나만
 	 * 고른다 - 실제 결제는 한 번에 한 혜택만 적용되는 게 자연스럽다.</p>
 	 */
@@ -264,13 +267,14 @@ public final class BenefitEngine {
 		List<PerformanceTier> tiers,
 		long prevMonthSpend,
 		String categoryCode,
+		String merchantName,
 		long paymentAmount,
 		Map<String, BenefitUsage> usageByServiceName
 	) {
 		PerformanceTier active = activeTier(tiers, prevMonthSpend);
 
 		BenefitApplication best = BenefitApplication.NONE;
-		for (BenefitNode benefit : active.benefitsForCategory(categoryCode)) {
+		for (BenefitNode benefit : active.benefitsForCategory(categoryCode, merchantName)) {
 			if (PAYMENT_TIME_EXCLUDED_METHODS.contains(benefit.discountMethod())) {
 				continue;
 			}
@@ -321,10 +325,10 @@ public final class BenefitEngine {
 	 * 계상되지 않는다. 모드 3의 now(활성 구간)와 gain(다음/기준 구간 차이) 양쪽에서 재사용한다.
 	 */
 	private static TierBenefit bestTierBenefit(
-		PerformanceTier tier, String categoryCode, String categoryName, long ticket, RecommendationParams params,
-		Map<String, BenefitUsage> usageByServiceName
+		PerformanceTier tier, String categoryCode, String merchantName, String categoryName, long ticket,
+		RecommendationParams params, Map<String, BenefitUsage> usageByServiceName
 	) {
-		List<BenefitNode> covering = tier.benefitsForCategory(categoryCode);
+		List<BenefitNode> covering = tier.benefitsForCategory(categoryCode, merchantName);
 		if (covering.isEmpty()) {
 			return TierBenefit.NONE;
 		}
@@ -345,10 +349,11 @@ public final class BenefitEngine {
 	}
 
 	private static long tierDiscountForCategory(
-		PerformanceTier tier, String categoryCode, String categoryName, long ticket, RecommendationParams params,
-		Map<String, BenefitUsage> usageByServiceName
+		PerformanceTier tier, String categoryCode, String merchantName, String categoryName, long ticket,
+		RecommendationParams params, Map<String, BenefitUsage> usageByServiceName
 	) {
-		return bestTierBenefit(tier, categoryCode, categoryName, ticket, params, usageByServiceName).discount();
+		return bestTierBenefit(tier, categoryCode, merchantName, categoryName, ticket, params, usageByServiceName)
+			.discount();
 	}
 
 	/**
@@ -403,6 +408,8 @@ public final class BenefitEngine {
 	 * @param prevMonthSpend 전월 실적 - activeTier(now)를 정한다
 	 * @param currentMonthSpend 이번 달 누적 실적 - baselineTier/nextTier(gap, gain)를 정한다
 	 * @param categoryCode 매칭용(merchant_categories 기준)
+	 * @param merchantName 이 매장 이름 - MERCHANT_BRAND처럼 매장이 한정된 혜택을 걸러내는 데
+	 *        쓴다(BenefitNode.matchesMerchant). 특정 매장이 없는 지갑 전체 기준 계산이면 null.
 	 * @param categoryName typicalPaymentAmount/통과율 조회용(params.json 키)
 	 * @param typicalAmount 이 카테고리의 통상 결제액(ticket)
 	 * @param cardSpendHistory 이 카드의 과거 완료된 달 실적(yyyyMM -> 금액) - P_이력(hits/months)에 쓴다
@@ -419,6 +426,7 @@ public final class BenefitEngine {
 		long prevMonthSpend,
 		long currentMonthSpend,
 		String categoryCode,
+		String merchantName,
 		String categoryName,
 		long typicalAmount,
 		Map<String, Long> cardSpendHistory,
@@ -428,17 +436,19 @@ public final class BenefitEngine {
 		double beta,
 		Map<String, BenefitUsage> usageByServiceName
 	) {
-		boolean hasAnywhere = tiers.stream().anyMatch(t -> !t.benefitsForCategory(categoryCode).isEmpty());
+		boolean hasAnywhere =
+			tiers.stream().anyMatch(t -> !t.benefitsForCategory(categoryCode, merchantName).isEmpty());
 		if (!hasAnywhere) {
 			return Mode3Result.blank("이 카테고리 혜택 자체가 없음");
 		}
 
 		PerformanceTier active = activeTier(tiers, prevMonthSpend);
 		TierBenefit activeBenefit =
-			bestTierBenefit(active, categoryCode, categoryName, typicalAmount, params, usageByServiceName);
+			bestTierBenefit(active, categoryCode, merchantName, categoryName, typicalAmount, params,
+				usageByServiceName);
 		long now = activeBenefit.discount();
 
-		PerformanceTier next = nextTier(tiers, currentMonthSpend, categoryCode);
+		PerformanceTier next = nextTier(tiers, currentMonthSpend, categoryCode, merchantName);
 		if (next == null) {
 			return new Mode3Result(now, 0.0, 1.0, 1.0, 1.0, 0L, 0L, now,
 				"이미 최고 구간 확보 · 이번 달 확정 이득만 존재",
@@ -457,9 +467,11 @@ public final class BenefitEngine {
 
 		PerformanceTier baseline = baselineTier(tiers, currentMonthSpend);
 		TierBenefit nextBenefit =
-			bestTierBenefit(next, categoryCode, categoryName, typicalAmount, params, usageByServiceName);
+			bestTierBenefit(next, categoryCode, merchantName, categoryName, typicalAmount, params,
+				usageByServiceName);
 		long baselineDiscount =
-			tierDiscountForCategory(baseline, categoryCode, categoryName, typicalAmount, params, usageByServiceName);
+			tierDiscountForCategory(baseline, categoryCode, merchantName, categoryName, typicalAmount, params,
+				usageByServiceName);
 		long gain = nextBenefit.discount() - baselineDiscount;
 
 		double future = prob.pFill() * Math.max(0, gain);

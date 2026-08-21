@@ -39,6 +39,7 @@ class RecommendationServiceImplTest {
 	private static final Long MERCHANT_ID = 100L;
 	private static final String CAFE_CODE = "5311";
 	private static final String CONVENIENCE_CODE = "5411";
+	private static final String RESTAURANT_CODE = "5812";
 	private static final Map<String, Long> SOME_PAST_HISTORY = Map.of("202501", 100_000L);
 
 	@Mock
@@ -133,13 +134,38 @@ class RecommendationServiceImplTest {
 	}
 
 	private static MerchantResponseDto merchant(Long merchantId, String categoryCode) {
+		return merchant(merchantId, categoryCode, "스타벅스 강남점");
+	}
+
+	private static MerchantResponseDto merchant(Long merchantId, String categoryCode, String merchantName) {
 		return MerchantResponseDto.builder()
 			.merchantId(merchantId)
 			.categoryCode(categoryCode)
-			.merchantName("스타벅스 강남점")
+			.merchantName(merchantName)
 			.latitude(BigDecimal.valueOf(37.5))
 			.longitude(BigDecimal.valueOf(127.0))
 			.build();
+	}
+
+	/** MERCHANT_BRAND 혜택 하나짜리 카드 - 특정 매장 이름에서만 적용된다(예: "아웃백 10% 할인"). */
+	private static RecommendationCardCandidateVO merchantLimitedCandidate(
+		Long userCardId, String cardName, String categoryCode, String merchantName, double rate
+	) {
+		RecommendationCardCandidateVO vo = new RecommendationCardCandidateVO();
+		vo.setUserCardId(userCardId);
+		vo.setCardId(userCardId);
+		vo.setCardName(cardName);
+		vo.setCardImageUrl("https://example.com/" + userCardId + ".png");
+		vo.setBenefitsInfo(String.format(
+			"{\"performanceTiers\":[{\"minimumSpending\":0,\"benefits\":["
+				+ "{\"serviceName\":\"%s\",\"benefitType\":\"MERCHANT_BRAND\","
+				+ "\"categoryCodes\":[\"%s\"],\"merchantNames\":[\"%s\"],"
+				+ "\"discountMethod\":\"STATEMENT_DISCOUNT\",\"discountRate\":%s,\"minimumPaymentAmount\":0}]}]}",
+			cardName, categoryCode, merchantName, rate
+		));
+		vo.setSpendHistory(SOME_PAST_HISTORY);
+		vo.setCurrentMonthSpend(0L);
+		return vo;
 	}
 
 	private void stubCafeCategory() {
@@ -233,6 +259,47 @@ class RecommendationServiceImplTest {
 		assertThat(result.get(0).isBenefitAvailable()).isFalse();
 		assertThat(result.get(0).getRecommendedCards()).isEmpty();
 		assertThat(result.get(0).getTypicalPaymentAmount()).isNull();
+	}
+
+	// ---- MERCHANT_BRAND(매장 한정) 혜택 - 실제 버그 재현 ----
+	// "직장인 보너스 체크카드"의 아웃백 10% 할인이 같은 업종(음식점)의 다른 매장에도
+	// benefitAvailable=true로 잘못 뜨던 문제.
+
+	@Test
+	void marksMerchantUnavailableWhenMerchantLimitedBenefitDoesNotMatchThisMerchant() {
+		when(merchantCategoryService.getCategoryList()).thenReturn(List.of(
+			MerchantCategoryResponseDto.builder().categoryCode(RESTAURANT_CODE).categoryName("음식점").build()
+		));
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("음식점", 30_000L)));
+
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(merchantLimitedCandidate(1L, "직장인 보너스 체크카드", RESTAURANT_CODE, "아웃백", 10)),
+			List.of(merchant(MERCHANT_ID, RESTAURANT_CODE, "맥도날드"))
+		);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).isBenefitAvailable()).isFalse();
+		assertThat(result.get(0).getRecommendedCards()).isEmpty();
+	}
+
+	@Test
+	void includesMerchantLimitedBenefitWhenMerchantNameMatches() {
+		when(merchantCategoryService.getCategoryList()).thenReturn(List.of(
+			MerchantCategoryResponseDto.builder().categoryCode(RESTAURANT_CODE).categoryName("음식점").build()
+		));
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("음식점", 30_000L)));
+
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(merchantLimitedCandidate(1L, "직장인 보너스 체크카드", RESTAURANT_CODE, "아웃백", 10)),
+			List.of(merchant(MERCHANT_ID, RESTAURANT_CODE, "아웃백 강남점"))
+		);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).isBenefitAvailable()).isTrue();
+		assertThat(result.get(0).getRecommendedCards()).extracting(RecommendedCardResponseDto::getCardName)
+			.containsExactly("직장인 보너스 체크카드");
 	}
 
 	@Test
@@ -637,6 +704,33 @@ class RecommendationServiceImplTest {
 		assertThat(card.isPerformanceMet()).isFalse();
 		assertThat(card.isRecommended()).isFalse();
 		assertThat(card.getReason()).isNotBlank();
+	}
+
+	@Test
+	void getCardRecommendationsMarksMerchantLimitedBenefitAsNotApplicableAtADifferentMerchant() {
+		// 매장 상세 "이 매장 추천 카드" 화면에서도 같은 버그가 재현됐다 - 아웃백 한정 혜택이
+		// 다른 음식점 상세에서도 benefitApplicable=true로 잘못 떴다.
+		RecommendationMerchantVO merchant = new RecommendationMerchantVO();
+		merchant.setMerchantId(MERCHANT_ID);
+		merchant.setMerchantName("맥도날드");
+		merchant.setCategoryCode(RESTAURANT_CODE);
+		merchant.setBrandId(9L);
+		when(recommendationMapper.findMerchantForRecommendation(MERCHANT_ID)).thenReturn(merchant);
+		when(merchantCategoryService.getCategoryList()).thenReturn(List.of(
+			MerchantCategoryResponseDto.builder().categoryCode(RESTAURANT_CODE).categoryName("음식점").build()
+		));
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("음식점", 30_000L)));
+
+		MerchantCardRecommendationResponseDto response = recommendationService.getCardRecommendations(
+			USER_ID,
+			MERCHANT_ID,
+			List.of(merchantLimitedCandidate(1L, "직장인 보너스 체크카드", RESTAURANT_CODE, "아웃백", 10))
+		);
+
+		assertThat(response.getCards()).hasSize(1);
+		CardBenefitComparisonResponseDto card = response.getCards().get(0);
+		assertThat(card.isBenefitApplicable()).isFalse();
+		assertThat(card.isRecommended()).isFalse();
 	}
 
 	// ---- getTodayCardRecommendation(userId, heldCards, nearbyMerchantCandidates) ----

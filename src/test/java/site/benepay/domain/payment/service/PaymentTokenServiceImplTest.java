@@ -277,6 +277,55 @@ class PaymentTokenServiceImplTest {
 		assertThat(eventCaptor.getValue().benefitServiceName()).isEqualTo("카페 할인");
 	}
 
+	// 실제 버그 재현: "직장인 보너스 체크카드"의 아웃백 10% 할인(MERCHANT_BRAND)이 categoryCode만
+	// 보고 다른 음식점 결제에도 잘못 적용되던 문제 - 실제 결제(돈이 오가는 지점)에서 재현한다.
+	private static final String RESTAURANT_OUTBACK_ONLY_DISCOUNT = "{\"performanceTiers\":[{\"minimumSpending\":0,"
+		+ "\"benefits\":[{\"serviceName\":\"외식 할인\",\"benefitType\":\"MERCHANT_BRAND\","
+		+ "\"categoryCodes\":[\"5812\"],\"merchantNames\":[\"아웃백\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+		+ "\"discountRate\":10,\"minimumPaymentAmount\":0}]}]}";
+
+	@Test
+	void completeTokenDoesNotApplyMerchantLimitedBenefitAtADifferentMerchant() {
+		when(paymentTokenStore.find(PAYMENT_TOKEN_ID)).thenReturn(Optional.of(token(MERCHANT_ID, "ISSUED")));
+		when(paymentTokenStore.markUsedIfIssued(PAYMENT_TOKEN_ID))
+			.thenReturn(Optional.of(token(MERCHANT_ID, "USED")));
+		when(paymentMapper.findByPaymentId(any())).thenReturn(Optional.of(historyRow()));
+		when(merchantService.getMerchant(MERCHANT_ID)).thenReturn(
+			MerchantResponseDto.builder().merchantId(MERCHANT_ID).categoryCode("5812").merchantName("맥도날드").build());
+		when(paymentMapper.findCardBenefitContext(eq(USER_CARD_ID), any()))
+			.thenReturn(Optional.of(cardBenefitContext(0L, RESTAURANT_OUTBACK_ONLY_DISCOUNT)));
+
+		paymentTokenService.completeToken(PAYMENT_TOKEN_ID);
+
+		ArgumentCaptor<PaymentVO> captor = ArgumentCaptor.forClass(PaymentVO.class);
+		verify(paymentMapper).insertPayment(captor.capture());
+		PaymentVO inserted = captor.getValue();
+		assertThat(inserted.getBenefitServiceName()).isNull();
+		assertThat(inserted.getDiscountAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(inserted.getFinalAmount()).isEqualByComparingTo(inserted.getOriginalAmount());
+	}
+
+	@Test
+	void completeTokenAppliesMerchantLimitedBenefitAtTheMatchingMerchant() {
+		when(paymentTokenStore.find(PAYMENT_TOKEN_ID)).thenReturn(Optional.of(token(MERCHANT_ID, "ISSUED")));
+		when(paymentTokenStore.markUsedIfIssued(PAYMENT_TOKEN_ID))
+			.thenReturn(Optional.of(token(MERCHANT_ID, "USED")));
+		when(paymentMapper.findByPaymentId(any())).thenReturn(Optional.of(historyRow("외식 할인")));
+		when(merchantService.getMerchant(MERCHANT_ID)).thenReturn(
+			MerchantResponseDto.builder().merchantId(MERCHANT_ID).categoryCode("5812").merchantName("아웃백 강남점")
+				.build());
+		when(paymentMapper.findCardBenefitContext(eq(USER_CARD_ID), any()))
+			.thenReturn(Optional.of(cardBenefitContext(0L, RESTAURANT_OUTBACK_ONLY_DISCOUNT)));
+
+		paymentTokenService.completeToken(PAYMENT_TOKEN_ID);
+
+		ArgumentCaptor<PaymentVO> captor = ArgumentCaptor.forClass(PaymentVO.class);
+		verify(paymentMapper).insertPayment(captor.capture());
+		PaymentVO inserted = captor.getValue();
+		assertThat(inserted.getBenefitServiceName()).isEqualTo("외식 할인");
+		assertThat(inserted.getDiscountAmount()).isNotEqualByComparingTo(BigDecimal.ZERO);
+	}
+
 	@Test
 	void completeTokenCapsDiscountByAlreadyConsumedMonthlyLimit() {
 		// 이 카드의 "카페 할인"은 정률 50%지만, 이번 달 이미 discountAmount와 거의 맞먹는 금액을
