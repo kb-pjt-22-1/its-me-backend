@@ -14,6 +14,10 @@ import java.time.LocalDateTime;
  * <p>performanceAmount는 카드 실적으로 인정할 금액이다. 원금(originalAmount)이 아니라
  * 실제로 결제된 finalAmount를 쓴다 - 할인 적용 후 실제로 청구된 금액이 "이용실적"이라고
  * 판단했다. 다른 기준(원금 기준)이 맞다면 여기만 바꾸면 된다.
+ *
+ * <p>userId/merchantName은 notification 도메인의 PaymentApprovedPushHandler가 결제 완료
+ * 푸시 알림("어디서 얼마 결제했는지")을 보낼 때 쓴다 - 기존 리스너(카드/혜택 쪽)는 안 쓰는
+ * 필드라 영향 없다.
  */
 public record PaymentApprovedEvent(
 	Long paymentId,
@@ -22,6 +26,8 @@ public record PaymentApprovedEvent(
 	LocalDateTime approvedAt,
 	BigDecimal performanceAmount,
 	BigDecimal discountAmount,
-	String benefitServiceName
+	String benefitServiceName,
+	Long userId,
+	String merchantName
 ) {
 }

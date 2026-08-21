@@ -223,6 +223,8 @@ class PaymentTokenServiceImplTest {
 		assertThat(event.userCardId()).isEqualTo(USER_CARD_ID);
 		assertThat(event.categoryCode()).isEqualTo("5813");
 		assertThat(event.discountAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+		assertThat(event.userId()).isEqualTo(USER_ID);
+		assertThat(event.merchantName()).isEqualTo("스타벅스 강남점");
 	}
 
 	@Test

@@ -32,7 +32,7 @@ class BenefitUsageEventHandlerTest {
 	void handlePaymentApprovedUpsertsUsageWhenABenefitWasApplied() {
 		PaymentApprovedEvent event = new PaymentApprovedEvent(
 			100L, 7L, "5813", LocalDateTime.of(2026, 8, 12, 15, 30),
-			BigDecimal.valueOf(9000), BigDecimal.valueOf(1000), "카페 할인"
+			BigDecimal.valueOf(9000), BigDecimal.valueOf(1000), "카페 할인", 1L, "스타벅스 강남점"
 		);
 
 		eventHandler.handlePaymentApproved(event);
@@ -44,7 +44,7 @@ class BenefitUsageEventHandlerTest {
 	void handlePaymentApprovedSkipsUpsertWhenNoBenefitWasApplied() {
 		PaymentApprovedEvent event = new PaymentApprovedEvent(
 			100L, 7L, "5813", LocalDateTime.of(2026, 8, 12, 15, 30),
-			BigDecimal.valueOf(9000), BigDecimal.ZERO, null
+			BigDecimal.valueOf(9000), BigDecimal.ZERO, null, 1L, "스타벅스 강남점"
 		);
 
 		eventHandler.handlePaymentApproved(event);
