@@ -55,6 +55,12 @@ public class SecurityConfig {
 					)
 				).permitAll()
 
+				.requestMatchers(
+					new AntPathRequestMatcher("/swagger-ui/**"),
+					new AntPathRequestMatcher("/v2/api-docs"),
+					new AntPathRequestMatcher("/swagger-resources/**")
+				).permitAll()
+
 				.anyRequest().authenticated()
 			)
 			.addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider, redisTemplate),
