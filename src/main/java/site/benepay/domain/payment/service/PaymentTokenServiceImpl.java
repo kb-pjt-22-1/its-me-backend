@@ -63,7 +63,7 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 	private final ApplicationEventPublisher eventPublisher;
 
 	@Override
-	public PaymentTokenResponseDto issueToken(Long userId, Long userCardId, Long merchantId) {
+	public PaymentTokenResponseDto issueToken(Long userId, Long userCardId, Long merchantId, String paymentMethod) {
 		// user_id + user_card_id + status='ACTIVE' 조건 조회라, 소유권/활성 상태 검증을 겸한다.
 		UserCardPaymentTokenVO userCardToken = paymentMapper.findActiveCardPaymentToken(userId, userCardId)
 			.orElseThrow(() -> new UserCardNotAvailableException("결제에 사용할 수 없는 카드입니다."));
@@ -72,9 +72,16 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 			throw new MerchantNotFoundException("가맹점을 찾을 수 없습니다.");
 		}
 
-		PaymentTokenVO token = paymentTokenStore.issue(userId, userCardId, merchantId, userCardToken.getPaymentToken());
+		PaymentTokenVO token = paymentTokenStore.issue(userId, userCardId, merchantId,
+			userCardToken.getPaymentToken(), normalizePaymentMethod(paymentMethod));
 
 		return PaymentTokenResponseDto.from(token);
+	}
+
+	// 요청에서 생략됐으면(기존 프론트가 이 필드를 안 보내던 상태) BARCODE로 기본 처리한다.
+	// 형식(BARCODE/QR)은 DTO의 @Pattern에서 이미 걸러지므로 여기선 null만 처리하면 된다.
+	private String normalizePaymentMethod(String paymentMethod) {
+		return paymentMethod == null || paymentMethod.isBlank() ? PAYMENT_METHOD_BARCODE : paymentMethod;
 	}
 
 	@Override
@@ -118,7 +125,7 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 			.finalAmount(finalAmount)
 			.benefitServiceName(application.serviceName())
 			.paymentStatus(STATUS_APPROVED)
-			.paymentMethod(PAYMENT_METHOD_BARCODE)
+			.paymentMethod(token.getPaymentMethod())
 			.build();
 
 		paymentMapper.insertPayment(payment);

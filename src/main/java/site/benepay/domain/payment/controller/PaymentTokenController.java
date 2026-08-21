@@ -29,7 +29,7 @@ public class PaymentTokenController {
 	public ResponseEntity<PaymentTokenResponseDto> issueToken(@AuthenticationPrincipal Long userId,
 		@Valid @RequestBody PaymentTokenCreateRequestDto request) {
 		PaymentTokenResponseDto response = paymentTokenService.issueToken(
-			userId, request.getUserCardId(), request.getMerchantId());
+			userId, request.getUserCardId(), request.getMerchantId(), request.getPaymentMethod());
 
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}

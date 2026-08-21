@@ -7,7 +7,7 @@ public interface PaymentTokenService {
 
 	// merchantId는 nullable. 매장 페이지를 거쳐온 흐름이면 채워서 넘기고,
 	// 결제 페이지 직접 진입이면 null로 넘긴다 (완료 시점에 서버가 무작위로 채운다).
-	PaymentTokenResponseDto issueToken(Long userId, Long userCardId, Long merchantId);
+	PaymentTokenResponseDto issueToken(Long userId, Long userCardId, Long merchantId, String paymentMethod);
 
 	PaymentTokenResponseDto getTokenStatus(String paymentTokenId);
 

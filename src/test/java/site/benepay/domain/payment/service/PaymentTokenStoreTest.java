@@ -46,11 +46,11 @@ class PaymentTokenStoreTest {
 	}
 
 	private PaymentTokenVO issue() {
-		return store.issue(USER_ID, USER_CARD_ID, MERCHANT_ID, CARD_PAYMENT_TOKEN);
+		return store.issue(USER_ID, USER_CARD_ID, MERCHANT_ID, CARD_PAYMENT_TOKEN, "BARCODE");
 	}
 
 	private PaymentTokenVO issueWithoutMerchant() {
-		return store.issue(USER_ID, USER_CARD_ID, null, CARD_PAYMENT_TOKEN);
+		return store.issue(USER_ID, USER_CARD_ID, null, CARD_PAYMENT_TOKEN, "BARCODE");
 	}
 
 	@Test

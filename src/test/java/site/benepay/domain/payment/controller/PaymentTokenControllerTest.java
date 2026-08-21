@@ -35,12 +35,13 @@ class PaymentTokenControllerTest {
 
 	@Test
 	void issueTokenReturnsCreatedWithTheServiceResult() {
-		PaymentTokenCreateRequestDto request = new PaymentTokenCreateRequestDto(USER_CARD_ID, null);
+		PaymentTokenCreateRequestDto request = new PaymentTokenCreateRequestDto(USER_CARD_ID, null, "QR");
 		PaymentTokenResponseDto issued = PaymentTokenResponseDto.builder()
 			.paymentTokenId(PAYMENT_TOKEN_ID)
+			.paymentMethod("QR")
 			.status("ISSUED")
 			.build();
-		when(paymentTokenService.issueToken(USER_ID, USER_CARD_ID, null)).thenReturn(issued);
+		when(paymentTokenService.issueToken(USER_ID, USER_CARD_ID, null, "QR")).thenReturn(issued);
 
 		ResponseEntity<PaymentTokenResponseDto> response = controller.issueToken(USER_ID, request);
 

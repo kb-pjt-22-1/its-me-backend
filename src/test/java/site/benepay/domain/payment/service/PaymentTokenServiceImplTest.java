@@ -81,6 +81,11 @@ class PaymentTokenServiceImplTest {
 			"BARCODE", status, LocalDateTime.now().toString());
 	}
 
+	private PaymentTokenVO qrToken(Long merchantId, String status) {
+		return new PaymentTokenVO(PAYMENT_TOKEN_ID, USER_ID, USER_CARD_ID, merchantId, CARD_PAYMENT_TOKEN,
+			"QR", status, LocalDateTime.now().toString());
+	}
+
 	private UserCardPaymentTokenVO activeCardToken() {
 		return new UserCardPaymentTokenVO(USER_CARD_ID, CARD_PAYMENT_TOKEN, LocalDate.now().plusYears(1));
 	}
@@ -136,14 +141,39 @@ class PaymentTokenServiceImplTest {
 		when(paymentMapper.findActiveCardPaymentToken(USER_ID, USER_CARD_ID))
 			.thenReturn(Optional.of(activeCardToken()));
 		when(paymentMapper.existsMerchant(MERCHANT_ID)).thenReturn(true);
-		when(paymentTokenStore.issue(USER_ID, USER_CARD_ID, MERCHANT_ID, CARD_PAYMENT_TOKEN))
+		when(paymentTokenStore.issue(USER_ID, USER_CARD_ID, MERCHANT_ID, CARD_PAYMENT_TOKEN, "BARCODE"))
 			.thenReturn(token(MERCHANT_ID, PaymentTokenStore.STATUS_ISSUED));
 
-		PaymentTokenResponseDto response = paymentTokenService.issueToken(USER_ID, USER_CARD_ID, MERCHANT_ID);
+		PaymentTokenResponseDto response =
+			paymentTokenService.issueToken(USER_ID, USER_CARD_ID, MERCHANT_ID, "BARCODE");
 
 		assertThat(response.getPaymentTokenId()).isEqualTo(PAYMENT_TOKEN_ID);
 		assertThat(response.getTokenValue()).isEqualTo(PAYMENT_TOKEN_ID);
 		verify(paymentMapper).existsMerchant(MERCHANT_ID);
+	}
+
+	@Test
+	void issueTokenDefaultsToBarcodeWhenPaymentMethodIsOmitted() {
+		when(paymentMapper.findActiveCardPaymentToken(USER_ID, USER_CARD_ID))
+			.thenReturn(Optional.of(activeCardToken()));
+		when(paymentTokenStore.issue(USER_ID, USER_CARD_ID, null, CARD_PAYMENT_TOKEN, "BARCODE"))
+			.thenReturn(token(null, PaymentTokenStore.STATUS_ISSUED));
+
+		paymentTokenService.issueToken(USER_ID, USER_CARD_ID, null, null);
+
+		verify(paymentTokenStore).issue(USER_ID, USER_CARD_ID, null, CARD_PAYMENT_TOKEN, "BARCODE");
+	}
+
+	@Test
+	void issueTokenPassesThroughQrWhenRequested() {
+		when(paymentMapper.findActiveCardPaymentToken(USER_ID, USER_CARD_ID))
+			.thenReturn(Optional.of(activeCardToken()));
+		when(paymentTokenStore.issue(USER_ID, USER_CARD_ID, null, CARD_PAYMENT_TOKEN, "QR"))
+			.thenReturn(token(null, PaymentTokenStore.STATUS_ISSUED));
+
+		paymentTokenService.issueToken(USER_ID, USER_CARD_ID, null, "QR");
+
+		verify(paymentTokenStore).issue(USER_ID, USER_CARD_ID, null, CARD_PAYMENT_TOKEN, "QR");
 	}
 
 	@Test
@@ -152,20 +182,21 @@ class PaymentTokenServiceImplTest {
 			.thenReturn(Optional.of(activeCardToken()));
 		when(paymentMapper.existsMerchant(MERCHANT_ID)).thenReturn(false);
 
-		assertThatThrownBy(() -> paymentTokenService.issueToken(USER_ID, USER_CARD_ID, MERCHANT_ID))
+		assertThatThrownBy(() -> paymentTokenService.issueToken(USER_ID, USER_CARD_ID, MERCHANT_ID, "BARCODE"))
 			.isInstanceOf(MerchantNotFoundException.class);
 
-		verify(paymentTokenStore, never()).issue(any(), any(), any(), any());
+		verify(paymentTokenStore, never()).issue(any(), any(), any(), any(), any());
 	}
 
 	@Test
 	void issueTokenWithoutAMerchantSkipsMerchantValidation() {
 		when(paymentMapper.findActiveCardPaymentToken(USER_ID, USER_CARD_ID))
 			.thenReturn(Optional.of(activeCardToken()));
-		when(paymentTokenStore.issue(USER_ID, USER_CARD_ID, null, CARD_PAYMENT_TOKEN))
+		when(paymentTokenStore.issue(USER_ID, USER_CARD_ID, null, CARD_PAYMENT_TOKEN, "BARCODE"))
 			.thenReturn(token(null, PaymentTokenStore.STATUS_ISSUED));
 
-		PaymentTokenResponseDto response = paymentTokenService.issueToken(USER_ID, USER_CARD_ID, null);
+		PaymentTokenResponseDto response =
+			paymentTokenService.issueToken(USER_ID, USER_CARD_ID, null, "BARCODE");
 
 		assertThat(response.getPaymentTokenId()).isEqualTo(PAYMENT_TOKEN_ID);
 		verify(paymentMapper, never()).existsMerchant(any());
@@ -175,10 +206,10 @@ class PaymentTokenServiceImplTest {
 	void issueTokenThrowsWhenTheCardIsNotOwnedOrInactiveAndNeverCallsTheStore() {
 		when(paymentMapper.findActiveCardPaymentToken(USER_ID, USER_CARD_ID)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> paymentTokenService.issueToken(USER_ID, USER_CARD_ID, null))
+		assertThatThrownBy(() -> paymentTokenService.issueToken(USER_ID, USER_CARD_ID, null, "BARCODE"))
 			.isInstanceOf(UserCardNotAvailableException.class);
 
-		verify(paymentTokenStore, never()).issue(any(), any(), any(), any());
+		verify(paymentTokenStore, never()).issue(any(), any(), any(), any(), any());
 	}
 
 	// ---- getTokenStatus ----
@@ -225,6 +256,20 @@ class PaymentTokenServiceImplTest {
 		assertThat(event.discountAmount()).isEqualByComparingTo(BigDecimal.ZERO);
 		assertThat(event.userId()).isEqualTo(USER_ID);
 		assertThat(event.merchantName()).isEqualTo("스타벅스 강남점");
+	}
+
+	@Test
+	void completeTokenSavesThePaymentWithTheSamePaymentMethodTheTokenWasIssuedWith() {
+		when(paymentTokenStore.find(PAYMENT_TOKEN_ID)).thenReturn(Optional.of(qrToken(MERCHANT_ID, "ISSUED")));
+		when(paymentTokenStore.markUsedIfIssued(PAYMENT_TOKEN_ID))
+			.thenReturn(Optional.of(qrToken(MERCHANT_ID, "USED")));
+		when(paymentMapper.findByPaymentId(any())).thenReturn(Optional.of(historyRow()));
+
+		paymentTokenService.completeToken(PAYMENT_TOKEN_ID);
+
+		ArgumentCaptor<PaymentVO> captor = ArgumentCaptor.forClass(PaymentVO.class);
+		verify(paymentMapper).insertPayment(captor.capture());
+		assertThat(captor.getValue().getPaymentMethod()).isEqualTo("QR");
 	}
 
 	@Test

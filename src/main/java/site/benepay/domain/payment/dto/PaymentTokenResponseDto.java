@@ -16,6 +16,7 @@ public class PaymentTokenResponseDto {
 	// 카드 고정 토큰(user_cards.payment_token)을 그대로 노출하면 매번 같은 값이 떠서
 	// 재사용(리플레이) 위험이 생기고, 실제 동적 바코드 결제 방식과도 다르다.
 	private String tokenValue;
+	private String paymentMethod;
 	private String status;
 	private LocalDateTime issuedAt;
 	private LocalDateTime expiresAt;
@@ -26,6 +27,7 @@ public class PaymentTokenResponseDto {
 		return PaymentTokenResponseDto.builder()
 			.paymentTokenId(token.getPaymentTokenId())
 			.tokenValue(token.getPaymentTokenId())
+			.paymentMethod(token.getPaymentMethod())
 			.status(token.getStatus())
 			.issuedAt(issuedAt)
 			.expiresAt(issuedAt.plus(PaymentTokenStore.TTL))

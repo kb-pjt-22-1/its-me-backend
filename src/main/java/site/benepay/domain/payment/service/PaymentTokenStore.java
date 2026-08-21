@@ -31,7 +31,6 @@ public class PaymentTokenStore {
 	public static final String STATUS_ISSUED = "ISSUED";
 	public static final String STATUS_USED = "USED";
 	public static final String STATUS_CANCELED = "CANCELED";
-	private static final String PAYMENT_METHOD_BARCODE = "BARCODE";
 
 	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
@@ -43,7 +42,9 @@ public class PaymentTokenStore {
 	}
 
 	// merchantId는 nullable - 매장 페이지를 거쳐온 흐름이면 채워서, 결제 페이지 직접 진입이면 null로 발급한다.
-	public PaymentTokenVO issue(Long userId, Long userCardId, Long merchantId, String cardPaymentToken) {
+	// paymentMethod는 BARCODE/QR - 기본값/형식 검증은 Service 책임이고, 여기선 받은 값을 그대로 저장한다.
+	public PaymentTokenVO issue(Long userId, Long userCardId, Long merchantId, String cardPaymentToken,
+		String paymentMethod) {
 		String paymentTokenId = UUID.randomUUID().toString();
 		PaymentTokenVO token = new PaymentTokenVO(
 			paymentTokenId,
@@ -51,7 +52,7 @@ public class PaymentTokenStore {
 			userCardId,
 			merchantId,
 			cardPaymentToken,
-			PAYMENT_METHOD_BARCODE,
+			paymentMethod,
 			STATUS_ISSUED,
 			LocalDateTime.now(ZONE).toString()
 		);
