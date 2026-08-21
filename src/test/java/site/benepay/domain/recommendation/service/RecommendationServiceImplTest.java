@@ -612,6 +612,49 @@ class RecommendationServiceImplTest {
 		assertThat(result.get(0).getRecommendedCards()).isEmpty();
 	}
 
+	// 기본 구간(0원)엔 혜택이 없고, 다음 구간(30만원)에만 혜택이 있는 카드 - 실제 시드 데이터의
+	// 카드 70%가 이런 구조다(BenefitEngine 회귀 조사 참고).
+	private static RecommendationCardCandidateVO candidateWithBenefitOnlyOnNextTier(
+		Long userCardId, String cardName, String categoryCode, double rate, long nextTierMinimumSpending
+	) {
+		RecommendationCardCandidateVO vo = new RecommendationCardCandidateVO();
+		vo.setUserCardId(userCardId);
+		vo.setCardId(userCardId);
+		vo.setCardName(cardName);
+		vo.setCardImageUrl("https://example.com/" + userCardId + ".png");
+		vo.setBenefitsInfo(String.format(
+			"{\"performanceTiers\":["
+				+ "{\"minimumSpending\":0,\"benefits\":[]},"
+				+ "{\"minimumSpending\":%d,\"benefits\":["
+				+ "{\"serviceName\":\"%s\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":%s,\"minimumPaymentAmount\":0}]}]}",
+			nextTierMinimumSpending, cardName, categoryCode, rate
+		));
+		vo.setSpendHistory(SOME_PAST_HISTORY);
+		vo.setCurrentMonthSpend(0L); // 다음 구간 문턱(30만원)에 한참 못 미침 - now=0이어야 한다.
+		return vo;
+	}
+
+	@Test
+	void marksMerchantUnavailableWhenTheOnlyBenefitIsOnAFutureTierNotReachedYet() {
+		// 지도 핀 "혜택 매장" 표시와 매장 상세 "혜택 없음"이 어긋나던 버그의 회귀 테스트.
+		// total(이번 달 확정 now + 다음 달 기대 future)이 0보다 크다는 이유만으로
+		// benefitAvailable=true가 되면 안 된다 - 지금 당장(now) 받을 수 있는 혜택이 없으면
+		// 카드 자체는 추천 후보(recommendedCards)에 남더라도 배지는 꺼져 있어야 한다.
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(candidateWithBenefitOnlyOnNextTier(1L, "다음구간카드", CAFE_CODE, 50, 300_000L)),
+			List.of(merchant(MERCHANT_ID, CAFE_CODE))
+		);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).isBenefitAvailable()).isFalse();
+	}
+
 	@Test
 	void getCardRecommendationsThrowsWhenMerchantDoesNotExist() {
 		when(recommendationMapper.findMerchantForRecommendation(MERCHANT_ID)).thenReturn(null);

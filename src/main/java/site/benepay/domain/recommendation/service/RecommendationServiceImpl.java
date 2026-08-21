@@ -174,15 +174,24 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.max(Long::compareTo)
 			.orElse(null);
 
+		// note()는 "이번 달 확정 0원 + 다음 달 기대 28원(성사확률 3% × 이득 +1,000원) = 총 28원"
+		// 처럼 계산 근거를 전부 푸는 디버그용 문구라 UI에 그대로 노출하면 안 된다.
+		// shortDescription()이 "카페 10% 할인 · 최대 1,000원"처럼 한 줄 노출용으로 이미
+		// 정리돼 있는 값이라 이쪽을 쓴다 - performanceMet=false일 때도(실적 미달) 카드 자체엔
+		// 이 카테고리 혜택이 있다는 사실은 그대로 보여준다(다음 구간 혜택으로 대신 채워짐).
 		return CardBenefitComparisonResponseDto.builder()
 			.userCardId(candidate.getUserCardId())
 			.cardName(candidate.getCardName())
 			.cardImageUrl(candidate.getCardImageUrl())
-			.benefitDescription(result.note())
+			.benefitDescription(result.shortDescription())
 			.benefitApplicable(benefitApplicable)
 			.performanceMet(performanceMet)
 			.minimumPaymentAmount(minimumPaymentAmount)
-			.reason(benefitApplicable && performanceMet ? null : result.note())
+			// benefitApplicable=false일 때만 reason을 쓴다 - 그때는 evaluatePriority가
+			// hasAnywhere=false 분기를 타서 note()가 "이 카테고리 혜택 자체가 없음"처럼 항상
+			// 짧고 깨끗하다(디버그 숫자 문구는 이 분기에서 절대 안 나온다). benefitApplicable=true면
+			// benefitDescription이 이미 채워져 있어 reason은 화면에서 안 쓰인다.
+			.reason(benefitApplicable ? null : result.note())
 			.recommended(candidate.getUserCardId().equals(bestUserCardId))
 			.build();
 	}
@@ -390,13 +399,20 @@ public class RecommendationServiceImpl implements RecommendationService {
 	 * 매장 하나에 대해 사용자 보유 카드 중 모드 3(우선순위) 기준 total(이번 달 확정 + beta ×
 	 * 다음 달 기대)이 0보다 큰 카드를 total 내림차순으로 최대 {@value #TOP_CARD_LIMIT}장까지
 	 * 골라 recommendedCards에 채운다. 필터링해서 매장을 걸러내지 않고 전달받은 매장 전부를
-	 * 그대로 반환하되, 그런 카드가 하나라도 있는 매장만 benefitAvailable=true로 표시한다 -
-	 * 카테고리가 추천 분석 대상(16개 대분류) 밖이거나 실질적 이득이 있는 카드가 없으면
-	 * benefitAvailable=false로 recommendedCards는 빈 리스트다. 전달받은 매장 리스트를
-	 * 카테고리로 미리 좁히지 않고 전부 평가하므로, 검색 카테고리 밖이라 혜택받을 수 있는 다른
-	 * 매장을 놓치는 문제가 없다. distanceMeters는 입력 merchant에 이미 계산되어 있으면(위치
-	 * 기반 조회, 예: 오늘의 추천) 그대로 넘기고, bounds 조회처럼 거리 개념이 없으면 null을
-	 * 그대로 넘긴다.
+	 * 그대로 반환한다. 전달받은 매장 리스트를 카테고리로 미리 좁히지 않고 전부 평가하므로,
+	 * 검색 카테고리 밖이라 혜택받을 수 있는 다른 매장을 놓치는 문제가 없다. distanceMeters는
+	 * 입력 merchant에 이미 계산되어 있으면(위치 기반 조회, 예: 오늘의 추천) 그대로 넘기고,
+	 * bounds 조회처럼 거리 개념이 없으면 null을 그대로 넘긴다.
+	 *
+	 * benefitAvailable(지도 핀 강조 여부)은 recommendedCards가 비었는지가 아니라, 그중
+	 * now(이번 달 확정 혜택)가 0보다 큰 카드가 하나라도 있는지로 판단한다. total은 future
+	 * (다음 달 실적 구간을 채웠을 때의 기대값)까지 섞여 있어서, 지금 당장은 혜택이 0원이어도
+	 * "다음 달에 실적 채우면 받을 수도 있다"는 이유만으로 total>0이 되는 카드가 많다(카드의
+	 * 70%가 기본 구간엔 혜택이 아예 없어 흔한 케이스다) - 그 기준을 그대로 쓰면 매장 상세에서
+	 * "지금 적용되는 혜택 없음"이 뜨는데도 지도에서는 골드 핀(혜택 매장)으로 뜨는 불일치가
+	 * 생긴다. total 랭킹 자체는 카드 추천 순서로는 여전히 유효해서 recommendedCards 구성에는
+	 * 그대로 쓰고, "지금 여기서 받을 수 있는 혜택이 있는가"를 뜻하는 배지 표시만 now 기준으로
+	 * 바꾼다.
 	 */
 	private NearbyMerchantRecommendationResponseDto toOptimalCardRecommendation(
 		MerchantResponseDto merchant,
@@ -412,13 +428,18 @@ public class RecommendationServiceImpl implements RecommendationService {
 			: findTopCards(heldCards, merchant.getCategoryCode(), merchant.getMerchantName(), categoryName,
 			walletSpendHistory, parsedTiers, usageByCard);
 
+		// note()는 계산 근거를 전부 푸는 디버그용 문구라 UI에 그대로 노출하면 안 된다 -
+		// shortDescription()이 "카페 10% 할인 · 최대 1,000원"처럼 한 줄 노출용으로 정리된 값이다.
 		List<RecommendedCardResponseDto> recommendedCards = topCardsResult.cards().stream()
 			.map(entry -> RecommendedCardResponseDto.builder()
 				.userCardId(entry.getKey().getUserCardId())
 				.cardName(entry.getKey().getCardName())
-				.benefitSummary(entry.getValue().note())
+				.benefitSummary(entry.getValue().shortDescription())
 				.build())
 			.toList();
+
+		boolean benefitAvailableNow = topCardsResult.cards().stream()
+			.anyMatch(entry -> entry.getValue().now() > 0);
 
 		return NearbyMerchantRecommendationResponseDto.builder()
 			.merchantId(merchant.getMerchantId())
@@ -431,7 +452,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.latitude(merchant.getLatitude())
 			.longitude(merchant.getLongitude())
 			.distanceMeters(merchant.getDistanceMeters())
-			.benefitAvailable(!recommendedCards.isEmpty())
+			.benefitAvailable(benefitAvailableNow)
 			.recommendedCards(recommendedCards)
 			.typicalPaymentAmount(recommendedCards.isEmpty() ? null : topCardsResult.typicalAmount())
 			.build();
