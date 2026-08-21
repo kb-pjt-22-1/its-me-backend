@@ -133,7 +133,9 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 			insertedPayment.getPaymentTime(),
 			insertedPayment.getFinalAmount(),
 			insertedPayment.getDiscountAmount(),
-			insertedPayment.getBenefitServiceName()
+			insertedPayment.getBenefitServiceName(),
+			token.getUserId(),
+			insertedPayment.getMerchantName()
 		));
 
 		return PaymentHistoryResponseDto.from(insertedPayment);

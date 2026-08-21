@@ -92,4 +92,11 @@ public final class RedisKeys {
 		return "benefit:coach:" + userId;
 	}
 
+	// "저장한 매장 근처 도착" 알림 재알림 방지 플래그(NearbyBookmarkedMerchantPushHandler
+	// 참고). 값은 처음 반경에 들어온 시각(epoch seconds) - 반경을 벗어난 뒤 재알림 쿨다운이
+	// 지났는지 판단하는 데 쓴다.
+	public static String nearbyMerchantFlag(Long userId, Long merchantId) {
+		return "notification:nearby-merchant:" + userId + ":" + merchantId;
+	}
+
 }

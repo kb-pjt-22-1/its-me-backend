@@ -5,6 +5,7 @@ import site.benepay.domain.user.dto.LoginResponseDto;
 import site.benepay.domain.user.dto.RegisterPinRequestDto;
 import site.benepay.domain.user.dto.SignUpRequestDto;
 import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
+import site.benepay.domain.user.dto.UpdateFcmTokenRequestDto;
 import site.benepay.domain.user.dto.UpdateProfileRequestDto;
 import site.benepay.domain.user.dto.UserResponseDto;
 import site.benepay.domain.user.dto.VerifyPasswordRequestDto;
@@ -19,6 +20,10 @@ public interface UserService {
 	UserResponseDto getMyProfile(Long userId);
 
 	UserResponseDto updateProfile(Long userId, UpdateProfileRequestDto request);
+
+	// 로그인마다(또는 FCM 토큰 갱신 시마다) 호출된다 - 기기 목록이 아니라 값 하나라, 가장
+	// 최근에 호출한 기기가 이전 값을 덮어쓴다.
+	void updateFcmToken(Long userId, UpdateFcmTokenRequestDto request);
 
 	void verifyPassword(Long userId, VerifyPasswordRequestDto request);
 

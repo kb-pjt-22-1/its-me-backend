@@ -24,7 +24,8 @@ import org.springframework.web.client.RestTemplate;
 		@ComponentScan.Filter(type = FilterType.ANNOTATION, classes = ControllerAdvice.class),
 		@ComponentScan.Filter(type = FilterType.ANNOTATION, classes = Configuration.class)
 	})
-@Import({DataSourceConfig.class, MyBatisConfig.class, SecurityConfig.class, RedisConfig.class, JacksonConfig.class})
+@Import({DataSourceConfig.class, MyBatisConfig.class, SecurityConfig.class, RedisConfig.class, JacksonConfig.class,
+	FirebaseConfig.class})
 public class RootConfig {
 
 	@Bean
