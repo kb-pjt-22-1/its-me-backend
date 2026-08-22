@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -20,6 +21,7 @@ import site.benepay.common.exception.InvalidTokenException;
 import site.benepay.common.exception.TokenReuseException;
 import site.benepay.common.util.RedisKeys;
 import site.benepay.domain.user.dto.TokenPairDto;
+import site.benepay.domain.user.event.SessionDisplacedEvent;
 import site.benepay.domain.user.vo.Role;
 import site.benepay.domain.user.vo.User;
 import site.benepay.domain.user.mapper.UserMapper;
@@ -51,6 +53,9 @@ class TokenServiceTest {
     @Mock
     private UserMapper userMapper;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     private JwtTokenProvider jwtTokenProvider;
     private JwtProperties jwtProperties;
     private TokenService tokenService;
@@ -66,7 +71,8 @@ class TokenServiceTest {
         init.setAccessible(true);
         init.invoke(jwtTokenProvider);
 
-        tokenService = new TokenServiceImpl(jwtTokenProvider, jwtProperties, redisTemplate, userMapper, GRACE_PERIOD_MILLIS);
+        tokenService = new TokenServiceImpl(
+                jwtTokenProvider, jwtProperties, redisTemplate, userMapper, eventPublisher, GRACE_PERIOD_MILLIS);
 
         user = User.builder()
                 .userId(USER_ID)
@@ -100,6 +106,25 @@ class TokenServiceTest {
 
         verify(valueOperations).set(
                 eq(RedisKeys.refresh(USER_ID)), anyString(), eq(Duration.ofMillis(jwtProperties.getRefreshTokenExpirationMillis())));
+        // 첫 로그인(이전 세션 없음)이라 로그인 해제 처리가 전혀 일어나면 안 된다.
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void issueTokenPairBlacklistsPreviousAccessTokenAndPublishesDisplacementEventWhenPriorSessionExists() throws Exception {
+        String previousAccessToken = jwtTokenProvider.generateAccessToken(user);
+        String previousJti = jwtTokenProvider.getJti(previousAccessToken);
+        String previousRefreshToken = jwtTokenProvider.generateRefreshToken(user, "previous-jti");
+        String storedJson = storedStateJson("previous-jti", previousAccessToken, previousRefreshToken, null, null);
+
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(RedisKeys.refresh(USER_ID))).thenReturn(storedJson);
+
+        tokenService.issueTokenPair(user);
+
+        // 새 세션 저장(1) + 이전 access 토큰 블랙리스트(1) = set이 총 두 번 호출된다.
+        verify(valueOperations).set(eq(RedisKeys.blacklist(previousJti)), eq("logout"), any(Duration.class));
+        verify(eventPublisher).publishEvent(new SessionDisplacedEvent(USER_ID));
     }
 
     @Test

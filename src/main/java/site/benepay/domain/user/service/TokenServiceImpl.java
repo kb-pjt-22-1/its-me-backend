@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +19,7 @@ import site.benepay.common.exception.TokenReuseException;
 import site.benepay.common.exception.UserNotFoundException;
 import site.benepay.common.util.RedisKeys;
 import site.benepay.domain.user.dto.TokenPairDto;
+import site.benepay.domain.user.event.SessionDisplacedEvent;
 import site.benepay.domain.user.mapper.UserMapper;
 import site.benepay.domain.user.vo.User;
 
@@ -29,21 +31,27 @@ public class TokenServiceImpl implements TokenService {
 	private final JwtProperties jwtProperties;
 	private final StringRedisTemplate redisTemplate;
 	private final UserMapper userMapper;
+	private final ApplicationEventPublisher eventPublisher;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 	private final long gracePeriodMillis;
 
 	public TokenServiceImpl(JwtTokenProvider jwtTokenProvider, JwtProperties jwtProperties,
-		StringRedisTemplate redisTemplate, UserMapper userMapper,
+		StringRedisTemplate redisTemplate, UserMapper userMapper, ApplicationEventPublisher eventPublisher,
 		@Value("${token.refresh-grace-period-ms}") long gracePeriodMillis) {
 		this.jwtTokenProvider = jwtTokenProvider;
 		this.jwtProperties = jwtProperties;
 		this.redisTemplate = redisTemplate;
 		this.userMapper = userMapper;
+		this.eventPublisher = eventPublisher;
 		this.gracePeriodMillis = gracePeriodMillis;
 	}
 
 	@Override
 	public TokenPairDto issueTokenPair(User user) {
+		// 덮어쓰기 전에 먼저 읽어야 "기존에 로그인된 기기가 있었는지"를 알 수 있다 -
+		// saveState가 실행되고 나면 이전 세션 정보는 사라진다.
+		String previousAccessToken = readPreviousAccessToken(user.getUserId());
+
 		String jti = UUID.randomUUID().toString();
 		String accessToken = jwtTokenProvider.generateAccessToken(user);
 		String refreshToken = jwtTokenProvider.generateRefreshToken(user, jti);
@@ -54,7 +62,39 @@ public class TokenServiceImpl implements TokenService {
 		state.refreshToken = refreshToken;
 
 		saveState(user.getUserId(), state);
+		displacePreviousSessionIfAny(user.getUserId(), previousAccessToken);
+
 		return TokenPairDto.builder().accessToken(accessToken).refreshToken(refreshToken).build();
+	}
+
+	// saveState가 이미 Redis의 refresh 상태를 새 세션 것으로 덮어써서, 이전 기기는 refresh를
+	// 더 이상 못 쓴다. 하지만 이전 기기의 access 토큰은 만료 전까지 계속 인증을 통과하므로
+	// 별도로 블랙리스트에 넣어야 "로그인 해제"가 즉시 적용된다. 신규 가입 직후 자동 로그인
+	// (UserServiceImpl.signUp)처럼 이전 세션이 없는 경우 previousAccessToken이 null이라
+	// 아무 일도 일어나지 않는다.
+	private void displacePreviousSessionIfAny(Long userId, String previousAccessToken) {
+		if (previousAccessToken == null) {
+			return;
+		}
+		try {
+			blacklistAccessToken(previousAccessToken);
+			eventPublisher.publishEvent(new SessionDisplacedEvent(userId));
+		} catch (RuntimeException e) {
+			// 로그인 해제 후처리(블랙리스트/알림) 실패가 새 로그인 자체를 막으면 안 된다.
+			log.warn("이전 세션 로그인 해제 처리 실패. userId={}", userId, e);
+		}
+	}
+
+	private String readPreviousAccessToken(Long userId) {
+		String raw = redisTemplate.opsForValue().get(RedisKeys.refresh(userId));
+		if (raw == null) {
+			return null;
+		}
+		try {
+			return readState(raw).accessToken;
+		} catch (RuntimeException e) {
+			return null;
+		}
 	}
 
 	@Override
