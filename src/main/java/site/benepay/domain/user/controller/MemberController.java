@@ -1,5 +1,6 @@
 package site.benepay.domain.user.controller;
 
+import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 
 import org.springframework.http.HttpStatus;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import site.benepay.common.util.TokenExtractor;
 import site.benepay.domain.user.dto.ChangePasswordRequestDto;
 import site.benepay.domain.user.dto.RegisterPinRequestDto;
 import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
@@ -88,8 +90,10 @@ public class MemberController {
 	}
 
 	@DeleteMapping
-	public ResponseEntity<Void> withdraw(@RequestParam(defaultValue = "false") boolean confirmed) {
-		userService.withdraw(currentUserId(), confirmed);
+	public ResponseEntity<Void> withdraw(@RequestParam(defaultValue = "false") boolean confirmed,
+		HttpServletRequest servletRequest) {
+		String accessToken = TokenExtractor.extractBearerToken(servletRequest);
+		userService.withdraw(currentUserId(), accessToken, confirmed);
 		return ResponseEntity.noContent().build();
 	}
 

@@ -75,4 +75,7 @@ public interface CardMapper {
 	List<CardMonthlyStatusVO> findMonthlyStatusByUserId(
 		@Param("userId") Long userId
 	);
+
+	// 회원 탈퇴 시 보유 카드 일괄 소프트삭제
+	int softDeleteAllByUserId(@Param("userId") Long userId);
 }

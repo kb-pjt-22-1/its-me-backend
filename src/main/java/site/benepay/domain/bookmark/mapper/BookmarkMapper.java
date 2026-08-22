@@ -18,4 +18,7 @@ public interface BookmarkMapper {
 	List<Bookmark> findActiveByUserId(@Param("userId") Long userId);
 
 	Optional<Bookmark> findByUserIdAndMerchantId(@Param("userId") Long userId, @Param("merchantId") Long merchantId);
+
+	// 회원 탈퇴 시 북마크 일괄 소프트삭제
+	int softDeleteAllByUserId(@Param("userId") Long userId);
 }
