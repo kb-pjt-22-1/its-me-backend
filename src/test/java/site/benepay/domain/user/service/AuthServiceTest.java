@@ -17,11 +17,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import site.benepay.auth.security.jwt.JwtProperties;
 import site.benepay.common.exception.AccountLockedException;
-import site.benepay.common.exception.DevLoginDisabledException;
 import site.benepay.common.exception.InvalidCredentialsException;
-import site.benepay.common.exception.UserNotFoundException;
 import site.benepay.common.util.RedisKeys;
-import site.benepay.domain.user.dto.DevLoginRequestDto;
 import site.benepay.domain.user.dto.LoginRequestDto;
 import site.benepay.domain.user.dto.LoginResponseDto;
 import site.benepay.domain.user.dto.RefreshRequestDto;
@@ -56,7 +53,8 @@ class AuthServiceTest {
 	void setUp() {
 		jwtProperties = new JwtProperties("unit-test-secret-of-at-least-32-bytes-long", "benepay-auth", 600_000L,
 			31_536_000_000L);
-		authService = authServiceWithDevLogin(false);
+		authService = new AuthServiceImpl(userMapper, passwordEncoder, jwtProperties, tokenService,
+			redisLockoutService);
 
 		user = User.builder()
 			.userId(USER_ID)
@@ -146,92 +144,4 @@ class AuthServiceTest {
 		verify(tokenService).revokeRefreshToken(USER_ID);
 	}
 
-	// ---- dev login ----
-
-	private AuthService authServiceWithDevLogin(boolean enabled) {
-		return new AuthServiceImpl(userMapper, passwordEncoder, jwtProperties, tokenService,
-			redisLockoutService, enabled, 5);
-	}
-
-	private User devUser(Long userId, String loginId) {
-		return User.builder()
-			.userId(userId)
-			.loginId(loginId)
-			.loginPasswordHash("!DEV-ACCOUNT-NO-PASSWORD-LOGIN!")
-			.role(Role.USER)
-			.createdAt(LocalDateTime.now())
-			.build();
-	}
-
-	@Test
-	void devLoginIsRejectedWhenTheFlagIsOff() {
-		assertThatThrownBy(() -> authService.devLogin(new DevLoginRequestDto(1)))
-			.isInstanceOf(DevLoginDisabledException.class);
-
-		verify(userMapper, never()).findByLoginId(any());
-		verify(tokenService, never()).issueTokenPair(any());
-	}
-
-	@Test
-	void devLoginIssuesTokensForTheRequestedSlot() {
-		AuthService devAuthService = authServiceWithDevLogin(true);
-		when(userMapper.findByLoginId("dev2")).thenReturn(Optional.of(devUser(22L, "dev2")));
-		when(tokenService.issueTokenPair(any())).thenReturn(
-			TokenPairDto.builder().accessToken("dev-access").refreshToken("dev-refresh").build());
-
-		LoginResponseDto response = devAuthService.devLogin(new DevLoginRequestDto(2));
-
-		assertThat(response.getLoginId()).isEqualTo("dev2");
-		assertThat(response.getUserId()).isEqualTo(22L);
-		assertThat(response.getAccessToken()).isEqualTo("dev-access");
-		assertThat(response.getTokenType()).isEqualTo("Bearer");
-	}
-
-	@Test
-	void devLoginFallsBackToTheFirstSlotWhenNoneIsGiven() {
-		AuthService devAuthService = authServiceWithDevLogin(true);
-		when(userMapper.findByLoginId("dev1")).thenReturn(Optional.of(devUser(21L, "dev1")));
-		when(tokenService.issueTokenPair(any())).thenReturn(
-			TokenPairDto.builder().accessToken("dev-access").refreshToken("dev-refresh").build());
-
-		assertThat(devAuthService.devLogin(new DevLoginRequestDto()).getLoginId()).isEqualTo("dev1");
-	}
-
-	@Test
-	void devLoginNeverChecksAPassword() {
-		AuthService devAuthService = authServiceWithDevLogin(true);
-		when(userMapper.findByLoginId("dev1")).thenReturn(Optional.of(devUser(21L, "dev1")));
-		when(tokenService.issueTokenPair(any())).thenReturn(
-			TokenPairDto.builder().accessToken("dev-access").refreshToken("dev-refresh").build());
-
-		devAuthService.devLogin(new DevLoginRequestDto(1));
-
-		verify(passwordEncoder, never()).matches(any(), any());
-	}
-
-	@Test
-	void devLoginRejectsSlotsOutsideTheConfiguredRange() {
-		AuthService devAuthService = authServiceWithDevLogin(true);
-
-		assertThatThrownBy(() -> devAuthService.devLogin(new DevLoginRequestDto(0)))
-			.isInstanceOf(InvalidCredentialsException.class);
-		assertThatThrownBy(() -> devAuthService.devLogin(new DevLoginRequestDto(6)))
-			.isInstanceOf(InvalidCredentialsException.class);
-		assertThatThrownBy(() -> devAuthService.devLogin(new DevLoginRequestDto(-1)))
-			.isInstanceOf(InvalidCredentialsException.class);
-
-		// 슬롯 검증이 조회보다 먼저 끝나야 임의의 loginId를 만들어 볼 여지가 없다.
-		verify(userMapper, never()).findByLoginId(any());
-	}
-
-	@Test
-	void devLoginFailsWhenTheSlotAccountIsNotSeeded() {
-		AuthService devAuthService = authServiceWithDevLogin(true);
-		when(userMapper.findByLoginId("dev3")).thenReturn(Optional.empty());
-
-		assertThatThrownBy(() -> devAuthService.devLogin(new DevLoginRequestDto(3)))
-			.isInstanceOf(UserNotFoundException.class);
-
-		verify(tokenService, never()).issueTokenPair(any());
-	}
 }

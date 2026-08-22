@@ -46,15 +46,13 @@ public class SignupIdentityServiceImpl implements SignupIdentityService {
 	private final StringRedisTemplate redisTemplate;
 	private final KbCardClient kbCardClient;
 	private final String diHashSalt;
-	private final boolean devLoginEnabled;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 	private final SecureRandom secureRandom = new SecureRandom();
 
 	public SignupIdentityServiceImpl(UserMapper userMapper, Encryptor encryptor,
 		SignupVerificationStore signupVerificationStore, RedisLockoutService redisLockoutService,
 		StringRedisTemplate redisTemplate, KbCardClient kbCardClient,
-		@Value("${security.di-hash-salt}") String diHashSalt,
-		@Value("${dev-login.enabled}") boolean devLoginEnabled) {
+		@Value("${security.di-hash-salt}") String diHashSalt) {
 		this.userMapper = userMapper;
 		this.encryptor = encryptor;
 		this.signupVerificationStore = signupVerificationStore;
@@ -62,7 +60,6 @@ public class SignupIdentityServiceImpl implements SignupIdentityService {
 		this.redisTemplate = redisTemplate;
 		this.kbCardClient = kbCardClient;
 		this.diHashSalt = diHashSalt;
-		this.devLoginEnabled = devLoginEnabled;
 	}
 
 	@Override
@@ -87,9 +84,16 @@ public class SignupIdentityServiceImpl implements SignupIdentityService {
 
 		KbCustomerVerifyResponseDto kbCustomer = kbCardClient.verifyCustomer(ciHash);
 		if (!kbCustomer.isRegistered()) {
-			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, MAX_ATTEMPTS, FAILURE_WINDOW,
-				REQUEST_LOCK_DURATION);
-			throw new KbCustomerNotFoundException("KB에 등록된 회원이 아닙니다.");
+			// (테스트용) 이 프로젝트는 실제 본인인증기관/카드사 연동이 없는 목데이터 전용
+			// 서비스라, KB Mock Server가 등록된 회원을 못 찾으면 그 자리에서 새 고객+카드를
+			// 만들어 회원가입을 계속 진행한다 - 누구나 임의의 이름/생년월일/휴대폰번호로
+			// 회원가입부터 카드 자동연동까지 끝까지 테스트할 수 있어야 하기 때문이다.
+			kbCustomer = kbCardClient.registerCustomer(ciHash);
+			if (!kbCustomer.isRegistered()) {
+				redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, MAX_ATTEMPTS, FAILURE_WINDOW,
+					REQUEST_LOCK_DURATION);
+				throw new KbCustomerNotFoundException("KB에 등록된 회원이 아닙니다.");
+			}
 		}
 
 		redisLockoutService.clearFailuresAndLock(failureKey, lockKey);
@@ -101,10 +105,9 @@ public class SignupIdentityServiceImpl implements SignupIdentityService {
 
 		log.info("Signup verification code issued for phoneNumber={}", phoneNumber);
 
-		// 실제 SMS 게이트웨이가 없는 mock 단계 - 인증번호 자체는 응답/로그에 남기지 않는다.
-		// dev-login과 동일한 위험 수준의 편의 기능으로, dev-login.enabled가 켜진 로컬/개발
-		// 환경에서만 응답에 실어 준다(운영 환경에서는 반드시 꺼져 있어야 함).
-		return new SignupIdentityRequestResponseDto(devLoginEnabled ? code : null);
+		// (테스트용) 실제 SMS 게이트웨이가 없는 목데이터 전용 서비스라, 인증번호를 응답에
+		// 그대로 실어 준다 - 그래야 실제 문자 없이도 회원가입 2단계(인증 확인)를 테스트할 수 있다.
+		return new SignupIdentityRequestResponseDto(code);
 	}
 
 	@Override

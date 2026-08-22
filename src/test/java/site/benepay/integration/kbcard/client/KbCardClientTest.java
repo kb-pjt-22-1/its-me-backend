@@ -147,4 +147,50 @@ class KbCardClientTest {
 			.isInstanceOf(KbCardIntegrationException.class)
 			.hasCause(cause);
 	}
+
+	// (테스트용) registerCustomer는 verifyCustomer와 요청/응답 DTO를 그대로 재사용하는
+	// 별도 엔드포인트라 검증 방식도 동일하다.
+	@Test
+	@DisplayName("(테스트용) ciHash를 POST 바디로 보내 Mock Server에 새 고객 등록을 요청한다")
+	void registerCustomerPostsCiHashAndReturnsResponse() {
+		String url = BASE_URL + "/api/v1/customers/register";
+		KbCustomerVerifyResponseDto expected = new KbCustomerVerifyResponseDto();
+		expected.setRegistered(true);
+		expected.setCustomerReferenceId("kb-customer-002");
+		when(restTemplate.postForObject(eq(url), any(KbCustomerVerifyRequestDto.class),
+			eq(KbCustomerVerifyResponseDto.class))).thenReturn(expected);
+
+		KbCustomerVerifyResponseDto result = kbCardClient.registerCustomer(CI_HASH);
+
+		assertThat(result).isSameAs(expected);
+		ArgumentCaptor<KbCustomerVerifyRequestDto> captor = ArgumentCaptor.forClass(KbCustomerVerifyRequestDto.class);
+		verify(restTemplate).postForObject(eq(url), captor.capture(), eq(KbCustomerVerifyResponseDto.class));
+		assertThat(captor.getValue().getCiHash()).isEqualTo(CI_HASH);
+	}
+
+	@Test
+	@DisplayName("(테스트용) 등록 HTTP 응답이 null이면 registered=false인 빈 응답 DTO를 반환한다")
+	void registerCustomerReturnsUnregisteredDtoForNullResponse() {
+		String url = BASE_URL + "/api/v1/customers/register";
+		when(restTemplate.postForObject(eq(url), any(KbCustomerVerifyRequestDto.class),
+			eq(KbCustomerVerifyResponseDto.class))).thenReturn(null);
+
+		KbCustomerVerifyResponseDto result = kbCardClient.registerCustomer(CI_HASH);
+
+		assertThat(result).isNotNull();
+		assertThat(result.isRegistered()).isFalse();
+	}
+
+	@Test
+	@DisplayName("(테스트용) 등록 RestClientException을 KB 연동 예외로 변환한다")
+	void registerCustomerWrapsRestClientException() {
+		String url = BASE_URL + "/api/v1/customers/register";
+		RestClientException cause = new RestClientException("connection failed");
+		when(restTemplate.postForObject(eq(url), any(KbCustomerVerifyRequestDto.class),
+			eq(KbCustomerVerifyResponseDto.class))).thenThrow(cause);
+
+		assertThatThrownBy(() -> kbCardClient.registerCustomer(CI_HASH))
+			.isInstanceOf(KbCardIntegrationException.class)
+			.hasCause(cause);
+	}
 }

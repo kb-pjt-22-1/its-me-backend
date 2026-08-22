@@ -147,15 +147,6 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void handleDevLoginDisabledHidesTheRealReasonBehindA404() {
-        ResponseEntity<ErrorResponse> response =
-                handler.handleDevLoginDisabled(new DevLoginDisabledException("개발자 로그인이 비활성화되어 있습니다."), request);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        assertThat(response.getBody().message()).isEqualTo("찾을 수 없습니다.");
-    }
-
-    @Test
     void handleWithdrawalNotConfirmedReturnsBadRequest() {
         ResponseEntity<ErrorResponse> response =
                 handler.handleWithdrawalNotConfirmed(new WithdrawalNotConfirmedException("탈퇴 확인이 필요합니다."), request);
