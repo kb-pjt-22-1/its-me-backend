@@ -117,18 +117,27 @@ public class TokenServiceImpl implements TokenService {
 			return rotate(userId, state);
 		}
 
-		if (state.previousJti != null && presentedJti.equals(state.previousJti)
-			&& state.graceExpiresAt != null && System.currentTimeMillis() < state.graceExpiresAt) {
-			// NFR-REL-01: concurrent duplicate refresh request using the just-rotated-out token
-			return TokenPairDto.builder().accessToken(state.accessToken).refreshToken(state.refreshToken).build();
+		if (state.previousJti != null && presentedJti.equals(state.previousJti)) {
+			if (state.graceExpiresAt != null && System.currentTimeMillis() < state.graceExpiresAt) {
+				// NFR-REL-01: concurrent duplicate refresh request using the just-rotated-out token
+				return TokenPairDto.builder().accessToken(state.accessToken).refreshToken(state.refreshToken).build();
+			}
+			// NFR-SEC-02: 같은 회전 체인의 직전 토큰이 유예 기간을 넘겨서 다시 나타났다 - 정상적인
+			// 동시 요청으로는 설명이 안 되는 지연 재사용이라 탈취로 간주하고 세션을 통째로 끊는다.
+			redisTemplate.delete(RedisKeys.refresh(userId));
+			redisTemplate.opsForValue().set(RedisKeys.alert(userId),
+				"refresh token reuse detected at " + System.currentTimeMillis(), Duration.ofDays(30));
+			log.warn("Refresh token reuse detected for userId={}", userId);
+			throw new TokenReuseException("refresh token reuse detected; all sessions revoked");
 		}
 
-		// NFR-SEC-02: JTI mismatch outside the grace window -> suspected token theft, kill the whole session
-		redisTemplate.delete(RedisKeys.refresh(userId));
-		redisTemplate.opsForValue().set(RedisKeys.alert(userId),
-			"refresh token reuse detected at " + System.currentTimeMillis(), Duration.ofDays(30));
-		log.warn("Refresh token reuse detected for userId={}", userId);
-		throw new TokenReuseException("refresh token reuse detected; all sessions revoked");
+		// presentedJti가 현재 세션도, 그 직전 세션도 아니다 - 이 회전 체인과 전혀 무관한, 이미
+		// 다른 로그인으로 대체된(예: 다른 기기 로그인으로 밀려난) 세션의 토큰이다. 이건 그 토큰
+		// 자체가 더 이상 유효하지 않다는 뜻일 뿐, 지금 활성 상태인 다른 세션(state)을 훼손할
+		// 근거가 안 된다 - 여기서 현재 세션을 지우면, 밀려난 기기가 재로그인해도 "지울 이전
+		// 세션이 없다"고 판단해 새로 로그인한 기기가 상대를 강제 로그아웃시키지 못하는 문제가
+		// 생긴다(SessionDisplacedEvent 참고). 그래서 이 경우엔 이 요청만 거부하고 state는 그대로 둔다.
+		throw new InvalidTokenException("refresh token does not match any active session");
 	}
 
 	@Override

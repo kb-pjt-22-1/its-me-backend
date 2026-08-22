@@ -216,17 +216,20 @@ class TokenServiceTest {
     }
 
     @Test
-    void reuseWithNoMatchingPreviousJtiRevokesTheSession() throws Exception {
-        String presentedRefreshToken = jwtTokenProvider.generateRefreshToken(user, "unknown-jti");
+    void presentingAJtiFromAnUnrelatedSessionIsRejectedWithoutTouchingTheActiveSession() throws Exception {
+        // 이 jti는 지금 저장된 세션의 현재도, 직전도 아니다 - 다른 로그인(예: 다른 기기 로그인으로
+        // 밀려난 세션)의 완전히 무관한 토큰이다. 이 요청만 거부해야지, 지금 활성 상태인 세션(state)을
+        // 지우면 안 된다 - 지우면 밀려난 기기가 재로그인해도 상대를 displace하지 못하는 버그가 생긴다.
+        String presentedRefreshToken = jwtTokenProvider.generateRefreshToken(user, "unrelated-jti");
         String storedJson = storedStateJson("current-jti", "access", "refresh", "some-other-previous-jti", null);
 
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(RedisKeys.refresh(USER_ID))).thenReturn(storedJson);
 
         assertThatThrownBy(() -> tokenService.rotateRefreshToken(presentedRefreshToken))
-                .isInstanceOf(TokenReuseException.class);
+                .isInstanceOf(InvalidTokenException.class);
 
-        verify(redisTemplate).delete(RedisKeys.refresh(USER_ID));
+        verify(redisTemplate, never()).delete(RedisKeys.refresh(USER_ID));
     }
 
     @Test
