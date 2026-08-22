@@ -360,6 +360,65 @@ class PaymentTokenServiceImplTest {
 		assertThat(inserted.getBenefitServiceName()).isNull();
 	}
 
+	// completeToken()의 randomAmount()는 항상 1,000~50,000원 사이라, discountRate=100%인
+	// 혜택에 건당 할인대상 금액(maximumDiscountablePaymentAmount) 500원을 걸면 원금이 얼마든
+	// 항상 500원으로 잘려야 한다 - 실제 청구 지점에서 "건당 할인대상 금액" 축이 동작하는지
+	// 확인한다(BenefitJsonParser는 이 캡을 maximumDiscountablePaymentAmount/
+	// maximumPaymentAmountPerTransaction 키로 읽어 BenefitNode.maximumEligiblePerTransaction에 싣는다).
+	private static final String CAFE_FULL_RATE_WITH_ELIGIBLE_CAP = "{\"performanceTiers\":[{\"minimumSpending\":0,"
+		+ "\"benefits\":[{\"serviceName\":\"카페 할인\",\"benefitType\":\"MERCHANT_CATEGORY\","
+		+ "\"categoryCodes\":[\"5813\"],\"discountMethod\":\"STATEMENT_DISCOUNT\",\"discountRate\":100,"
+		+ "\"minimumPaymentAmount\":0,\"maximumDiscountablePaymentAmount\":500}]}]}";
+
+	@Test
+	void completeTokenClampsDiscountToThePerTransactionEligibleAmountCap() {
+		when(paymentTokenStore.find(PAYMENT_TOKEN_ID)).thenReturn(Optional.of(token(MERCHANT_ID, "ISSUED")));
+		when(paymentTokenStore.markUsedIfIssued(PAYMENT_TOKEN_ID))
+			.thenReturn(Optional.of(token(MERCHANT_ID, "USED")));
+		when(paymentMapper.findByPaymentId(any())).thenReturn(Optional.of(historyRow("카페 할인")));
+		when(merchantService.getMerchant(MERCHANT_ID))
+			.thenReturn(MerchantResponseDto.builder().merchantId(MERCHANT_ID).categoryCode("5813").build());
+		when(paymentMapper.findCardBenefitContext(eq(USER_CARD_ID), any()))
+			.thenReturn(Optional.of(cardBenefitContext(0L, CAFE_FULL_RATE_WITH_ELIGIBLE_CAP)));
+
+		paymentTokenService.completeToken(PAYMENT_TOKEN_ID);
+
+		ArgumentCaptor<PaymentVO> captor = ArgumentCaptor.forClass(PaymentVO.class);
+		verify(paymentMapper).insertPayment(captor.capture());
+		PaymentVO inserted = captor.getValue();
+		assertThat(inserted.getDiscountAmount()).isEqualByComparingTo(BigDecimal.valueOf(500));
+	}
+
+	// 구간 통합한도(maximumCombinedMonthlyBenefit) 200원 중 이미 150원을 소진했다고 가정하면
+	// (usedAmount=150), discountRate=100%짜리 혜택이라도 원금과 무관하게 잔여 50원으로 잘려야
+	// 한다 - 결제 시점 selectPaymentBenefit이 통합한도까지 실제로 반영하는지 확인한다.
+	private static final String CAFE_FULL_RATE_WITH_COMBINED_CAP = "{\"performanceTiers\":[{\"minimumSpending\":0,"
+		+ "\"maximumCombinedMonthlyBenefit\":200,\"monthlyLimitType\":\"INTEGRATED_LIMIT\","
+		+ "\"benefits\":[{\"serviceName\":\"카페 할인\",\"benefitType\":\"MERCHANT_CATEGORY\","
+		+ "\"categoryCodes\":[\"5813\"],\"discountMethod\":\"STATEMENT_DISCOUNT\",\"discountRate\":100,"
+		+ "\"minimumPaymentAmount\":0}]}]}";
+
+	@Test
+	void completeTokenClampsDiscountToTheRemainingCombinedMonthlyCap() {
+		when(paymentTokenStore.find(PAYMENT_TOKEN_ID)).thenReturn(Optional.of(token(MERCHANT_ID, "ISSUED")));
+		when(paymentTokenStore.markUsedIfIssued(PAYMENT_TOKEN_ID))
+			.thenReturn(Optional.of(token(MERCHANT_ID, "USED")));
+		when(paymentMapper.findByPaymentId(any())).thenReturn(Optional.of(historyRow("카페 할인")));
+		when(merchantService.getMerchant(MERCHANT_ID))
+			.thenReturn(MerchantResponseDto.builder().merchantId(MERCHANT_ID).categoryCode("5813").build());
+		when(paymentMapper.findCardBenefitContext(eq(USER_CARD_ID), any()))
+			.thenReturn(Optional.of(cardBenefitContext(0L, CAFE_FULL_RATE_WITH_COMBINED_CAP)));
+		when(benefitUsageMapper.findMonthlyUsageByUserCardId(eq(USER_CARD_ID), any()))
+			.thenReturn(List.of(usageRow("카페 할인", 150L, 1)));
+
+		paymentTokenService.completeToken(PAYMENT_TOKEN_ID);
+
+		ArgumentCaptor<PaymentVO> captor = ArgumentCaptor.forClass(PaymentVO.class);
+		verify(paymentMapper).insertPayment(captor.capture());
+		PaymentVO inserted = captor.getValue();
+		assertThat(inserted.getDiscountAmount()).isEqualByComparingTo(BigDecimal.valueOf(50));
+	}
+
 	@Test
 	void completeTokenThrowsWhenTheTokenIsMissingOrExpired() {
 		when(paymentTokenStore.find(PAYMENT_TOKEN_ID)).thenReturn(Optional.empty());

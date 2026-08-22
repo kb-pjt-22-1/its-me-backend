@@ -254,7 +254,10 @@ public final class BenefitEngine {
 
 	/**
 	 * 결제 1건에 실제로 적용할 혜택을 고른다. benefitDiscountEstimate가 "통상결제액 1건이
-	 * 반복된다면"이라는 통계적 추정인 것과 달리, 이건 이번 결제 금액 하나에 대한 확정 계산이다.
+	 * 반복된다면"이라는 통계적 추정인 것과 달리, 이건 이번 결제 금액 하나에 대한 확정 계산이다 -
+	 * 실제로 청구 금액을 깎는 자리이므로(PaymentTokenServiceImpl.completeToken), 네 축(건당
+	 * 할인대상 금액/건당 할인액/월 할인대상 금액/월 할인액) 전부와 구간 통합한도까지 모두
+	 * 클램프한 뒤에야 discountAmount로 확정한다.
 	 *
 	 * <p>POINT_ACCUMULATION(적립형)은 결제금액을 깎지 않고 포인트로 쌓이는 것이라 이 결제의
 	 * discountAmount로 취급하면 데이터가 왜곡돼 제외한다. PER_LITER_*는 리터 단위 계산인데
@@ -262,6 +265,11 @@ public final class BenefitEngine {
 	 * 실제로 적용되는(merchantName, BenefitNode.matchesMerchant 참고) 나머지 혜택 중
 	 * 최소결제금액을 충족하고 월/연 횟수 한도가 아직 안 찬 것들 가운데 할인액이 가장 큰 하나만
 	 * 고른다 - 실제 결제는 한 번에 한 혜택만 적용되는 게 자연스럽다.</p>
+	 *
+	 * <p>구간 통합한도(maximumCombinedMonthlyBenefit)는 integratedLimitExcluded가 아닌 혜택들이
+	 * 이번 달 이미 소진한 usedAmount 합계(combinedUsage)를 기준으로 잔여분만큼만 이번 결제에
+	 * 허용한다 - bestTierBenefit(추천/코칭용 추정)과 달리 실사용량을 빼고 남은 만큼만 캡으로
+	 * 쓴다(singleTransactionDiscount의 monthlyDiscountLimit 처리와 같은 원칙).</p>
 	 */
 	public static BenefitApplication selectPaymentBenefit(
 		List<PerformanceTier> tiers,
@@ -272,6 +280,10 @@ public final class BenefitEngine {
 		Map<String, BenefitUsage> usageByServiceName
 	) {
 		PerformanceTier active = activeTier(tiers, prevMonthSpend);
+		Long combinedCap = active.combinedCap();
+		long combinedRemaining = combinedCap == null
+			? Long.MAX_VALUE
+			: Math.max(0, combinedCap - combinedUsage(active, usageByServiceName));
 
 		BenefitApplication best = BenefitApplication.NONE;
 		for (BenefitNode benefit : active.benefitsForCategory(categoryCode, merchantName)) {
@@ -283,11 +295,28 @@ public final class BenefitEngine {
 			}
 			BenefitUsage usage = usageByServiceName.getOrDefault(benefit.serviceName(), BenefitUsage.NONE);
 			long discount = singleTransactionDiscount(benefit, paymentAmount, usage);
+			if (!benefit.integratedLimitExcluded() && combinedCap != null) {
+				discount = Math.min(discount, combinedRemaining);
+			}
 			if (discount > best.discountAmount()) {
 				best = new BenefitApplication(benefit.serviceName(), discount);
 			}
 		}
 		return best;
+	}
+
+	/**
+	 * 구간 통합한도 대상(integratedLimitExcluded=false)인 혜택들이 이번 달 이미 소진한
+	 * usedAmount 합계. 결제 시점 usageByServiceName은 card_benefit_monthly_usage를 그대로
+	 * 옮긴 것이라 이 구간에 없는(과거 구간 변경 이전에 쌓인) serviceName은 자연히 안 잡히지만,
+	 * 실무 시나리오상 통합한도는 항상 "현재 구간이 정의한 혜택들" 기준이라 이 정도 스코프면
+	 * 충분하다.
+	 */
+	private static long combinedUsage(PerformanceTier tier, Map<String, BenefitUsage> usageByServiceName) {
+		return tier.realBenefits().stream()
+			.filter(b -> !b.integratedLimitExcluded())
+			.mapToLong(b -> usageByServiceName.getOrDefault(b.serviceName(), BenefitUsage.NONE).usedAmount())
+			.sum();
 	}
 
 	private static long singleTransactionDiscount(BenefitNode benefit, long paymentAmount, BenefitUsage usage) {
@@ -298,9 +327,22 @@ public final class BenefitEngine {
 			return 0L;
 		}
 
-		long discount = benefit.discountAmount() > 0
-			? benefit.discountAmount()
-			: Math.round(paymentAmount * (benefit.discountRate() / 100.0));
+		long discount;
+		if (benefit.discountAmount() > 0) {
+			discount = benefit.discountAmount();
+		} else {
+			// 정률 혜택만 "건당/월 할인대상 금액" 한도의 영향을 받는다 - 정액 혜택은 결제금액
+			// 크기와 무관하게 고정액이라(BenefitServiceImpl.calculateExpectedSavingAmount와
+			// 동일한 구분) eligibleAmount 클램프 대상이 아니다.
+			long eligibleAmount = paymentAmount;
+			if (benefit.maximumEligiblePerTransaction() != null) {
+				eligibleAmount = Math.min(eligibleAmount, benefit.maximumEligiblePerTransaction());
+			}
+			if (benefit.monthlyEligibleLimit() != null) {
+				eligibleAmount = Math.min(eligibleAmount, benefit.monthlyEligibleLimit());
+			}
+			discount = Math.round(eligibleAmount * (benefit.discountRate() / 100.0));
+		}
 
 		if (benefit.maximumDiscountPerTransaction() != null) {
 			discount = Math.min(discount, benefit.maximumDiscountPerTransaction());

@@ -576,6 +576,130 @@ class BenefitEngineTest {
 		assertThat(atOtherRestaurant).isEqualTo(BenefitApplication.NONE);
 	}
 
+	@Test
+	void selectPaymentBenefitLeavesDiscountUnaffectedWhenWithinAllCaps() {
+		// 정률 10%, 건당 할인대상 50,000원 / 건당 할인액 상한 10,000원 / 월 할인대상 100,000원 /
+		// 월 할인액 상한 20,000원 - 10,000원 결제는 전부 여유가 있어 정률 계산 그대로(1,000원) 나와야 한다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			10, 0L, 0L, 0L, 0, 50_000L, 10_000L, 20_000L, 100_000L, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
+
+		assertThat(application.discountAmount()).isEqualTo(1_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitClampsEligibleAmountToThePerTransactionEligibleCap() {
+		// 정률 10%인데 건당 할인대상 금액(maximumEligiblePerTransaction)이 30,000원으로 결제액(100,000원)보다
+		// 작다 - 건당 할인액 상한(maximumDiscountPerTransaction)은 따로 안 걸려 있어도 할인대상 금액
+		// 자체가 30,000원으로 잘려야 한다: 30,000 * 10% = 3,000원(100,000 * 10% = 10,000원이 아니라).
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			10, 0L, 0L, 0L, 0, 30_000L, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		BenefitApplication application =
+			BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 100_000L, Map.of());
+
+		assertThat(application.discountAmount()).isEqualTo(3_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitClampsEligibleAmountToTheMonthlyEligibleCap() {
+		// 정률 20%, 월 할인대상 금액(monthlyEligibleLimit) 10,000원 - 이번 결제(50,000원) 자체가
+		// 월 한도보다 커도 할인대상 금액은 10,000원으로 잘려 2,000원만 나와야 한다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			20, 0L, 0L, 0L, 0, null, null, null, 10_000L, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		BenefitApplication application =
+			BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 50_000L, Map.of());
+
+		assertThat(application.discountAmount()).isEqualTo(2_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitDoesNotClampFlatDiscountAmountByEligibleCaps() {
+		// 정액 혜택(discountAmount>0)은 결제금액 크기와 무관한 고정액이라 건당 할인대상 금액
+		// 클램프의 영향을 받지 않는다 - 정액 5,000원이 그대로 나와야 한다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "CASHBACK_DISCOUNT",
+			0, 5_000L, 0L, 0L, 0, 1_000L, null, null, 1_000L, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		BenefitApplication application =
+			BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 100_000L, Map.of());
+
+		assertThat(application.discountAmount()).isEqualTo(5_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitClampsDiscountToTheRemainingCombinedMonthlyCap() {
+		// 구간 통합한도(maximumCombinedMonthlyBenefit) 5,000원 - "카페 할인"이 이번 달 이미
+		// 4,000원을 썼으면(usedAmount=4,000, integratedLimitExcluded=false) 이번 결제(정률
+		// 50% -> 5,000원 나올 계산)는 통합한도 잔여 1,000원으로 잘려야 한다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			50, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers =
+			List.of(new PerformanceTier(null, "1구간", 0, null, 5_000L, "INTEGRATED_LIMIT", List.of(benefit)));
+		Map<String, BenefitUsage> usage = Map.of("카페", new BenefitUsage(4_000L, 0, 0));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, usage);
+
+		assertThat(application.serviceName()).isEqualTo("카페");
+		assertThat(application.discountAmount()).isEqualTo(1_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitSumsUsageAcrossMultipleBenefitsForTheCombinedMonthlyCap() {
+		// 같은 구간에 혜택이 두 개("카페", "외식")이고 통합한도 5,000원 - 이 결제는 "외식" 혜택을
+		// 고르지만, 통합한도 잔여는 "카페"가 이미 쓴 3,000원까지 포함해서 계산해야 한다
+		// (5,000 - 3,000 = 2,000원 남음). "외식"은 자체 계산상 3,000원(30,000 * 10%)이 나오지만
+		// 잔여 2,000원으로 잘려야 한다.
+		String restaurant = "5812";
+		BenefitNode cafe = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			50, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		BenefitNode dining = new BenefitNode("외식", "MERCHANT_CATEGORY", List.of(restaurant), "STATEMENT_DISCOUNT",
+			10, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers =
+			List.of(new PerformanceTier(null, "1구간", 0, null, 5_000L, "INTEGRATED_LIMIT", List.of(cafe, dining)));
+		Map<String, BenefitUsage> usage = Map.of("카페", new BenefitUsage(3_000L, 0, 0));
+
+		BenefitApplication application =
+			BenefitEngine.selectPaymentBenefit(tiers, 0, restaurant, null, 30_000L, usage);
+
+		assertThat(application.serviceName()).isEqualTo("외식");
+		assertThat(application.discountAmount()).isEqualTo(2_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitIgnoresCombinedMonthlyCapWhenBenefitIsIntegratedLimitExcluded() {
+		// integratedLimitExcluded=true면 구간 통합한도(500원)에 안 잘리고 정률 계산(5,000원)
+		// 그대로 나와야 한다 - tierDiscountForCategoryClampsToTheCombinedCapUnlessIntegratedLimitExcluded와
+		// 같은 원칙을 결제 시점 계산(selectPaymentBenefit)에도 적용한다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			50, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), true, null);
+		List<PerformanceTier> tiers =
+			List.of(new PerformanceTier(null, "1구간", 0, null, 500L, "INTEGRATED_LIMIT", List.of(benefit)));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
+
+		assertThat(application.discountAmount()).isEqualTo(5_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitIgnoresCombinedMonthlyCapWhenMonthlyLimitTypeIsSumOfIndividualLimits() {
+		// monthlyLimitType=SUM_OF_INDIVIDUAL_LIMITS면 PerformanceTier.combinedCap()이 null을
+		// 반환하므로(NO_COMBINED_CAP) maximumCombinedMonthlyBenefit이 있어도 무시되고 개별 한도만 적용된다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			50, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(
+			new PerformanceTier(null, "1구간", 0, null, 500L, "SUM_OF_INDIVIDUAL_LIMITS", List.of(benefit)));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
+
+		assertThat(application.discountAmount()).isEqualTo(5_000L);
+	}
+
 	// ---------------------------------------------------------------- shortDescription
 
 	@Test
