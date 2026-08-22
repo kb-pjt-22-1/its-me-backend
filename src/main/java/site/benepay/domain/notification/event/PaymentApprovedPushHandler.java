@@ -10,7 +10,9 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import site.benepay.domain.notification.dto.PushNotificationMessage;
+import site.benepay.domain.notification.service.NotificationHistoryStore;
 import site.benepay.domain.notification.service.PushNotificationSender;
+import site.benepay.domain.notification.vo.NotificationType;
 import site.benepay.domain.payment.event.PaymentApprovedEvent;
 
 /**
@@ -27,19 +29,31 @@ import site.benepay.domain.payment.event.PaymentApprovedEvent;
 public class PaymentApprovedPushHandler {
 
 	private final PushNotificationSender pushNotificationSender;
+	private final NotificationHistoryStore notificationHistoryStore;
 
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void handle(PaymentApprovedEvent event) {
+		String title = "결제가 완료됐어요";
+		String body = buildBody(event);
+
 		try {
 			pushNotificationSender.send(new PushNotificationMessage(
 				event.userId(),
-				"결제가 완료됐어요",
-				buildBody(event),
+				title,
+				body,
 				Map.of("paymentId", String.valueOf(event.paymentId()))
 			));
 		} catch (RuntimeException e) {
 			// 이미 COMMIT된 결제이므로 알림 전송 실패가 결제 처리 결과에 영향을 주면 안 된다.
 			log.warn("결제 완료 푸시 알림 전송 실패. paymentId={}, userId={}", event.paymentId(), event.userId(), e);
+		}
+
+		try {
+			notificationHistoryStore.record(
+				event.userId(), NotificationType.PAYMENT_APPROVED, title, body, event.paymentId());
+		} catch (RuntimeException e) {
+			// 이력 저장 실패가 푸시 전송이나 결제 처리 결과에 영향을 주면 안 된다 - 위와 같은 격리 원칙.
+			log.warn("결제 완료 알림 이력 저장 실패. paymentId={}, userId={}", event.paymentId(), event.userId(), e);
 		}
 	}
 

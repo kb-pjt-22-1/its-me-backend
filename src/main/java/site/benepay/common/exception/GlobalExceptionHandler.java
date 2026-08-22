@@ -214,6 +214,12 @@ public class GlobalExceptionHandler {
 		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
 	}
 
+	@ExceptionHandler(NotificationNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handleNotificationNotFound(NotificationNotFoundException ex,
+		HttpServletRequest request) {
+		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+	}
+
 	/**
 	 * 별도로 처리되지 않은 예외를 공통 서버 오류로 처리한다.
 	 */

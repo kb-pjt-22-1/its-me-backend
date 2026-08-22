@@ -25,7 +25,9 @@ import site.benepay.common.util.RedisKeys;
 import site.benepay.domain.bookmark.mapper.BookmarkMapper;
 import site.benepay.domain.bookmark.vo.Bookmark;
 import site.benepay.domain.notification.dto.PushNotificationMessage;
+import site.benepay.domain.notification.service.NotificationHistoryStore;
 import site.benepay.domain.notification.service.PushNotificationSender;
+import site.benepay.domain.notification.vo.NotificationType;
 
 /**
  * 유저 위치가 저장(북마크)한 매장 반경 안에 들어오면 푸시 알림을 보낸다.
@@ -53,6 +55,7 @@ public class NearbyBookmarkedMerchantPushHandler {
 	private final BookmarkMapper bookmarkMapper;
 	private final StringRedisTemplate redisTemplate;
 	private final PushNotificationSender pushNotificationSender;
+	private final NotificationHistoryStore notificationHistoryStore;
 
 	@EventListener
 	public void handle(UserLocationUpdatedEvent event) {
@@ -102,15 +105,25 @@ public class NearbyBookmarkedMerchantPushHandler {
 			return;
 		}
 
+		String title = "저장한 매장이 근처에 있어요";
+		String body = "저장해둔 매장 근처에 도착했어요. 지금 바로 확인해보세요.";
+
 		try {
 			pushNotificationSender.send(new PushNotificationMessage(
 				userId,
-				"저장한 매장이 근처에 있어요",
-				"저장해둔 매장 근처에 도착했어요. 지금 바로 확인해보세요.",
+				title,
+				body,
 				Map.of("merchantId", String.valueOf(merchantId))
 			));
 		} catch (RuntimeException e) {
 			log.warn("근처 매장 푸시 알림 전송 실패. userId={}, merchantId={}", userId, merchantId, e);
+		}
+
+		try {
+			notificationHistoryStore.record(userId, NotificationType.NEARBY_MERCHANT, title, body, merchantId);
+		} catch (RuntimeException e) {
+			// 이력 저장 실패가 푸시 전송이나 위치 이벤트 처리 결과에 영향을 주면 안 된다 - 위와 같은 격리 원칙.
+			log.warn("근처 매장 알림 이력 저장 실패. userId={}, merchantId={}", userId, merchantId, e);
 		}
 
 		redisTemplate.opsForValue().set(flagKey, String.valueOf(Instant.now().getEpochSecond()), SAFETY_TTL);
