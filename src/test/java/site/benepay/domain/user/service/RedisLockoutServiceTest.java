@@ -81,6 +81,19 @@ class RedisLockoutServiceTest {
     }
 
     @Test
+    void reachingMaxAttemptsAlsoShortensTheFailureCountExpiryToMatchTheLockDuration() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.increment(FAILURE_KEY)).thenReturn(5L);
+
+        redisLockoutService.recordFailureAndMaybeLock(
+                FAILURE_KEY, LOCK_KEY, 5, Duration.ofMinutes(10), Duration.ofSeconds(30));
+
+        // 잠금 TTL(30초)이 실패 카운트 TTL(10분)보다 훨씬 짧으므로, 잠금이 풀리는 시점에
+        // 카운트도 같이 사라지도록 failureKey의 만료도 lockDuration으로 다시 맞춰야 한다.
+        verify(redisTemplate).expire(FAILURE_KEY, Duration.ofSeconds(30));
+    }
+
+    @Test
     void clearFailuresAndLockDeletesBothKeys() {
         redisLockoutService.clearFailuresAndLock(FAILURE_KEY, LOCK_KEY);
 
