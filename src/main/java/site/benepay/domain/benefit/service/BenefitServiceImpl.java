@@ -393,9 +393,14 @@ public class BenefitServiceImpl implements BenefitService {
 			return cached;
 		}
 
-		BenefitCoachResponseDto response = computeBenefitCoaching(userId);
-		cacheCoaching(cacheKey, response);
-		return response;
+		ComputedCoaching computed = computeBenefitCoaching(userId);
+		// OpenAI 호출/개별 항목이 실패해 reason 기반 폴백 문구가 하나라도 쓰였으면 캐싱하지
+		// 않는다 - 캐싱하면 그 한 번의 실패가 다음 월요일까지 일주일 내내 고정된다(TTL 설명
+		// 참고). 다음 요청에서 다시 계산을 시도하게 둔다.
+		if (!computed.anyItemUsedFallback()) {
+			cacheCoaching(cacheKey, computed.response());
+		}
+		return computed.response();
 	}
 
 	/**
@@ -441,7 +446,7 @@ public class BenefitServiceImpl implements BenefitService {
 		return Duration.between(now.atZone(ZONE), nextMonday.atZone(ZONE));
 	}
 
-	private BenefitCoachResponseDto computeBenefitCoaching(
+	private ComputedCoaching computeBenefitCoaching(
 		Long userId
 	) {
 		LocalDateTime now =
@@ -451,8 +456,11 @@ public class BenefitServiceImpl implements BenefitService {
 			benefitCoachDataLoader.load(userId, now);
 
 		if (loadedData.payments().isEmpty()) {
-			return createEmptyCoachingResponse(
-				"최근 3개월 결제 내역이 없어 분석할 소비 패턴이 없습니다."
+			return new ComputedCoaching(
+				createEmptyCoachingResponse(
+					"최근 3개월 결제 내역이 없어 분석할 소비 패턴이 없습니다."
+				),
+				false
 			);
 		}
 
@@ -462,8 +470,11 @@ public class BenefitServiceImpl implements BenefitService {
 			);
 
 		if (loadedData.cards().isEmpty()) {
-			return createEmptyCoachingResponse(
-				"혜택 코칭에 사용할 수 있는 보유 카드가 없습니다."
+			return new ComputedCoaching(
+				createEmptyCoachingResponse(
+					"혜택 코칭에 사용할 수 있는 보유 카드가 없습니다."
+				),
+				false
 			);
 		}
 
@@ -475,8 +486,11 @@ public class BenefitServiceImpl implements BenefitService {
 			);
 
 		if (calculatedData.isEmpty()) {
-			return createEmptyCoachingResponse(
-				"현재 소비 패턴에 적용 가능한 카드 혜택이 없습니다."
+			return new ComputedCoaching(
+				createEmptyCoachingResponse(
+					"현재 소비 패턴에 적용 가능한 카드 혜택이 없습니다."
+				),
+				false
 			);
 		}
 
@@ -504,15 +518,27 @@ public class BenefitServiceImpl implements BenefitService {
 				);
 		}
 
-		return BenefitCoachResponseDto.builder()
-			.summary(coachingText.summary())
-			.items(
-				createBenefitCoachItems(
-					calculatedData,
-					coachingText.items()
-				)
-			)
-			.build();
+		BenefitCoachItemsResult itemsResult =
+			createBenefitCoachItems(
+				calculatedData,
+				coachingText.items()
+			);
+
+		BenefitCoachResponseDto response =
+			BenefitCoachResponseDto.builder()
+				.summary(coachingText.summary())
+				.items(itemsResult.items())
+				.build();
+
+		return new ComputedCoaching(response, itemsResult.anyItemUsedFallback());
+	}
+
+	// getBenefitCoaching이 캐싱 여부를 결정하는 데 쓴다 - anyItemUsedFallback 설명은
+	// BenefitCoachItemsResult 주석 참고.
+	private record ComputedCoaching(
+		BenefitCoachResponseDto response,
+		boolean anyItemUsedFallback
+	) {
 	}
 
 	private BenefitCoachResponseDto createEmptyCoachingResponse(
@@ -524,7 +550,7 @@ public class BenefitServiceImpl implements BenefitService {
 			.build();
 	}
 
-	private List<BenefitCoachItemDto> createBenefitCoachItems(
+	private BenefitCoachItemsResult createBenefitCoachItems(
 		List<CalculatedCoachingData> calculatedData,
 		List<OpenAiCoachingItemText> coachingTexts
 	) {
@@ -547,6 +573,7 @@ public class BenefitServiceImpl implements BenefitService {
 
 		List<BenefitCoachItemDto> items =
 			new ArrayList<>();
+		boolean anyItemUsedFallback = false;
 
 		for (int index = 0;
 			 index < calculatedData.size();
@@ -564,11 +591,17 @@ public class BenefitServiceImpl implements BenefitService {
 					? data.getCategoryName() + " 혜택 안내"
 					: coachingText.title();
 
-			String message =
+			// OpenAI 호출/개별 항목이 실패했을 때, "카드명 사용이 유리합니다" 같은 빈약한 문구를
+			// 새로 만드는 대신 이미 계산돼 있는 reason(예: "OO 사용 시 평균 결제 1회 기준
+			// 300원의 혜택이 예상됩니다")을 그대로 쓴다 - 어차피 amount가 반영된 문장이 이미 있다.
+			boolean usedFallback =
 				coachingText == null
-					|| coachingText.message().isBlank()
-					? data.getRecommendedCardName()
-					+ " 사용이 유리합니다."
+					|| coachingText.message().isBlank();
+			anyItemUsedFallback = anyItemUsedFallback || usedFallback;
+
+			String message =
+				usedFallback
+					? data.getReason()
 					: coachingText.message();
 
 			items.add(
@@ -598,7 +631,18 @@ public class BenefitServiceImpl implements BenefitService {
 			);
 		}
 
-		return items;
+		return new BenefitCoachItemsResult(items, anyItemUsedFallback);
+	}
+
+	// AI 문구 생성이 실패해 reason 기반 폴백 문구가 하나라도 쓰였는지 표시한다 - true면
+	// getBenefitCoaching이 이번 결과를 캐싱하지 않는다(다음 월요일까지 일주일 내내 빈약한
+	// 문구가 고정되는 걸 막기 위함). "이미 최적 카드 사용 중"(KEEP_USING) 같은 정상적으로
+	// AI가 생성한 문구는 fallback이 아니므로 캐싱을 막지 않는다 - 이 플래그는 오직 실제로
+	// reason으로 대체된 항목이 있었는지만 본다.
+	private record BenefitCoachItemsResult(
+		List<BenefitCoachItemDto> items,
+		boolean anyItemUsedFallback
+	) {
 	}
 
 	private long sumCategoryBenefits(
