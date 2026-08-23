@@ -73,22 +73,22 @@ public class UserServiceImpl implements UserService {
 	@Transactional
 	public LoginResponseDto signUp(SignUpRequestDto request) {
 		if (userMapper.existsByLoginId(request.getLoginId())) {
-			throw new DuplicateUserException("login id already in use: " + request.getLoginId());
+			throw new DuplicateUserException("이미 사용 중인 아이디입니다: " + request.getLoginId());
 		}
 
 		SignupVerificationStore.VerifiedIdentity identity = signupVerificationStore
 			.redeem(request.getVerificationToken())
-			.orElseThrow(() -> new InvalidTokenException("identity verification token is invalid or expired"));
+			.orElseThrow(() -> new InvalidTokenException("본인인증 토큰이 유효하지 않거나 만료되었습니다."));
 
 		// 휴대폰 본인인증 시점에 이미 한 번 걸렀지만, 그 사이 다른 요청이 같은 DI로 먼저
 		// 가입했을 수 있어 여기서 한 번 더 확인한다. 최종 방어선은 어차피 users.di UNIQUE다.
 		if (userMapper.existsByDiHash(identity.diHash)) {
-			throw new DuplicateUserException("identity already registered");
+			throw new DuplicateUserException("이미 가입된 사용자입니다.");
 		}
 		// ci_hash도 di와 마찬가지로 users 테이블에 UNIQUE라 최종 방어선은 DB가 지키지만,
 		// 인증은 됐는데 이미 가입된 사람인 경우를 여기서 먼저 걸러 더 명확한 예외로 알려준다.
 		if (userMapper.existsByCiHash(identity.ciHash)) {
-			throw new DuplicateUserException("identity already registered");
+			throw new DuplicateUserException("이미 가입된 사용자입니다.");
 		}
 
 		PinValidator.validate(request.getPin());
@@ -178,14 +178,14 @@ public class UserServiceImpl implements UserService {
 		String lockKey = RedisKeys.passwordLock(userId);
 
 		if (redisLockoutService.isLocked(lockKey)) {
-			throw new AccountLockedException("password verification is temporarily locked");
+			throw new AccountLockedException("비밀번호 확인 시도가 반복되어 일시적으로 잠겼습니다.");
 		}
 
 		User user = findActiveUser(userId);
 		if (!passwordEncoder.matches(currentPassword, user.getLoginPasswordHash())) {
 			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, 5, Duration.ofMinutes(10),
 				Duration.ofMinutes(30));
-			throw new InvalidCredentialsException("current password is incorrect");
+			throw new InvalidCredentialsException("현재 비밀번호가 일치하지 않습니다.");
 		}
 		redisLockoutService.clearFailuresAndLock(failureKey, lockKey);
 		return user;
@@ -196,7 +196,7 @@ public class UserServiceImpl implements UserService {
 	public void registerPin(Long userId, RegisterPinRequestDto request) {
 		User user = findActiveUser(userId);
 		if (user.getPinHash() != null) {
-			throw new PinAlreadyRegisteredException("PIN already registered; use the update endpoint instead");
+			throw new PinAlreadyRegisteredException("이미 등록된 PIN입니다. 변경 API를 이용해 주세요.");
 		}
 		PinValidator.validate(request.getPin());
 		userMapper.updatePinHash(userId, passwordEncoder.encode(request.getPin()));
@@ -231,14 +231,14 @@ public class UserServiceImpl implements UserService {
 		String lockKey = RedisKeys.pinLock(userId);
 
 		if (redisLockoutService.isLocked(lockKey)) {
-			throw new AccountLockedException("PIN verification is temporarily locked");
+			throw new AccountLockedException("PIN 확인 시도가 반복되어 일시적으로 잠겼습니다.");
 		}
 
 		User user = findActiveUser(userId);
 		if (user.getPinHash() == null || !passwordEncoder.matches(currentPin, user.getPinHash())) {
 			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, 5, Duration.ofMinutes(10),
 				Duration.ofSeconds(30));
-			throw new InvalidCredentialsException("PIN is incorrect");
+			throw new InvalidCredentialsException("PIN이 일치하지 않습니다.");
 		}
 		redisLockoutService.clearFailuresAndLock(failureKey, lockKey);
 	}
@@ -247,7 +247,7 @@ public class UserServiceImpl implements UserService {
 	@Transactional
 	public void withdraw(Long userId, String accessToken, boolean confirmed) {
 		if (!confirmed) {
-			throw new WithdrawalNotConfirmedException("withdrawal confirmation flag is required");
+			throw new WithdrawalNotConfirmedException("탈퇴 확인이 필요합니다.");
 		}
 		findActiveUser(userId);
 		userMapper.softDeleteAndAnonymize(userId);
@@ -264,6 +264,6 @@ public class UserServiceImpl implements UserService {
 
 	private User findActiveUser(Long userId) {
 		return userMapper.findByUserId(userId)
-			.orElseThrow(() -> new UserNotFoundException("user not found"));
+			.orElseThrow(() -> new UserNotFoundException("사용자를 찾을 수 없습니다."));
 	}
 }

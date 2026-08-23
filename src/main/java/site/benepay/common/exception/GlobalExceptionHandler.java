@@ -1,8 +1,5 @@
 package site.benepay.common.exception;
 
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-
 import javax.servlet.http.HttpServletRequest;
 
 import org.springframework.dao.DataIntegrityViolationException;
@@ -17,8 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-
-	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex,
@@ -219,6 +214,21 @@ public class GlobalExceptionHandler {
 		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
 	}
 
+	// KB카드 Mock Server 연동(HTTP 호출) 실패. 우리 쪽 버그가 아니라 외부 시스템 문제이므로 502로 구분한다.
+	@ExceptionHandler(KbCardIntegrationException.class)
+	public ResponseEntity<ErrorResponse> handleKbCardIntegration(KbCardIntegrationException ex,
+		HttpServletRequest request) {
+		log.error("KB카드 연동 실패: {}", ex.getMessage(), ex);
+		return errorResponse(HttpStatus.BAD_GATEWAY, ex.getMessage(), request);
+	}
+
+	@ExceptionHandler(KbCardWebhookUserNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handleKbCardWebhookUserNotFound(KbCardWebhookUserNotFoundException ex,
+		HttpServletRequest request) {
+		log.warn("KB카드 Webhook 대상 사용자 없음: {}", ex.getMessage());
+		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+	}
+
 	/**
 	 * 별도로 처리되지 않은 예외를 공통 서버 오류로 처리한다.
 	 */
@@ -231,6 +241,6 @@ public class GlobalExceptionHandler {
 	private static ResponseEntity<ErrorResponse> errorResponse(HttpStatus status, String message,
 		HttpServletRequest request) {
 		return ResponseEntity.status(status)
-			.body(new ErrorResponse(status.value(), message, request.getRequestURI(), LocalDateTime.now(ZONE)));
+			.body(ErrorResponse.of(status.value(), message, request.getRequestURI()));
 	}
 }

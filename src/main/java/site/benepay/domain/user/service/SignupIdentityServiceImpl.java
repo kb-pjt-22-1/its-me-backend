@@ -69,7 +69,7 @@ public class SignupIdentityServiceImpl implements SignupIdentityService {
 		String lockKey = RedisKeys.signupIdentityLock(phoneNumber);
 
 		if (redisLockoutService.isLocked(lockKey)) {
-			throw new AccountLockedException("verification requests for this phone number are temporarily locked");
+			throw new AccountLockedException("해당 휴대폰 번호의 인증 요청이 일시적으로 잠겼습니다.");
 		}
 
 		// ciHash = SHA-256(name+birthDate+phoneNumber)가 정본이다 - KB Mock Server의 카드
@@ -79,7 +79,7 @@ public class SignupIdentityServiceImpl implements SignupIdentityService {
 		if (userMapper.existsByCiHash(ciHash)) {
 			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, MAX_ATTEMPTS, FAILURE_WINDOW,
 				REQUEST_LOCK_DURATION);
-			throw new DuplicateUserException("identity already registered");
+			throw new DuplicateUserException("이미 가입된 사용자입니다.");
 		}
 
 		KbCustomerVerifyResponseDto kbCustomer = kbCardClient.verifyCustomer(ciHash);
@@ -117,16 +117,16 @@ public class SignupIdentityServiceImpl implements SignupIdentityService {
 		String lockKey = RedisKeys.signupOtpLock(phoneNumber);
 
 		if (redisLockoutService.isLocked(lockKey)) {
-			throw new AccountLockedException("verification code confirmation is temporarily locked");
+			throw new AccountLockedException("인증번호 확인이 일시적으로 잠겼습니다.");
 		}
 
 		PendingOtp pending = loadPendingOtp(phoneNumber)
-			.orElseThrow(() -> new VerificationCodeInvalidException("verification code is invalid or expired"));
+			.orElseThrow(() -> new VerificationCodeInvalidException("인증번호가 유효하지 않거나 만료되었습니다."));
 
 		if (!pending.code.equals(request.getCode())) {
 			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, MAX_ATTEMPTS, FAILURE_WINDOW,
 				CONFIRM_LOCK_DURATION);
-			throw new VerificationCodeInvalidException("verification code is invalid or expired");
+			throw new VerificationCodeInvalidException("인증번호가 유효하지 않거나 만료되었습니다.");
 		}
 
 		redisLockoutService.clearFailuresAndLock(failureKey, lockKey);

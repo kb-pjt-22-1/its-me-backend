@@ -13,12 +13,12 @@ import lombok.NoArgsConstructor;
 public class UpdateDeletePinRequestDto {
 
 	@NotBlank
-	@Pattern(regexp = "^\\d{6}$", message = "current PIN must be exactly 6 digits")
+	@Pattern(regexp = "^\\d{6}$", message = "현재 PIN은 정확히 6자리 숫자여야 합니다.")
 	private String currentPin;
 
 	/**
 	 * null means "delete the PIN"; if present, must be exactly 6 digits.
 	 */
-	@Pattern(regexp = "^\\d{6}$", message = "new PIN must be exactly 6 digits")
+	@Pattern(regexp = "^\\d{6}$", message = "새 PIN은 정확히 6자리 숫자여야 합니다.")
 	private String newPin;
 }
