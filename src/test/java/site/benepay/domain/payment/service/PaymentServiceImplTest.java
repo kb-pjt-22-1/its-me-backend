@@ -79,6 +79,7 @@ class PaymentServiceImplTest {
 		assertThat(response.getPaymentId()).isEqualTo(PAYMENT_ID);
 		assertThat(response.getMerchantId()).isEqualTo(MERCHANT_ID);
 		assertThat(response.getBrandId()).isEqualTo(BRAND_ID);
+		assertThat(response.getCategoryCode()).isEqualTo("5813");
 		assertThat(response.getMerchantName()).isEqualTo("스타벅스 강남점");
 		assertThat(response.getMaskedCardNumber()).isEqualTo("**** 1234");
 		assertThat(response.getPaymentStatus()).isEqualTo("APPROVED");
