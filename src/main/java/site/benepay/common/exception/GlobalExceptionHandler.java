@@ -213,6 +213,12 @@ public class GlobalExceptionHandler {
 		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
 	}
 
+	@ExceptionHandler(InvalidCoordinateException.class)
+	public ResponseEntity<ErrorResponse> handleInvalidCoordinate(InvalidCoordinateException ex,
+		HttpServletRequest request) {
+		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+	}
+
 	/**
 	 * 별도로 처리되지 않은 예외를 공통 서버 오류로 처리한다.
 	 */

@@ -28,6 +28,7 @@ import site.benepay.domain.card.dto.CardListResponseDto;
 import site.benepay.domain.card.dto.CardPerformanceResponseDto;
 import site.benepay.domain.card.dto.CardRecommendationResponseDto;
 import site.benepay.domain.card.dto.CardRepresentativeResponseDto;
+import site.benepay.domain.card.dto.CardSyncResponseDto;
 import site.benepay.domain.card.mapper.CardMapper;
 import site.benepay.domain.card.vo.CardMonthlyStatusVO;
 import site.benepay.domain.card.vo.UserCardBenefitVO;
@@ -47,11 +48,25 @@ class CardServiceTest {
 	@Mock
 	private CardMapper cardMapper;
 
+	@Mock
+	private CardSyncService cardSyncService;
+
 	private CardService cardService;
 
 	@BeforeEach
 	void setUp() {
-		cardService = new CardService(cardMapper, new ObjectMapper());
+		cardService = new CardService(cardMapper, new ObjectMapper(), cardSyncService);
+	}
+
+	// ---- syncCards ----
+
+	@Test
+	void syncCardsReturnsTheSyncedCountFromCardSyncService() {
+		when(cardSyncService.syncCards(USER_ID)).thenReturn(3);
+
+		CardSyncResponseDto response = cardService.syncCards(USER_ID);
+
+		assertThat(response.getSyncedCount()).isEqualTo(3);
 	}
 
 	// ---- getCardList ----

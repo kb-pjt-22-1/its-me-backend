@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import site.benepay.common.facade.Facade;
+import site.benepay.common.util.GeoCoordinateValidator;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
 import site.benepay.domain.merchant.service.MerchantService;
 import site.benepay.domain.recommendation.dto.NearbyMerchantRecommendationResponseDto;
@@ -78,6 +79,10 @@ public class MerchantController {
 		@RequestParam double centerLng,
 		@RequestParam(required = false) String categoryCode
 	) {
+		GeoCoordinateValidator.validate(swLat, swLng);
+		GeoCoordinateValidator.validate(neLat, neLng);
+		GeoCoordinateValidator.validate(centerLat, centerLng);
+
 		List<MerchantResponseDto> merchants = merchantService.getMerchants(swLat, swLng, neLat, neLng, centerLat,
 			centerLng, categoryCode, BOUNDS_SEARCH_LIMIT);
 		return ResponseEntity.ok(facade.getRecommendedMerchants(userId, merchants));
@@ -97,6 +102,8 @@ public class MerchantController {
 		@RequestParam double lng,
 		@RequestParam(required = false) String categoryCode
 	) {
+		GeoCoordinateValidator.validate(lat, lng);
+
 		List<MerchantResponseDto> candidates =
 			merchantService.getNearbyMerchants(lat, lng, categoryCode, TODAY_RECOMMENDATION_CANDIDATE_POOL);
 		return ResponseEntity.ok(facade.getTodayRecommendedMerchants(userId, candidates, TODAY_RECOMMENDATION_LIMIT));

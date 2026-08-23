@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import site.benepay.common.exception.GlobalExceptionHandler;
+import site.benepay.common.exception.InvalidCoordinateException;
 import site.benepay.common.exception.MerchantNotFoundException;
 import site.benepay.common.facade.Facade;
 import site.benepay.domain.merchant.dto.MerchantResponseDto;
@@ -140,6 +141,15 @@ class MerchantControllerTest {
 		verify(facade).getRecommendedMerchants(USER_ID, merchants);
 	}
 
+	@Test
+	void getRecommendedMerchantsInBoundsRejectsOutOfRangeCoordinate() {
+		MerchantController controller = new MerchantController(merchantService, facade);
+
+		assertThatThrownBy(() ->
+			controller.getRecommendedMerchantsInBounds(USER_ID, 37.4, 127.0, 37.6, 127.2, 91.0, 127.1, null))
+			.isInstanceOf(InvalidCoordinateException.class);
+	}
+
 	// ---- GET /api/v1/merchants/today-recommendation ----
 	// standaloneSetup은 @AuthenticationPrincipal을 못 풀어주므로, 컨트롤러 메서드를 직접 호출한다.
 
@@ -163,5 +173,13 @@ class MerchantControllerTest {
 
 		assertThat(response.getBody()).isEqualTo(today);
 		verify(facade).getTodayRecommendedMerchants(USER_ID, candidates, 2);
+	}
+
+	@Test
+	void getTodayRecommendationRejectsOutOfRangeCoordinate() {
+		MerchantController controller = new MerchantController(merchantService, facade);
+
+		assertThatThrownBy(() -> controller.getTodayRecommendation(USER_ID, 37.5, 181.0, null))
+			.isInstanceOf(InvalidCoordinateException.class);
 	}
 }

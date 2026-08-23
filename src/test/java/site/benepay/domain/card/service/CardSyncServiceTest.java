@@ -1,10 +1,12 @@
 package site.benepay.domain.card.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +15,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import site.benepay.common.exception.UserNotFoundException;
+import site.benepay.domain.user.mapper.UserMapper;
+import site.benepay.domain.user.vo.User;
 import site.benepay.integration.kbcard.client.KbCardClient;
 import site.benepay.integration.kbcard.dto.KbCardResponseDto;
 import site.benepay.integration.kbcard.dto.KbCustomerCardsResponseDto;
@@ -28,6 +33,9 @@ class CardSyncServiceTest {
 
 	@Mock
 	private CardRegistrationService cardRegistrationService;
+
+	@Mock
+	private UserMapper userMapper;
 
 	@InjectMocks
 	private CardSyncService cardSyncService;
@@ -67,6 +75,31 @@ class CardSyncServiceTest {
 
 		assertThat(cardSyncService.syncCards(USER_ID, CI_HASH)).isZero();
 		verify(cardRegistrationService).registerCards(USER_ID, null);
+	}
+
+	// ---- syncCards(userId) - 수동 재동기화 ----
+
+	@Test
+	@DisplayName("userId로 사용자의 ciHash를 조회해 재동기화한다")
+	void syncCardsByUserIdResolvesCiHashThenSyncs() {
+		List<KbCardResponseDto> cards = List.of(card("card-1"));
+		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(User.builder().ciHash(CI_HASH).build()));
+		when(kbCardClient.findCardsByCiHash(CI_HASH)).thenReturn(response(cards));
+		when(cardRegistrationService.registerCards(USER_ID, cards)).thenReturn(1);
+
+		int result = cardSyncService.syncCards(USER_ID);
+
+		assertThat(result).isEqualTo(1);
+		verify(kbCardClient).findCardsByCiHash(CI_HASH);
+	}
+
+	@Test
+	@DisplayName("사용자를 찾을 수 없으면 예외를 던진다")
+	void syncCardsByUserIdThrowsWhenUserNotFound() {
+		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> cardSyncService.syncCards(USER_ID))
+			.isInstanceOf(UserNotFoundException.class);
 	}
 
 	private KbCustomerCardsResponseDto response(List<KbCardResponseDto> cards) {
