@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import site.benepay.common.exception.GlobalExceptionHandler;
 import site.benepay.integration.kbcard.dto.CardIssuedWebhookRequestDto;
 import site.benepay.integration.kbcard.service.KbCardWebhookService;
 
@@ -32,6 +33,7 @@ class KbCardWebhookControllerTest {
 	void setUp() {
 		mockMvc = MockMvcBuilders
 			.standaloneSetup(new KbCardWebhookController(webhookService))
+			.setControllerAdvice(new GlobalExceptionHandler())
 			.build();
 	}
 
@@ -66,5 +68,28 @@ class KbCardWebhookControllerTest {
 		assertThat(request.getCardLast4()).isEqualTo("1234");
 		assertThat(request.getCardType()).isEqualTo("CREDIT");
 		assertThat(request.getCardStatus()).isEqualTo("ACTIVE");
+	}
+
+	@Test
+	@DisplayName("필수 필드가 비어있으면 400을 반환하고 서비스는 호출하지 않는다")
+	void cardIssuedRejectsBlankRequiredField() throws Exception {
+		String json = """
+			{
+			  "eventId": "",
+			  "ciHash": "ci-hash-001",
+			  "cardReferenceId": "card-ref-001",
+			  "issuerProductCode": "product-001",
+			  "cardLast4": "1234",
+			  "cardType": "CREDIT",
+			  "cardStatus": "ACTIVE"
+			}
+			""";
+
+		mockMvc.perform(post("/api/v1/webhooks/kb-card/card-issued")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(json))
+			.andExpect(status().isBadRequest());
+
+		verify(webhookService, times(0)).processCardIssued(org.mockito.ArgumentMatchers.any());
 	}
 }

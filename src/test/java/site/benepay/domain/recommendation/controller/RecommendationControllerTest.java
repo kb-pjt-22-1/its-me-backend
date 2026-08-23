@@ -1,6 +1,8 @@
 package site.benepay.domain.recommendation.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -19,6 +21,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import site.benepay.common.exception.InvalidCoordinateException;
 import site.benepay.common.facade.Facade;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.TodayCardRecommendationResponseDto;
@@ -39,9 +42,9 @@ class RecommendationControllerTest {
 		controller = new RecommendationController(facade);
 
 		Authentication authentication = mock(Authentication.class);
-		when(authentication.getPrincipal()).thenReturn(USER_ID);
+		lenient().when(authentication.getPrincipal()).thenReturn(USER_ID);
 		SecurityContext securityContext = mock(SecurityContext.class);
-		when(securityContext.getAuthentication()).thenReturn(authentication);
+		lenient().when(securityContext.getAuthentication()).thenReturn(authentication);
 		SecurityContextHolder.setContext(securityContext);
 	}
 
@@ -85,5 +88,11 @@ class RecommendationControllerTest {
 		assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(result.getBody()).isEqualTo(response);
 		verify(facade).getTodayCardRecommendation(USER_ID, lat, lng);
+	}
+
+	@Test
+	void getTodayCardRecommendationRejectsOutOfRangeCoordinate() {
+		assertThatThrownBy(() -> controller.getTodayCardRecommendation(-91.0, 127.0))
+			.isInstanceOf(InvalidCoordinateException.class);
 	}
 }

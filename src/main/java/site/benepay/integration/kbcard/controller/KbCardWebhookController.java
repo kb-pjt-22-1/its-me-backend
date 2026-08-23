@@ -1,5 +1,7 @@
 package site.benepay.integration.kbcard.controller;
 
+import javax.validation.Valid;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,7 +24,7 @@ public class KbCardWebhookController {
 
 	@PostMapping("/card-issued")
 	public ResponseEntity<Void> cardIssued(
-		@RequestBody CardIssuedWebhookRequestDto request
+		@Valid @RequestBody CardIssuedWebhookRequestDto request
 	) {
 
 		kbCardWebhookService.processCardIssued(request);

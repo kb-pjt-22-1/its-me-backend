@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
 import site.benepay.common.facade.Facade;
+import site.benepay.common.util.GeoCoordinateValidator;
 import site.benepay.domain.recommendation.dto.MerchantCardRecommendationResponseDto;
 import site.benepay.domain.recommendation.dto.TodayCardRecommendationResponseDto;
 
@@ -47,6 +48,8 @@ public class RecommendationController {
 		@RequestParam double lat,
 		@RequestParam double lng
 	) {
+		GeoCoordinateValidator.validate(lat, lng);
+
 		Long userId = getAuthenticatedUserId();
 
 		return ResponseEntity.ok(facade.getTodayCardRecommendation(userId, lat, lng));
