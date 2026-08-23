@@ -248,8 +248,11 @@ class BenefitCoachServiceTest {
 
 		assertThat(item.getTitle())
 			.isEqualTo("주유소 혜택 안내");
+		// AI가 준 항목을 다 못 쓸 때는 "카드명 사용이 유리합니다" 같은 빈약한 문구 대신
+		// 이미 계산된 reason(금액 포함)을 그대로 message로 쓴다.
 		assertThat(item.getMessage())
-			.isEqualTo("NEED Global 카드 사용이 유리합니다.");
+			.isEqualTo("NEED Global 카드 사용 시 평균 결제 1회 기준 215원의 혜택이 예상됩니다.");
+		assertThat(item.getMessage()).isEqualTo(item.getReason());
 	}
 
 	@Test
@@ -408,10 +411,13 @@ class BenefitCoachServiceTest {
 		assertThat(item.getTitle())
 			.isEqualTo("주유소 혜택 안내");
 
+		// OpenAI 호출 자체가 실패해도 "카드명 사용이 유리합니다" 같은 빈약한 문구 대신
+		// 이미 계산된 reason(금액 포함)을 그대로 message로 쓴다.
 		assertThat(item.getMessage())
 			.isEqualTo(
-				"NEED Global 카드 사용이 유리합니다."
+				"NEED Global 카드 사용 시 평균 결제 1회 기준 215원의 혜택이 예상됩니다."
 			);
+		assertThat(item.getMessage()).isEqualTo(item.getReason());
 
 		assertThat(item.getRecommendedCardName())
 			.isEqualTo("NEED Global 카드");
@@ -483,6 +489,31 @@ class BenefitCoachServiceTest {
 		// 아무리 늦어도 7일을 넘지 않아야 한다.
 		assertThat(ttlCaptor.getValue()).isPositive();
 		assertThat(ttlCaptor.getValue()).isLessThanOrEqualTo(Duration.ofDays(7));
+	}
+
+	@Test
+	void doesNotCacheWhenOpenAiFailsAndFallbackTextIsUsed() {
+		// OpenAI 호출 실패로 reason 기반 폴백 문구가 쓰인 응답을 그대로 캐싱하면, 다음
+		// 월요일까지 일주일 내내 빈약한 결과가 고정된다 - 이런 경우엔 캐싱을 건너뛰어야 한다.
+		stubCoachingData(
+			payment(999L),
+			List.of(
+				card(
+					RECOMMENDED_USER_CARD_ID,
+					"NEED Global 카드",
+					215L,
+					null
+				)
+			),
+			List.of()
+		);
+		when(openAiClient.generateCoachingText(anyList()))
+			.thenThrow(new IllegalStateException("OpenAI 응답 시간 초과"));
+		when(valueOperations.get(RedisKeys.benefitCoach(USER_ID))).thenReturn(null);
+
+		benefitService.getBenefitCoaching(USER_ID);
+
+		verify(valueOperations, never()).set(anyString(), anyString(), any(Duration.class));
 	}
 
 	private BenefitCoachItemDto getSingleCoachingItem() {
