@@ -112,4 +112,32 @@ class MerchantGeoQueryServiceTest {
 		verify(geoOperations).search(eq(RedisKeys.MERCHANT_GEO_ALL), any(), radiusCaptor.capture(), any());
 		assertThat(radiusCaptor.getValue().getValue() * 1000).isCloseTo(expectedRadiusMeters, within(0.01));
 	}
+
+	@Test
+	void searchWithinBoundsCapsTheRadiusAtTenKilometersWhenTheRectangleIsMuchLarger() {
+		when(redisTemplate.opsForGeo()).thenReturn(geoOperations);
+		when(geoOperations.search(eq(RedisKeys.MERCHANT_GEO_ALL), any(), any(Distance.class), any()))
+			.thenReturn(geoResultsOf(4L, 0.5));
+
+		// 서울-부산 규모로 지도를 축소한 상황을 흉내낸다 - 사각형을 감싸는 반경이 10km를
+		// 훨씬 넘는다.
+		service.searchWithinBounds(35.0, 128.0, 38.0, 129.0, 36.5, 128.5, null, 10);
+
+		ArgumentCaptor<Distance> radiusCaptor = ArgumentCaptor.forClass(Distance.class);
+		verify(geoOperations).search(eq(RedisKeys.MERCHANT_GEO_ALL), any(), radiusCaptor.capture(), any());
+		assertThat(radiusCaptor.getValue().getValue() * 1000).isCloseTo(10_000, within(0.01));
+	}
+
+	@Test
+	void searchNearbyUsesATenKilometerRadiusInsteadOfBeingUnbounded() {
+		when(redisTemplate.opsForGeo()).thenReturn(geoOperations);
+		when(geoOperations.search(eq(RedisKeys.MERCHANT_GEO_ALL), any(), any(Distance.class), any()))
+			.thenReturn(geoResultsOf(5L, 0.5));
+
+		service.searchNearby(37.5, 127.0, null, 10);
+
+		ArgumentCaptor<Distance> radiusCaptor = ArgumentCaptor.forClass(Distance.class);
+		verify(geoOperations).search(eq(RedisKeys.MERCHANT_GEO_ALL), any(), radiusCaptor.capture(), any());
+		assertThat(radiusCaptor.getValue().getValue() * 1000).isCloseTo(10_000, within(0.01));
+	}
 }

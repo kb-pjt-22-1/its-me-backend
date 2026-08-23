@@ -199,6 +199,9 @@ class RecommendationServiceImplTest {
 		assertThat(result.get(0).getRecommendedCards()).hasSize(1);
 		assertThat(result.get(0).getRecommendedCards().get(0).getCardName()).isEqualTo("청춘대로 톡톡카드");
 		assertThat(result.get(0).getRecommendedCards().get(0).getBenefitSummary()).isNotBlank();
+		// 50% 할인 * 통상결제액 10,000원 = 5,000원. 단일 구간(다음 구간 없음)이라 future=0,
+		// now=total=5,000이다.
+		assertThat(result.get(0).getRecommendedCards().get(0).getDiscountAmount()).isEqualTo(5_000L);
 		assertThat(result.get(0).getDistanceMeters()).isNull();
 		assertThat(result.get(0).getTypicalPaymentAmount()).isEqualTo(10_000L);
 	}
@@ -653,6 +656,27 @@ class RecommendationServiceImplTest {
 
 		assertThat(result).hasSize(1);
 		assertThat(result.get(0).isBenefitAvailable()).isFalse();
+	}
+
+	@Test
+	void discountAmountOnRecommendedCardReflectsNowNotTotal() {
+		// 지도 정렬용 discountAmount는 total이 아니라 now를 써야 한다 - 위
+		// marksMerchantUnavailableWhenTheOnlyBenefitIsOnAFutureTierNotReachedYet과 같은 카드를
+		// 쓴다. 이 카드는 total>0이라 recommendedCards에는 남지만(카드 추천 순위는 total 기준),
+		// now=0이므로 discountAmount는 0이어야 한다 - total을 썼다면 0보다 큰 값이 나와
+		// "지금 여기서 얼마 할인되는지" 정렬 기준이 어긋난다.
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
+		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
+			USER_ID,
+			List.of(candidateWithBenefitOnlyOnNextTier(1L, "다음구간카드", CAFE_CODE, 50, 300_000L)),
+			List.of(merchant(MERCHANT_ID, CAFE_CODE))
+		);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getRecommendedCards()).hasSize(1);
+		assertThat(result.get(0).getRecommendedCards().get(0).getDiscountAmount()).isEqualTo(0L);
 	}
 
 	@Test

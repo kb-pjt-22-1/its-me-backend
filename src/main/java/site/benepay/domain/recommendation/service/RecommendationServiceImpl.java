@@ -435,6 +435,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 				.userCardId(entry.getKey().getUserCardId())
 				.cardName(entry.getKey().getCardName())
 				.benefitSummary(entry.getValue().shortDescription())
+				.discountAmount(entry.getValue().now())
 				.build())
 			.toList();
 
