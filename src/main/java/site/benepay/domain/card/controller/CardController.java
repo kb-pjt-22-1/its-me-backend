@@ -12,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -25,6 +26,7 @@ import site.benepay.domain.card.dto.CardPerformanceResponseDto;
 import site.benepay.domain.card.dto.CardRecommendationRequestDto;
 import site.benepay.domain.card.dto.CardRecommendationResponseDto;
 import site.benepay.domain.card.dto.CardRepresentativeResponseDto;
+import site.benepay.domain.card.dto.CardSyncResponseDto;
 import site.benepay.domain.card.service.CardService;
 
 /**
@@ -45,6 +47,15 @@ public class CardController {
 	@GetMapping
 	public ResponseEntity<List<CardListResponseDto>> getCardList(@AuthenticationPrincipal Long userId) {
 		return ResponseEntity.ok(cardService.getCardList(userId));
+	}
+
+	/**
+	 * 목서버에 보유 중인 카드를 다시 조회해 아직 연동되지 않은 카드를 등록한다.
+	 * "보유 카드 자동 연동" 버튼에서 호출한다.
+	 */
+	@PostMapping("/sync")
+	public ResponseEntity<CardSyncResponseDto> syncCards(@AuthenticationPrincipal Long userId) {
+		return ResponseEntity.ok(cardService.syncCards(userId));
 	}
 
 	/**

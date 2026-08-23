@@ -29,6 +29,7 @@ import site.benepay.domain.card.dto.CardListResponseDto;
 import site.benepay.domain.card.dto.CardPerformanceResponseDto;
 import site.benepay.domain.card.dto.CardRecommendationResponseDto;
 import site.benepay.domain.card.dto.CardRepresentativeResponseDto;
+import site.benepay.domain.card.dto.CardSyncResponseDto;
 import site.benepay.domain.card.mapper.CardMapper;
 import site.benepay.domain.card.vo.CardMonthlyStatusVO;
 import site.benepay.domain.card.vo.UserCardBenefitVO;
@@ -50,6 +51,7 @@ public class CardService {
 
 	private final CardMapper cardMapper;
 	private final ObjectMapper objectMapper;
+	private final CardSyncService cardSyncService;
 
 	/**
 	 * 사용자가 보유한 전체 카드 목록을 조회한다.
@@ -146,6 +148,19 @@ public class CardService {
 			.remainingAmount(remainingAmount)
 			.achievementRate(achievementRate)
 			.performanceMet(performanceMet)
+			.build();
+	}
+
+	/**
+	 * 목서버에 보유 중인 카드를 다시 조회해 아직 연동되지 않은 카드를 등록한다.
+	 * 회원가입 시 자동 연동이 실패했을 때 사용자가 직접 재시도할 수 있는 수단이다.
+	 */
+	@Transactional
+	public CardSyncResponseDto syncCards(Long userId) {
+		int syncedCount = cardSyncService.syncCards(userId);
+
+		return CardSyncResponseDto.builder()
+			.syncedCount(syncedCount)
 			.build();
 	}
 

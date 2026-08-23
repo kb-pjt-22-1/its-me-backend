@@ -21,6 +21,7 @@ import site.benepay.domain.card.dto.CardPerformanceResponseDto;
 import site.benepay.domain.card.dto.CardRecommendationRequestDto;
 import site.benepay.domain.card.dto.CardRecommendationResponseDto;
 import site.benepay.domain.card.dto.CardRepresentativeResponseDto;
+import site.benepay.domain.card.dto.CardSyncResponseDto;
 import site.benepay.domain.card.service.CardService;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,6 +50,17 @@ class CardControllerTest {
 		CardRecommendationRequestDto request = new CardRecommendationRequestDto();
 		ReflectionTestUtils.setField(request, "recommendationEnabled", enabled);
 		return request;
+	}
+
+	@Test
+	void syncCardsReturnsTheServiceResult() {
+		CardSyncResponseDto response = CardSyncResponseDto.builder().syncedCount(2).build();
+		when(cardService.syncCards(USER_ID)).thenReturn(response);
+
+		ResponseEntity<CardSyncResponseDto> result = controller.syncCards(USER_ID);
+
+		assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(result.getBody()).isEqualTo(response);
 	}
 
 	@Test
