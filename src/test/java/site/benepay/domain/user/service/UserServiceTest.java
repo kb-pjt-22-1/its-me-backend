@@ -28,6 +28,8 @@ import site.benepay.common.exception.PinAlreadyRegisteredException;
 import site.benepay.common.exception.UserNotFoundException;
 import site.benepay.common.exception.WithdrawalNotConfirmedException;
 import site.benepay.common.util.RedisKeys;
+import site.benepay.domain.bookmark.mapper.BookmarkMapper;
+import site.benepay.domain.card.mapper.CardMapper;
 import site.benepay.domain.user.dto.ChangePasswordRequestDto;
 import site.benepay.domain.user.dto.LoginResponseDto;
 import site.benepay.domain.user.dto.RegisterPinRequestDto;
@@ -70,12 +72,18 @@ class UserServiceTest {
 	@Mock
 	private JwtProperties jwtProperties;
 
+	@Mock
+	private CardMapper cardMapper;
+
+	@Mock
+	private BookmarkMapper bookmarkMapper;
+
 	private UserService userService;
 
 	@BeforeEach
 	void setUp() {
 		userService = new UserServiceImpl(userMapper, passwordEncoder, redisLockoutService, tokenService,
-			signupVerificationStore, eventPublisher, jwtProperties);
+			signupVerificationStore, eventPublisher, jwtProperties, cardMapper, bookmarkMapper);
 	}
 
 	private SignUpRequestDto signUpRequest(String loginId, String verificationToken) {
@@ -607,19 +615,22 @@ class UserServiceTest {
 
 	@Test
 	void withdrawWithoutConfirmationThrows() {
-		assertThatThrownBy(() -> userService.withdraw(USER_ID, false))
+		assertThatThrownBy(() -> userService.withdraw(USER_ID, "access-token", false))
 			.isInstanceOf(WithdrawalNotConfirmedException.class);
 
 		verify(userMapper, never()).softDeleteAndAnonymize(any());
 	}
 
 	@Test
-	void withdrawWithConfirmationSoftDeletesAndRevokesSession() {
+	void withdrawWithConfirmationSoftDeletesCascadesAndRevokesSession() {
 		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.of(activeUser(null)));
 
-		userService.withdraw(USER_ID, true);
+		userService.withdraw(USER_ID, "access-token", true);
 
 		verify(userMapper).softDeleteAndAnonymize(USER_ID);
+		verify(cardMapper).softDeleteAllByUserId(USER_ID);
+		verify(bookmarkMapper).softDeleteAllByUserId(USER_ID);
+		verify(tokenService).blacklistAccessToken("access-token");
 		verify(tokenService).revokeRefreshToken(USER_ID);
 	}
 
@@ -627,8 +638,11 @@ class UserServiceTest {
 	void withdrawForUnknownUserThrowsAndNeverDeletes() {
 		when(userMapper.findByUserId(USER_ID)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> userService.withdraw(USER_ID, true)).isInstanceOf(UserNotFoundException.class);
+		assertThatThrownBy(() -> userService.withdraw(USER_ID, "access-token", true))
+			.isInstanceOf(UserNotFoundException.class);
 
 		verify(userMapper, never()).softDeleteAndAnonymize(any());
+		verify(cardMapper, never()).softDeleteAllByUserId(any());
+		verify(bookmarkMapper, never()).softDeleteAllByUserId(any());
 	}
 }

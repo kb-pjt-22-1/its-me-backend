@@ -35,5 +35,5 @@ public interface UserService {
 
 	void verifyPin(Long userId, VerifyPinRequestDto request);
 
-	void withdraw(Long userId, boolean confirmed);
+	void withdraw(Long userId, String accessToken, boolean confirmed);
 }

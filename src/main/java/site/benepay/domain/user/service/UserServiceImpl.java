@@ -19,6 +19,8 @@ import site.benepay.common.exception.PinAlreadyRegisteredException;
 import site.benepay.common.exception.UserNotFoundException;
 import site.benepay.common.exception.WithdrawalNotConfirmedException;
 import site.benepay.common.util.RedisKeys;
+import site.benepay.domain.bookmark.mapper.BookmarkMapper;
+import site.benepay.domain.card.mapper.CardMapper;
 import site.benepay.domain.user.dto.ChangePasswordRequestDto;
 import site.benepay.domain.user.dto.LoginResponseDto;
 import site.benepay.domain.user.dto.RegisterPinRequestDto;
@@ -49,11 +51,13 @@ public class UserServiceImpl implements UserService {
 	private final SignupVerificationStore signupVerificationStore;
 	private final ApplicationEventPublisher eventPublisher;
 	private final JwtProperties jwtProperties;
+	private final CardMapper cardMapper;
+	private final BookmarkMapper bookmarkMapper;
 
 	public UserServiceImpl(UserMapper userMapper, PasswordEncoder passwordEncoder,
 		RedisLockoutService redisLockoutService, TokenService tokenService,
 		SignupVerificationStore signupVerificationStore, ApplicationEventPublisher eventPublisher,
-		JwtProperties jwtProperties) {
+		JwtProperties jwtProperties, CardMapper cardMapper, BookmarkMapper bookmarkMapper) {
 		this.userMapper = userMapper;
 		this.passwordEncoder = passwordEncoder;
 		this.redisLockoutService = redisLockoutService;
@@ -61,6 +65,8 @@ public class UserServiceImpl implements UserService {
 		this.signupVerificationStore = signupVerificationStore;
 		this.eventPublisher = eventPublisher;
 		this.jwtProperties = jwtProperties;
+		this.cardMapper = cardMapper;
+		this.bookmarkMapper = bookmarkMapper;
 	}
 
 	@Override
@@ -239,12 +245,20 @@ public class UserServiceImpl implements UserService {
 
 	@Override
 	@Transactional
-	public void withdraw(Long userId, boolean confirmed) {
+	public void withdraw(Long userId, String accessToken, boolean confirmed) {
 		if (!confirmed) {
 			throw new WithdrawalNotConfirmedException("withdrawal confirmation flag is required");
 		}
 		findActiveUser(userId);
 		userMapper.softDeleteAndAnonymize(userId);
+		// 카드/북마크는 탈퇴와 같은 트랜잭션 안에서 정리한다 - "탈퇴는 됐는데 카드는 남아있다" 같은
+		// 불일치를 만들지 않기 위함. 결제내역(payments)은 회계/분쟁 대응 목적으로 보존 정책이라
+		// 손대지 않는다(사용자 결정 사항).
+		cardMapper.softDeleteAllByUserId(userId);
+		bookmarkMapper.softDeleteAllByUserId(userId);
+		// 세션도 즉시 끊는다 - refresh만 지우면 이미 발급된 access 토큰은 만료 전까지 계속
+		// 인증을 통과하므로, logout과 동일하게 access 토큰도 블랙리스트에 넣는다.
+		tokenService.blacklistAccessToken(accessToken);
 		tokenService.revokeRefreshToken(userId);
 	}
 
