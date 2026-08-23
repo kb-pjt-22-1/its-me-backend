@@ -31,10 +31,11 @@ public class MerchantGeoQueryService {
 
 	private static final double EARTH_RADIUS_METERS = 6_371_000;
 
-	// "가장 가까운 limit개"처럼 반경 제한이 없는 검색용 - 지구 반대편 매장까지도 후보에 넣을 수
-	// 있을 만큼 넉넉한 반경(지구 둘레의 절반보다 조금 크게)을 준다. GEOSEARCH는 도형(반경/사각형)
-	// 없이는 검색이 안 되므로 반경 제한이 "없다"는 걸 이렇게 표현한다.
-	private static final double UNBOUNDED_SEARCH_RADIUS_METERS = 20_040_000;
+	// "근처"라고 부를 수 있는 실제 최대 거리. 예전에는 반경 제한이 아예 없어서(searchNearby는
+	// 지구 반둘레 크기 반경, searchWithinBounds는 bounds 크기 그대로) 지도를 축소하거나 매장
+	// 밀도가 낮은 지역에서는 수백~수천km 떨어진 매장까지 "가까운 매장"으로 잡히는 문제가 있었다
+	// - 두 검색 모두 이 값을 실제 상한으로 건다.
+	private static final double MAX_SEARCH_RADIUS_METERS = 10_000;
 
 	private final StringRedisTemplate redisTemplate;
 
@@ -43,24 +44,30 @@ public class MerchantGeoQueryService {
 	 * 정확한 중심이 아닐 수 있어(호출부가 지도 화면 중심을 그대로 넘김) 사각형과 완전히 같은
 	 * 도형은 못 만들지만, 지도 화면 마커 조회는 대각선 모서리 근처의 약간의 오차를 허용해도
 	 * 되는 용도라 반경 검색으로 충분하다.
+	 *
+	 * <p>사각형을 감싸는 반경이 {@value #MAX_SEARCH_RADIUS_METERS}m를 넘으면(지도를 많이
+	 * 축소한 경우) 그 값으로 잘라낸다 - 안 그러면 limit(예: 500개) 안에 수백km 떨어진 매장까지
+	 * 들어올 수 있다. 지도를 넓게 벌린 만큼 후보가 줄어드는 건, 마커 클러스터링이 애초에
+	 * "화면에 다 못 보여줄 만큼 많다"를 전제로 하는 기능이라 문제되지 않는다.
 	 * @return merchantId → 거리(m), Redis가 반환한 순서(가까운 순) 그대로 보존
 	 */
 	public Map<Long, Long> searchWithinBounds(double swLat, double swLng, double neLat, double neLng,
 		double centerLat, double centerLng, String categoryCode, int limit) {
-		double radiusMeters = Math.max(
+		double boundsRadiusMeters = Math.max(
 			Math.max(haversineMeters(centerLat, centerLng, swLat, swLng),
 				haversineMeters(centerLat, centerLng, swLat, neLng)),
 			Math.max(haversineMeters(centerLat, centerLng, neLat, swLng),
 				haversineMeters(centerLat, centerLng, neLat, neLng)));
+		double radiusMeters = Math.min(boundsRadiusMeters, MAX_SEARCH_RADIUS_METERS);
 		return search(centerLat, centerLng, radiusMeters, categoryCode, limit);
 	}
 
 	/**
-	 * 기준 좌표에서 가까운 순 상위 limit개를 반경 제한 없이 찾는다.
+	 * 기준 좌표에서 {@value #MAX_SEARCH_RADIUS_METERS}m 이내 가까운 순 상위 limit개를 찾는다.
 	 * @return merchantId → 거리(m), Redis가 반환한 순서(가까운 순) 그대로 보존
 	 */
 	public Map<Long, Long> searchNearby(double lat, double lng, String categoryCode, int limit) {
-		return search(lat, lng, UNBOUNDED_SEARCH_RADIUS_METERS, categoryCode, limit);
+		return search(lat, lng, MAX_SEARCH_RADIUS_METERS, categoryCode, limit);
 	}
 
 	private Map<Long, Long> search(double lat, double lng, double radiusMeters, String categoryCode, int limit) {
