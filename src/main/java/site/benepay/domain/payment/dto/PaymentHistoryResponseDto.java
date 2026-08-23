@@ -12,6 +12,13 @@ import site.benepay.domain.payment.vo.PaymentHistoryVO;
 public class PaymentHistoryResponseDto {
 
 	private Long paymentId;
+	private Long merchantId;
+	// 브랜드 없이 등록된 매장도 있어(개인 매장 등) nullable. 화면에 표시되지 않고, 지도
+	// "혜택순" 정렬의 결제 이력 기반 가중치 계산(매장>브랜드>카테고리)에 프론트에서 내부적으로만 쓴다.
+	private Long brandId;
+	// 지도 "혜택순" 정렬 가중치의 세 번째 단계(매장>브랜드>카테고리). PaymentHistoryVO엔
+	// 이미 있었는데 여기로 안 옮겨지고 있었다.
+	private String categoryCode;
 	private String merchantName;
 	private String cardName;
 	// 화면 표시용 마스킹된 카드 정보. 실 카드번호는 애초에 안 갖고 있음 (user_cards.pan_last4만 사용).
@@ -29,6 +36,9 @@ public class PaymentHistoryResponseDto {
 	public static PaymentHistoryResponseDto from(PaymentHistoryVO payment) {
 		return PaymentHistoryResponseDto.builder()
 			.paymentId(payment.getPaymentId())
+			.merchantId(payment.getMerchantId())
+			.brandId(payment.getBrandId())
+			.categoryCode(payment.getCategoryCode())
 			.merchantName(payment.getMerchantName())
 			.cardName(payment.getCardName())
 			.maskedCardNumber("**** " + payment.getPanLast4())
