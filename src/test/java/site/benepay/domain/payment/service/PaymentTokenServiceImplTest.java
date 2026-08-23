@@ -115,6 +115,7 @@ class PaymentTokenServiceImplTest {
 		return PaymentHistoryVO.builder()
 			.paymentId(PAYMENT_ID)
 			.userCardId(USER_CARD_ID)
+			.merchantId(MERCHANT_ID)
 			.merchantName("스타벅스 강남점")
 			.categoryCode("5813")
 			.cardName("노리 체크카드")

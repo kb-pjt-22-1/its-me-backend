@@ -33,6 +33,8 @@ class PaymentServiceImplTest {
 	private static final Long PAYMENT_ID = 100L;
 	private static final Long USER_ID = 42L;
 	private static final Long USER_CARD_ID = 7L;
+	private static final Long MERCHANT_ID = 3L;
+	private static final Long BRAND_ID = 55L;
 
 	@Mock
 	private PaymentMapper paymentMapper;
@@ -51,6 +53,8 @@ class PaymentServiceImplTest {
 		return PaymentHistoryVO.builder()
 			.paymentId(PAYMENT_ID)
 			.userCardId(USER_CARD_ID)
+			.merchantId(MERCHANT_ID)
+			.brandId(BRAND_ID)
 			.merchantName("스타벅스 강남점")
 			.categoryCode("5813")
 			.cardName("노리 체크카드")
@@ -73,10 +77,37 @@ class PaymentServiceImplTest {
 		PaymentHistoryResponseDto response = paymentService.getPayment(PAYMENT_ID);
 
 		assertThat(response.getPaymentId()).isEqualTo(PAYMENT_ID);
+		assertThat(response.getMerchantId()).isEqualTo(MERCHANT_ID);
+		assertThat(response.getBrandId()).isEqualTo(BRAND_ID);
 		assertThat(response.getMerchantName()).isEqualTo("스타벅스 강남점");
 		assertThat(response.getMaskedCardNumber()).isEqualTo("**** 1234");
 		assertThat(response.getPaymentStatus()).isEqualTo("APPROVED");
 		assertThat(response.getFinalAmount()).isEqualByComparingTo("9000");
+	}
+
+	@Test
+	void getPaymentAllowsANullBrandIdForMerchantsWithoutABrand() {
+		PaymentHistoryVO noBrand = PaymentHistoryVO.builder()
+			.paymentId(PAYMENT_ID)
+			.userCardId(USER_CARD_ID)
+			.merchantId(MERCHANT_ID)
+			.merchantName("개인 카페")
+			.categoryCode("5813")
+			.cardName("노리 체크카드")
+			.panLast4("1234")
+			.paymentTime(LocalDateTime.now())
+			.originalAmount(BigDecimal.valueOf(9000))
+			.discountAmount(BigDecimal.ZERO)
+			.finalAmount(BigDecimal.valueOf(9000))
+			.paymentStatus("APPROVED")
+			.paymentMethod("QR")
+			.build();
+		when(paymentMapper.findByPaymentId(PAYMENT_ID)).thenReturn(Optional.of(noBrand));
+
+		PaymentHistoryResponseDto response = paymentService.getPayment(PAYMENT_ID);
+
+		assertThat(response.getMerchantId()).isEqualTo(MERCHANT_ID);
+		assertThat(response.getBrandId()).isNull();
 	}
 
 	@Test
