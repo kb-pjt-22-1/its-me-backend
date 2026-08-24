@@ -1,8 +1,5 @@
 package site.benepay.common.exception;
 
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-
 import javax.servlet.http.HttpServletRequest;
 
 import org.springframework.dao.DataIntegrityViolationException;
@@ -17,8 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-
-	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
 	public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex,
@@ -57,8 +52,14 @@ public class GlobalExceptionHandler {
 		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
 	}
 
-	@ExceptionHandler(PortOneVerificationException.class)
-	public ResponseEntity<ErrorResponse> handlePortOneVerification(PortOneVerificationException ex,
+	@ExceptionHandler(KbCustomerNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handleKbCustomerNotFound(KbCustomerNotFoundException ex,
+		HttpServletRequest request) {
+		return errorResponse(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), request);
+	}
+
+	@ExceptionHandler(VerificationCodeInvalidException.class)
+	public ResponseEntity<ErrorResponse> handleVerificationCodeInvalid(VerificationCodeInvalidException ex,
 		HttpServletRequest request) {
 		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
 	}
@@ -116,13 +117,6 @@ public class GlobalExceptionHandler {
 		return errorResponse(HttpStatus.CONFLICT, ex.getMessage(), request);
 	}
 
-	@ExceptionHandler(DevLoginDisabledException.class)
-	public ResponseEntity<ErrorResponse> handleDevLoginDisabled(DevLoginDisabledException ex,
-		HttpServletRequest request) {
-		// 예외 메시지를 그대로 쓰지 않는다. 없는 경로를 쳤을 때와 응답이 같아야 감추는 의미가 있다.
-		return errorResponse(HttpStatus.NOT_FOUND, "찾을 수 없습니다.", request);
-	}
-
 	@ExceptionHandler(WithdrawalNotConfirmedException.class)
 	public ResponseEntity<ErrorResponse> handleWithdrawalNotConfirmed(WithdrawalNotConfirmedException ex,
 		HttpServletRequest request) {
@@ -159,16 +153,41 @@ public class GlobalExceptionHandler {
 		);
 	}
 
-	@ExceptionHandler(Exception.class)
-	public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) {
-		log.error("서버 오류", ex);
-		return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "예상치 못한 서버 오류가 발생했습니다.", request);
+	@ExceptionHandler(CardSettingUpdateException.class)
+	public ResponseEntity<ErrorResponse> handleCardSettingUpdateException(CardSettingUpdateException ex,
+		HttpServletRequest request) {
+
+		return errorResponse(
+			HttpStatus.INTERNAL_SERVER_ERROR,
+			ex.getMessage(),
+			request
+		);
 	}
 
-	private static ResponseEntity<ErrorResponse> errorResponse(HttpStatus status, String message,
+	@ExceptionHandler(CardBenefitParseException.class)
+	public ResponseEntity<ErrorResponse> handleCardBenefitParseException(
+		CardBenefitParseException ex,
 		HttpServletRequest request) {
-		return ResponseEntity.status(status)
-			.body(new ErrorResponse(status.value(), message, request.getRequestURI(), LocalDateTime.now(ZONE)));
+
+		log.error("카드 혜택 정보 파싱 실패", ex);
+
+		return errorResponse(
+			HttpStatus.INTERNAL_SERVER_ERROR,
+			"카드 혜택 정보를 처리하는 중 오류가 발생했습니다.",
+			request
+		);
+	}
+
+	@ExceptionHandler(UserCardNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handleUserCardNotFound(
+		UserCardNotFoundException ex,
+		HttpServletRequest request) {
+
+		return errorResponse(
+			HttpStatus.NOT_FOUND,
+			ex.getMessage(),
+			request
+		);
 	}
 
 	@ExceptionHandler(InvalidBenefitPeriodException.class)
@@ -178,7 +197,50 @@ public class GlobalExceptionHandler {
 	}
 
 	@ExceptionHandler(InvalidYearMonthException.class)
-	public ResponseEntity<ErrorResponse> handleInvalidYearMonth(InvalidYearMonthException ex, HttpServletRequest request) {
+	public ResponseEntity<ErrorResponse> handleInvalidYearMonth(InvalidYearMonthException ex,
+		HttpServletRequest request) {
 		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+	}
+
+	@ExceptionHandler(NotificationNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handleNotificationNotFound(NotificationNotFoundException ex,
+		HttpServletRequest request) {
+		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+	}
+
+	@ExceptionHandler(InvalidCoordinateException.class)
+	public ResponseEntity<ErrorResponse> handleInvalidCoordinate(InvalidCoordinateException ex,
+		HttpServletRequest request) {
+		return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
+	}
+
+	// KB카드 Mock Server 연동(HTTP 호출) 실패. 우리 쪽 버그가 아니라 외부 시스템 문제이므로 502로 구분한다.
+	@ExceptionHandler(KbCardIntegrationException.class)
+	public ResponseEntity<ErrorResponse> handleKbCardIntegration(KbCardIntegrationException ex,
+		HttpServletRequest request) {
+		log.error("KB카드 연동 실패: {}", ex.getMessage(), ex);
+		return errorResponse(HttpStatus.BAD_GATEWAY, ex.getMessage(), request);
+	}
+
+	@ExceptionHandler(KbCardWebhookUserNotFoundException.class)
+	public ResponseEntity<ErrorResponse> handleKbCardWebhookUserNotFound(KbCardWebhookUserNotFoundException ex,
+		HttpServletRequest request) {
+		log.warn("KB카드 Webhook 대상 사용자 없음: {}", ex.getMessage());
+		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
+	}
+
+	/**
+	 * 별도로 처리되지 않은 예외를 공통 서버 오류로 처리한다.
+	 */
+	@ExceptionHandler(Exception.class)
+	public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) {
+		log.error("서버 오류", ex);
+		return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "예상치 못한 서버 오류가 발생했습니다.", request);
+	}
+
+	private static ResponseEntity<ErrorResponse> errorResponse(HttpStatus status, String message,
+		HttpServletRequest request) {
+		return ResponseEntity.status(status)
+			.body(ErrorResponse.of(status.value(), message, request.getRequestURI()));
 	}
 }

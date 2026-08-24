@@ -18,8 +18,9 @@ public class ChangePasswordRequestDto {
 
 	// 회원가입 때와 동일한 규칙(SignUpRequestDto 참고)
 	@NotBlank
-	@Size(min = 8, max = 64)
-	@Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,64}$",
-		message = "password must contain at least one letter, one digit, and one special character")
+	@Size(min = 8, max = 20)
+	@Pattern(regexp = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[^A-Za-z0-9\\s]).{8,20}$",
+		message = "password must contain at least one uppercase letter, one lowercase letter, "
+			+ "one digit, and one special character")
 	private String newPassword;
 }

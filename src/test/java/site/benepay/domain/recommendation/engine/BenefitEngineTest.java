@@ -36,12 +36,20 @@ class BenefitEngineTest {
 		List<PerformanceTier> tiers, long currentMonthSpend, Map<String, Long> cardSpendHistory,
 		Map<String, Long> walletSpendHistory, LocalDate today, double beta
 	) {
+		return evaluatePriority(tiers, currentMonthSpend, cardSpendHistory, walletSpendHistory, today, beta, Map.of());
+	}
+
+	private static Mode3Result evaluatePriority(
+		List<PerformanceTier> tiers, long currentMonthSpend, Map<String, Long> cardSpendHistory,
+		Map<String, Long> walletSpendHistory, LocalDate today, double beta,
+		Map<String, BenefitUsage> usageByServiceName
+	) {
 		long prevMonthSpend = cardSpendHistory.isEmpty()
 			? 0L
 			: cardSpendHistory.get(java.util.Collections.max(cardSpendHistory.keySet()));
 		return BenefitEngine.evaluatePriority(
-			tiers, prevMonthSpend, currentMonthSpend, CAFE, "카페", TICKET,
-			cardSpendHistory, walletSpendHistory, TEST_PARAMS, today, beta
+			tiers, prevMonthSpend, currentMonthSpend, CAFE, null, "카페", TICKET,
+			cardSpendHistory, walletSpendHistory, TEST_PARAMS, today, beta, usageByServiceName
 		);
 	}
 
@@ -136,6 +144,30 @@ class BenefitEngineTest {
 
 		assertThat(r.future()).isZero();
 		assertThat(r.total()).isCloseTo(r.now(), within(1e-6));
+	}
+
+	@Test
+	void evaluatePriorityExcludesMerchantLimitedBenefitAtADifferentMerchant() {
+		// recommendMerchants("오늘의 추천")가 재현하던 버그: 아웃백 한정 혜택이 다른 음식점을
+		// 평가할 때도 now/gain에 반영되면 안 된다.
+		String restaurant = "5812";
+		BenefitNode outbackOnly = new BenefitNode("외식 할인", "MERCHANT_BRAND", List.of(restaurant),
+			"CASHBACK_DISCOUNT", 10, 0L, 0L, 0L, 0, null, null, null, null, null, null,
+			List.of("아웃백"), false, null);
+		List<PerformanceTier> tiers =
+			List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(outbackOnly)));
+
+		Mode3Result atOutback = BenefitEngine.evaluatePriority(
+			tiers, 0, 0, restaurant, "아웃백", "음식점", TICKET, Map.of(), Map.of(), TEST_PARAMS, TODAY, 1.0, Map.of()
+		);
+		Mode3Result atOtherRestaurant = BenefitEngine.evaluatePriority(
+			tiers, 0, 0, restaurant, "맥도날드", "음식점", TICKET, Map.of(), Map.of(), TEST_PARAMS, TODAY, 1.0, Map.of()
+		);
+
+		assertThat(atOutback.now()).isGreaterThan(0L);
+		assertThat(atOtherRestaurant.now()).isZero();
+		assertThat(atOtherRestaurant.total()).isZero();
+		assertThat(atOtherRestaurant.note()).contains("혜택 자체가 없음");
 	}
 
 	@Test
@@ -259,7 +291,8 @@ class BenefitEngineTest {
 		Map<String, Long> walletHistory = Map.of("202511", 600_000L, "202512", 600_000L);
 
 		Mode3Result withWeights = BenefitEngine.evaluatePriority(
-			tiers, 1_000L, 0, CAFE, "카페", TICKET, cardHistory, walletHistory, paramsWithWeights, TODAY, 1.0
+			tiers, 1_000L, 0, CAFE, null, "카페", TICKET, cardHistory, walletHistory, paramsWithWeights, TODAY, 1.0,
+			Map.of()
 		);
 		Mode3Result withoutWeights = evaluatePriority(tiers, 0, cardHistory, walletHistory, TODAY, 1.0);
 
@@ -287,7 +320,7 @@ class BenefitEngineTest {
 		);
 
 		Mode3Result r = BenefitEngine.evaluatePriority(
-			tiers, 0, 0, CAFE, "카페", TICKET, Map.of(), Map.of(), paramsWithHistogram, TODAY, 1.0
+			tiers, 0, 0, CAFE, null, "카페", TICKET, Map.of(), Map.of(), paramsWithHistogram, TODAY, 1.0, Map.of()
 		);
 
 		// usable = 10,000 * (20/30) ≈ 6,667원, 할인 = 6,667 * 20% ≈ 1,333원.
@@ -390,5 +423,350 @@ class BenefitEngineTest {
 
 		// 10,000 * 50% = 5,000원 - integratedLimitExcluded=true라 구간 통합한도(500원)에 안 잘린다.
 		assertThat(excluded.now()).isEqualTo(5_000L);
+	}
+
+	// ---------------------------------------------------------------- 한도 소진액 반영(usage)
+
+	@Test
+	void benefitDiscountEstimateSubtractsAlreadyUsedAmountFromMonthlyDiscountLimit() {
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			50, 0L, 0L, 0L, 0, null, null, 3_000L, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		// 정률 50%면 5,000원인데 monthlyDiscountLimit(3,000원)에 이미 2,000원을 써서 잔여 1,000원만 남았다.
+		Map<String, BenefitUsage> usage = Map.of("카페", new BenefitUsage(2_000L, 0, 0));
+		Mode3Result r = evaluatePriority(tiers, 0, Map.of(), Map.of(), TODAY, 1.0, usage);
+
+		assertThat(r.now()).isEqualTo(1_000L);
+	}
+
+	@Test
+	void benefitDiscountEstimateTreatsFullyConsumedMonthlyDiscountLimitAsZero() {
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			50, 0L, 0L, 0L, 0, null, null, 3_000L, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		Map<String, BenefitUsage> usage = Map.of("카페", new BenefitUsage(3_000L, 0, 0));
+		Mode3Result r = evaluatePriority(tiers, 0, Map.of(), Map.of(), TODAY, 1.0, usage);
+
+		assertThat(r.now()).isZero();
+	}
+
+	@Test
+	void benefitDiscountEstimateSubtractsAlreadyUsedCountFromMonthlyAndAnnualLimits() {
+		// benefitDiscountEstimateFlatFeeUsesTighterOfMonthlyAndAnnualLimits와 같은 카드지만
+		// 이번 달 이미 1회, 올해 이미 20회를 썼다고 가정한다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "CASHBACK_DISCOUNT",
+			0, 2_000L, 0L, 0L, 0, null, null, null, null, 3, 24, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		// 사용량이 전혀 없으면 기존 테스트대로 2,000원(annualCountLimit/12=2가 더 빡빡함).
+		Mode3Result withoutUsage = evaluatePriority(tiers, 0, Map.of(), Map.of(), TODAY, 1.0);
+		assertThat(withoutUsage.now()).isEqualTo(2_000L);
+
+		// 올해 이미 20회를 썼으면 남은 연간 한도는 4회 -> perMonth = 4/12 ≈ 0.33 -> uses=min(1,0.33)=0.33
+		// -> discount = 2,000 * 0.33 ≈ 667원(반올림).
+		Map<String, BenefitUsage> usage = Map.of("카페", new BenefitUsage(0L, 0, 20));
+		Mode3Result withUsage = evaluatePriority(tiers, 0, Map.of(), Map.of(), TODAY, 1.0, usage);
+		assertThat(withUsage.now()).isLessThan(withoutUsage.now());
+	}
+
+	// ---------------------------------------------------------------- selectPaymentBenefit(결제 시점 확정 계산)
+
+	@Test
+	void selectPaymentBenefitPicksTheHigherDiscountAmongCoveringBenefits() {
+		BenefitNode lowRate = rateBenefit(CAFE, 5, null, 0);
+		BenefitNode highRate = new BenefitNode("고율카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			15, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers =
+			List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(lowRate, highRate)));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
+
+		assertThat(application.serviceName()).isEqualTo("고율카페");
+		assertThat(application.discountAmount()).isEqualTo(1_500L);
+	}
+
+	@Test
+	void selectPaymentBenefitExcludesPointAccumulation() {
+		BenefitNode point = new BenefitNode("적립카페", "MERCHANT_CATEGORY", List.of(CAFE), "POINT_ACCUMULATION",
+			50, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(point)));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
+
+		assertThat(application).isEqualTo(BenefitApplication.NONE);
+	}
+
+	@Test
+	void selectPaymentBenefitExcludesPerLiterMethods() {
+		BenefitNode perLiter = new BenefitNode("주유할인", "MERCHANT_CATEGORY", List.of(CAFE),
+			"PER_LITER_STATEMENT_DISCOUNT", 0, 0L, 50L, 60L, 0, null, null, null, null, null, null,
+			List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(perLiter)));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
+
+		assertThat(application).isEqualTo(BenefitApplication.NONE);
+	}
+
+	@Test
+	void selectPaymentBenefitExcludesBenefitsBelowMinimumPaymentAmount() {
+		BenefitNode benefit = rateBenefit(CAFE, 50, null, 20_000L);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
+
+		assertThat(application).isEqualTo(BenefitApplication.NONE);
+	}
+
+	@Test
+	void selectPaymentBenefitReturnsZeroWhenMonthlyCountLimitAlreadyExhausted() {
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "CASHBACK_DISCOUNT",
+			0, 1_000L, 0L, 0L, 0, null, null, null, null, 2, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		Map<String, BenefitUsage> usage = Map.of("카페", new BenefitUsage(0L, 2, 0));
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, usage);
+
+		assertThat(application).isEqualTo(BenefitApplication.NONE);
+	}
+
+	@Test
+	void selectPaymentBenefitCapsDiscountToRemainingMonthlyDiscountLimit() {
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			50, 0L, 0L, 0L, 0, null, null, 3_000L, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		// 정률 50%면 5,000원인데 월 한도 3,000원 중 이미 2,500원을 써서 잔여 500원만 남았다.
+		Map<String, BenefitUsage> usage = Map.of("카페", new BenefitUsage(2_500L, 0, 0));
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, usage);
+
+		assertThat(application.serviceName()).isEqualTo("카페");
+		assertThat(application.discountAmount()).isEqualTo(500L);
+	}
+
+	@Test
+	void selectPaymentBenefitReturnsNoneWhenCategoryHasNoCoveringBenefit() {
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of()));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
+
+		assertThat(application).isEqualTo(BenefitApplication.NONE);
+	}
+
+	@Test
+	void selectPaymentBenefitExcludesMerchantLimitedBenefitAtADifferentMerchant() {
+		// 실제 버그 재현: "직장인 보너스 체크카드"의 아웃백 10% 할인이 실제 결제 시점에
+		// 아웃백이 아닌 다른 음식점(같은 5812 업종)에도 잘못 적용되던 문제.
+		String restaurant = "5812";
+		BenefitNode outbackOnly = new BenefitNode("외식 할인", "MERCHANT_BRAND", List.of(restaurant),
+			"CASHBACK_DISCOUNT", 10, 0L, 0L, 0L, 0, null, null, null, null, null, null,
+			List.of("아웃백"), false, null);
+		List<PerformanceTier> tiers =
+			List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(outbackOnly)));
+
+		BenefitApplication atOutback =
+			BenefitEngine.selectPaymentBenefit(tiers, 0, restaurant, "아웃백", 30_000L, Map.of());
+		BenefitApplication atOtherRestaurant =
+			BenefitEngine.selectPaymentBenefit(tiers, 0, restaurant, "맥도날드", 30_000L, Map.of());
+
+		assertThat(atOutback.serviceName()).isEqualTo("외식 할인");
+		assertThat(atOutback.discountAmount()).isEqualTo(3_000L);
+		assertThat(atOtherRestaurant).isEqualTo(BenefitApplication.NONE);
+	}
+
+	@Test
+	void selectPaymentBenefitLeavesDiscountUnaffectedWhenWithinAllCaps() {
+		// 정률 10%, 건당 할인대상 50,000원 / 건당 할인액 상한 10,000원 / 월 할인대상 100,000원 /
+		// 월 할인액 상한 20,000원 - 10,000원 결제는 전부 여유가 있어 정률 계산 그대로(1,000원) 나와야 한다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			10, 0L, 0L, 0L, 0, 50_000L, 10_000L, 20_000L, 100_000L, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
+
+		assertThat(application.discountAmount()).isEqualTo(1_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitClampsEligibleAmountToThePerTransactionEligibleCap() {
+		// 정률 10%인데 건당 할인대상 금액(maximumEligiblePerTransaction)이 30,000원으로 결제액(100,000원)보다
+		// 작다 - 건당 할인액 상한(maximumDiscountPerTransaction)은 따로 안 걸려 있어도 할인대상 금액
+		// 자체가 30,000원으로 잘려야 한다: 30,000 * 10% = 3,000원(100,000 * 10% = 10,000원이 아니라).
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			10, 0L, 0L, 0L, 0, 30_000L, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		BenefitApplication application =
+			BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 100_000L, Map.of());
+
+		assertThat(application.discountAmount()).isEqualTo(3_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitClampsEligibleAmountToTheMonthlyEligibleCap() {
+		// 정률 20%, 월 할인대상 금액(monthlyEligibleLimit) 10,000원 - 이번 결제(50,000원) 자체가
+		// 월 한도보다 커도 할인대상 금액은 10,000원으로 잘려 2,000원만 나와야 한다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			20, 0L, 0L, 0L, 0, null, null, null, 10_000L, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		BenefitApplication application =
+			BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 50_000L, Map.of());
+
+		assertThat(application.discountAmount()).isEqualTo(2_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitDoesNotClampFlatDiscountAmountByEligibleCaps() {
+		// 정액 혜택(discountAmount>0)은 결제금액 크기와 무관한 고정액이라 건당 할인대상 금액
+		// 클램프의 영향을 받지 않는다 - 정액 5,000원이 그대로 나와야 한다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "CASHBACK_DISCOUNT",
+			0, 5_000L, 0L, 0L, 0, 1_000L, null, null, 1_000L, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		BenefitApplication application =
+			BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 100_000L, Map.of());
+
+		assertThat(application.discountAmount()).isEqualTo(5_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitClampsDiscountToTheRemainingCombinedMonthlyCap() {
+		// 구간 통합한도(maximumCombinedMonthlyBenefit) 5,000원 - "카페 할인"이 이번 달 이미
+		// 4,000원을 썼으면(usedAmount=4,000, integratedLimitExcluded=false) 이번 결제(정률
+		// 50% -> 5,000원 나올 계산)는 통합한도 잔여 1,000원으로 잘려야 한다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			50, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers =
+			List.of(new PerformanceTier(null, "1구간", 0, null, 5_000L, "INTEGRATED_LIMIT", List.of(benefit)));
+		Map<String, BenefitUsage> usage = Map.of("카페", new BenefitUsage(4_000L, 0, 0));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, usage);
+
+		assertThat(application.serviceName()).isEqualTo("카페");
+		assertThat(application.discountAmount()).isEqualTo(1_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitSumsUsageAcrossMultipleBenefitsForTheCombinedMonthlyCap() {
+		// 같은 구간에 혜택이 두 개("카페", "외식")이고 통합한도 5,000원 - 이 결제는 "외식" 혜택을
+		// 고르지만, 통합한도 잔여는 "카페"가 이미 쓴 3,000원까지 포함해서 계산해야 한다
+		// (5,000 - 3,000 = 2,000원 남음). "외식"은 자체 계산상 3,000원(30,000 * 10%)이 나오지만
+		// 잔여 2,000원으로 잘려야 한다.
+		String restaurant = "5812";
+		BenefitNode cafe = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			50, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		BenefitNode dining = new BenefitNode("외식", "MERCHANT_CATEGORY", List.of(restaurant), "STATEMENT_DISCOUNT",
+			10, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers =
+			List.of(new PerformanceTier(null, "1구간", 0, null, 5_000L, "INTEGRATED_LIMIT", List.of(cafe, dining)));
+		Map<String, BenefitUsage> usage = Map.of("카페", new BenefitUsage(3_000L, 0, 0));
+
+		BenefitApplication application =
+			BenefitEngine.selectPaymentBenefit(tiers, 0, restaurant, null, 30_000L, usage);
+
+		assertThat(application.serviceName()).isEqualTo("외식");
+		assertThat(application.discountAmount()).isEqualTo(2_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitIgnoresCombinedMonthlyCapWhenBenefitIsIntegratedLimitExcluded() {
+		// integratedLimitExcluded=true면 구간 통합한도(500원)에 안 잘리고 정률 계산(5,000원)
+		// 그대로 나와야 한다 - tierDiscountForCategoryClampsToTheCombinedCapUnlessIntegratedLimitExcluded와
+		// 같은 원칙을 결제 시점 계산(selectPaymentBenefit)에도 적용한다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			50, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), true, null);
+		List<PerformanceTier> tiers =
+			List.of(new PerformanceTier(null, "1구간", 0, null, 500L, "INTEGRATED_LIMIT", List.of(benefit)));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
+
+		assertThat(application.discountAmount()).isEqualTo(5_000L);
+	}
+
+	@Test
+	void selectPaymentBenefitIgnoresCombinedMonthlyCapWhenMonthlyLimitTypeIsSumOfIndividualLimits() {
+		// monthlyLimitType=SUM_OF_INDIVIDUAL_LIMITS면 PerformanceTier.combinedCap()이 null을
+		// 반환하므로(NO_COMBINED_CAP) maximumCombinedMonthlyBenefit이 있어도 무시되고 개별 한도만 적용된다.
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			50, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(
+			new PerformanceTier(null, "1구간", 0, null, 500L, "SUM_OF_INDIVIDUAL_LIMITS", List.of(benefit)));
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(tiers, 0, CAFE, null, 10_000L, Map.of());
+
+		assertThat(application.discountAmount()).isEqualTo(5_000L);
+	}
+
+	// ---------------------------------------------------------------- shortDescription
+
+	@Test
+	void shortDescriptionForRateBasedBenefitWithoutCap() {
+		List<PerformanceTier> tiers = oneTierCard(0, 10, null, 0, null);
+
+		Mode3Result result = evaluatePriority(tiers, 0L, Map.of(), Map.of(), TODAY, 1.0);
+
+		assertThat(result.shortDescription()).isEqualTo("카페 10% 할인");
+	}
+
+	@Test
+	void shortDescriptionIncludesCapWhenMaximumDiscountPerTransactionIsSet() {
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "STATEMENT_DISCOUNT",
+			10, 0L, 0L, 0L, 0, null, 1_000L, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		Mode3Result result = evaluatePriority(tiers, 0L, Map.of(), Map.of(), TODAY, 1.0);
+
+		assertThat(result.shortDescription()).isEqualTo("카페 10% 할인 · 최대 1,000원");
+	}
+
+	@Test
+	void shortDescriptionForFlatDiscountAmountBenefit() {
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "CASHBACK",
+			0, 3_000L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		Mode3Result result = evaluatePriority(tiers, 0L, Map.of(), Map.of(), TODAY, 1.0);
+
+		assertThat(result.shortDescription()).isEqualTo("3,000원 할인");
+	}
+
+	@Test
+	void shortDescriptionUsesPointLabelForPointAccumulation() {
+		BenefitNode benefit = new BenefitNode("카페", "MERCHANT_CATEGORY", List.of(CAFE), "POINT_ACCUMULATION",
+			5, 0L, 0L, 0L, 0, null, null, null, null, null, null, List.of(), false, null);
+		List<PerformanceTier> tiers = List.of(new PerformanceTier(null, "1구간", 0, null, null, null, List.of(benefit)));
+
+		Mode3Result result = evaluatePriority(tiers, 0L, Map.of(), Map.of(), TODAY, 1.0);
+
+		assertThat(result.shortDescription()).isEqualTo("카페 5% 적립");
+	}
+
+	@Test
+	void shortDescriptionIsNullWhenCategoryHasNoBenefitAtAll() {
+		List<PerformanceTier> tiers = oneTierCard(0, 10, null, 0, null); // CAFE만 커버
+
+		Mode3Result result = BenefitEngine.evaluatePriority(
+			tiers, 0L, 0L, "9999", null, "다른카테고리", TICKET, Map.of(), Map.of(), TEST_PARAMS, TODAY, 1.0, Map.of()
+		);
+
+		assertThat(result.shortDescription()).isNull();
+	}
+
+	@Test
+	void shortDescriptionFallsBackToNextTierBenefitWhenActiveTierDoesNotCoverCategory() {
+		// 0구간은 카페 혜택이 없고, 1구간(다음 구간)만 카페를 커버한다 - 실제로 홈 화면에서
+		// now=0인데도 카드의 일반적인 혜택 문구는 계속 보여야 하는 상황을 재현한다.
+		PerformanceTier tier0 = new PerformanceTier(null, "0구간", 0, null, null, null, List.of());
+		PerformanceTier tier1 = new PerformanceTier(null, "1구간", 500_000, null, null, null,
+			List.of(rateBenefit(CAFE, 10, null, 0)));
+		List<PerformanceTier> tiers = List.of(tier0, tier1);
+
+		Mode3Result result = evaluatePriority(tiers, 0L, Map.of(), Map.of(), TODAY, 1.0);
+
+		assertThat(result.now()).isZero();
+		assertThat(result.shortDescription()).isEqualTo("카페 10% 할인");
 	}
 }

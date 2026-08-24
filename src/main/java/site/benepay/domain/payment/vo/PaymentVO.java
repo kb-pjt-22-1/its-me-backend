@@ -33,6 +33,8 @@ public class PaymentVO {
 	private BigDecimal discountAmount;
 	@NonNull
 	private BigDecimal finalAmount;
+	// 이 결제에 적용된 혜택의 serviceName(benefits_info JSON 기준). 적용된 혜택이 없으면(할인 0원) null.
+	private String benefitServiceName;
 	// payment_status: PENDING, APPROVED, CANCELED, PAYMENT_FAILED (common_codes 그룹 PAYMENT_STATUS)
 	@NonNull
 	private String paymentStatus;

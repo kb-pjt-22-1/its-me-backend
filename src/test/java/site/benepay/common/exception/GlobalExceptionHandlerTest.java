@@ -112,9 +112,18 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void handlePortOneVerificationReturnsBadRequest() {
+    void handleKbCustomerNotFoundReturnsUnprocessableEntity() {
         ResponseEntity<ErrorResponse> response =
-                handler.handlePortOneVerification(new PortOneVerificationException("본인인증에 실패했습니다."), request);
+                handler.handleKbCustomerNotFound(new KbCustomerNotFoundException("KB에 등록된 회원이 아닙니다."), request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+
+    @Test
+    void handleVerificationCodeInvalidReturnsBadRequest() {
+        ResponseEntity<ErrorResponse> response =
+                handler.handleVerificationCodeInvalid(
+                        new VerificationCodeInvalidException("인증번호가 올바르지 않습니다."), request);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
@@ -135,15 +144,6 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(response.getBody().message()).isEqualTo("결제 내역을 찾을 수 없습니다.");
         assertThat(response.getBody().path()).isEqualTo(PATH);
-    }
-
-    @Test
-    void handleDevLoginDisabledHidesTheRealReasonBehindA404() {
-        ResponseEntity<ErrorResponse> response =
-                handler.handleDevLoginDisabled(new DevLoginDisabledException("개발자 로그인이 비활성화되어 있습니다."), request);
-
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        assertThat(response.getBody().message()).isEqualTo("찾을 수 없습니다.");
     }
 
     @Test

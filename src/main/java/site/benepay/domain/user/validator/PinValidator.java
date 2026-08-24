@@ -13,10 +13,10 @@ public final class PinValidator {
 
 	public static void validate(String pin) {
 		if (pin == null || !SIX_DIGITS.matcher(pin).matches()) {
-			throw new InvalidPinFormatException("PIN must be exactly 6 digits");
+			throw new InvalidPinFormatException("PIN은 정확히 6자리 숫자여야 합니다.");
 		}
 		if (hasThreeOrMoreConsecutiveRepeatingOrSequentialDigits(pin)) {
-			throw new InvalidPinFormatException("PIN must not contain 3 or more repeating or sequential digits");
+			throw new InvalidPinFormatException("PIN에 3자리 이상 반복되거나 연속된 숫자를 포함할 수 없습니다.");
 		}
 	}
 

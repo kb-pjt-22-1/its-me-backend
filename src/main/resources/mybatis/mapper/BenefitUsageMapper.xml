@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="site.benepay.domain.benefit.mapper.BenefitUsageMapper">
+
+    <insert id="upsertMonthlyUsage">
+        INSERT INTO card_benefit_monthly_usage
+        (user_card_id, benefit_service_name, target_year, target_year_month, used_amount, used_count, updated_at)
+        VALUES (#{userCardId}, #{benefitServiceName}, #{targetYear}, #{targetYearMonth}, #{usedAmount}, 1, NOW())
+        ON DUPLICATE KEY UPDATE
+            used_amount = used_amount + #{usedAmount},
+            used_count = used_count + 1,
+            updated_at = NOW()
+    </insert>
+
+    <update id="decrementMonthlyUsage">
+        UPDATE card_benefit_monthly_usage
+        SET used_amount = GREATEST(used_amount - #{usedAmount}, 0),
+            used_count = GREATEST(used_count - 1, 0),
+            updated_at = NOW()
+        WHERE user_card_id = #{userCardId}
+          AND benefit_service_name = #{benefitServiceName}
+          AND target_year_month = #{targetYearMonth}
+    </update>
+
+    <select id="findMonthlyUsageByUserCardId" resultType="site.benepay.domain.benefit.vo.BenefitUsageVO">
+        SELECT benefit_service_name AS benefitServiceName,
+               used_amount          AS usedAmount,
+               used_count           AS usedCount
+        FROM card_benefit_monthly_usage
+        WHERE user_card_id = #{userCardId}
+          AND target_year_month = #{targetYearMonth}
+    </select>
+
+    <select id="findAnnualCountByUserCardId" resultType="site.benepay.domain.benefit.vo.BenefitUsageVO">
+        SELECT benefit_service_name AS benefitServiceName,
+               SUM(used_count)      AS usedCount
+        FROM card_benefit_monthly_usage
+        WHERE user_card_id = #{userCardId}
+          AND target_year = #{targetYear}
+        GROUP BY benefit_service_name
+    </select>
+
+</mapper>

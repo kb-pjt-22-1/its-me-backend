@@ -8,8 +8,8 @@ import java.time.LocalDateTime;
  * CardPerformanceEventHandler가 userCardId/approvedAt/performanceAmount를 받아서
  * card_monthly_status에 집계된 카드 실적을 차감한다.
  *
- * <p>categoryCode/discountAmount는 benefit 도메인이 카테고리별 혜택 사용액을
- * 차감할 때 사용할 수 있도록 함께 전달한다. 해당 benefit 리스너는 아직 구현되지 않았다.
+ * <p>categoryCode/discountAmount/benefitServiceName은 benefit 도메인의
+ * BenefitUsageEventHandler가 card_benefit_monthly_usage 소진액을 차감할 때 사용한다.
  *
  * <p>approvedAt은 취소 시각이 아니라 "원래 결제가 승인됐던 시각"이다. 실적/혜택 사용액은
  * 승인된 달의 집계 테이블에 더해졌으므로, 취소도 같은 달에서 빼야 한다 (취소 시점의 달이 아님).
@@ -20,6 +20,7 @@ public record PaymentCanceledEvent(
 	String categoryCode,
 	LocalDateTime approvedAt,
 	BigDecimal performanceAmount,
-	BigDecimal discountAmount
+	BigDecimal discountAmount,
+	String benefitServiceName
 ) {
 }

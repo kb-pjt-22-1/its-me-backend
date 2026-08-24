@@ -15,14 +15,21 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import lombok.RequiredArgsConstructor;
+import site.benepay.common.exception.CardBenefitParseException;
+import site.benepay.common.exception.CardSettingUpdateException;
+import site.benepay.common.exception.InvalidYearMonthException;
+import site.benepay.common.exception.UserCardNotAvailableException;
+import site.benepay.common.exception.UserCardNotFoundException;
 import site.benepay.domain.card.dto.CardBenefitResponseDto;
 import site.benepay.domain.card.dto.CardDetailResponseDto;
 import site.benepay.domain.card.dto.CardListResponseDto;
 import site.benepay.domain.card.dto.CardPerformanceResponseDto;
 import site.benepay.domain.card.dto.CardRecommendationResponseDto;
 import site.benepay.domain.card.dto.CardRepresentativeResponseDto;
+import site.benepay.domain.card.dto.CardSyncResponseDto;
 import site.benepay.domain.card.mapper.CardMapper;
 import site.benepay.domain.card.vo.CardMonthlyStatusVO;
 import site.benepay.domain.card.vo.UserCardBenefitVO;
@@ -37,12 +44,71 @@ import site.benepay.domain.recommendation.vo.RecommendationCardCandidateVO;
 @Transactional(readOnly = true)
 public class CardService {
 
-	// DB 커넥션의 serverTimezone(application.properties의 db.url)과 맞춘다 - UserServiceImpl과 동일 규약.
-	private static final ZoneId APP_ZONE = ZoneId.of("Asia/Seoul");
+	// 카드 실적 기준 월 계산을 위한 한국 시간대
+	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+
+	private static final String USER_CARD_NOT_FOUND_MESSAGE = "보유 카드를 찾을 수 없습니다.";
 
 	private final CardMapper cardMapper;
 	private final ObjectMapper objectMapper;
+	private final CardSyncService cardSyncService;
 
+	/**
+	 * 사용자가 보유한 전체 카드 목록을 조회한다.
+	 */
+	public List<CardListResponseDto> getCardList(Long userId) {
+		List<UserCardListVO> cardList = cardMapper.findAllByUserId(userId);
+		return cardList.stream()
+			.map(this::toCardListResponseDto)
+			.toList();
+	}
+
+	/**
+	 * 사용자가 보유한 특정 카드의 상세 정보를 조회한다.
+	 */
+	public CardDetailResponseDto getCardDetail(Long userId, Long userCardId) {
+		UserCardDetailVO card = cardMapper.findDetailByUserCardId(userId, userCardId)
+			.orElseThrow(() -> new UserCardNotFoundException(USER_CARD_NOT_FOUND_MESSAGE));
+
+		return CardDetailResponseDto.builder()
+			.userCardId(card.getUserCardId())
+			.cardId(card.getCardId())
+			.cardName(card.getCardName())
+			.cardType(card.getCardType())
+			.cardImageUrl(card.getCardImageUrl())
+			.description(card.getDescription())
+			.cardNetwork(card.getCardNetwork())
+			.annualFee(card.getAnnualFee())
+			.maskedCardNumber(maskCardNumber(card.getPanLast4()))
+			.tokenExpiryDate(card.getTokenExpiryDate())
+			.status(card.getStatus())
+			.primary(card.getPrimaryCard())
+			.recommendationEnabled(card.getRecommendationEnabled())
+			.supported(card.getSupported())
+			.minBenefitAmount(card.getMinBenefitAmount())
+			.build();
+	}
+
+	/**
+	 * 사용자가 보유한 특정 카드의 혜택 정보를 조회한다.
+	 */
+	public CardBenefitResponseDto getCardBenefits(Long userId, Long userCardId) {
+		UserCardBenefitVO benefit = cardMapper.findBenefitsByUserCardId(userId, userCardId)
+			.orElseThrow(() -> new UserCardNotFoundException(USER_CARD_NOT_FOUND_MESSAGE));
+		JsonNode benefitsJson = parseBenefitsInfo(benefit.getBenefitsInfo());
+
+		return CardBenefitResponseDto.builder()
+			.userCardId(benefit.getUserCardId())
+			.cardId(benefit.getCardId())
+			.cardName(benefit.getCardName())
+			.minBenefitAmount(benefit.getMinBenefitAmount())
+			.benefits(benefitsJson)
+			.build();
+	}
+
+	/**
+	 * 특정 카드의 월별 이용 실적과 목표 달성 정보를 조회한다.
+	 */
 	public CardPerformanceResponseDto getCardPerformance(Long userId, Long userCardId, String yearMonth) {
 		validateYearMonth(yearMonth);
 
@@ -52,8 +118,8 @@ public class CardService {
 				userCardId,
 				yearMonth
 			).orElseThrow(() ->
-				new IllegalArgumentException(
-					"보유 카드를 찾을 수 없습니다."
+				new UserCardNotFoundException(
+					USER_CARD_NOT_FOUND_MESSAGE
 				)
 			);
 
@@ -85,87 +151,109 @@ public class CardService {
 			.build();
 	}
 
-	//달성률 상한선 100%로 설정
-	private double calculateAchievementRate(long currentAmount, long requiredAmount) {
-		if (requiredAmount == 0L) {
-			return 100.0;
-		}
+	/**
+	 * 목서버에 보유 중인 카드를 다시 조회해 아직 연동되지 않은 카드를 등록한다.
+	 * 회원가입 시 자동 연동이 실패했을 때 사용자가 직접 재시도할 수 있는 수단이다.
+	 */
+	@Transactional
+	public CardSyncResponseDto syncCards(Long userId) {
+		int syncedCount = cardSyncService.syncCards(userId);
 
-		double rate = (double)currentAmount / requiredAmount * 100;
-		double roundedRate = Math.round(rate * 10.0) / 10.0;
-
-		return Math.min(roundedRate, 100.0);
-	}
-
-	private void validateYearMonth(String yearMonth) {
-		try {
-			YearMonth.parse(
-				yearMonth,
-				DateTimeFormatter.ofPattern("yyyyMM")
-			);
-		} catch (DateTimeParseException e) {
-			throw new IllegalArgumentException(
-				"yearMonth는 YYYYMM 형식이어야 합니다."
-			);
-		}
-	}
-
-	public CardBenefitResponseDto getCardBenefits(Long userId, Long userCardId) {
-		UserCardBenefitVO benefit = cardMapper.findBenefitsByUserCardId(userId, userCardId)
-			.orElseThrow(() -> new IllegalArgumentException("보유 카드를 찾을 수 없습니다."));
-		JsonNode benefitsJson = parseBenefitsInfo(benefit.getBenefitsInfo());
-
-		return CardBenefitResponseDto.builder()
-			.userCardId(benefit.getUserCardId())
-			.cardId(benefit.getCardId())
-			.cardName(benefit.getCardName())
-			.minBenefitAmount(benefit.getMinBenefitAmount())
-			.benefits(benefitsJson)
+		return CardSyncResponseDto.builder()
+			.syncedCount(syncedCount)
 			.build();
 	}
 
-	private JsonNode parseBenefitsInfo(String benefitsInfo) {
-		if (benefitsInfo == null || benefitsInfo.isBlank()) {
-			return objectMapper.createObjectNode();
-		}
-		try {
-			return objectMapper.readTree(benefitsInfo);
-		} catch (JsonProcessingException e) {
-			throw new IllegalStateException("카드 혜택 JSON 형식이 올바르지 않습니다.", e);
-		}
-	}
+	/**
+	 * 특정 카드를 사용자의 대표 카드로 설정한다.
+	 */
+	@Transactional
+	public CardRepresentativeResponseDto setRepresentativeCard(Long userId, Long userCardId) {
+		validateActiveOwnedCard(userId, userCardId);
 
-	public CardDetailResponseDto getCardDetail(Long userId, Long userCardId) {
-		UserCardDetailVO card = cardMapper.findDetailByUserCardId(userId, userCardId)
-			.orElseThrow(() -> new IllegalArgumentException("카드를 찾을 수 없습니다."));
+		// 기존 대표카드 해제
+		cardMapper.clearPrimaryCard(userId);
 
-		return CardDetailResponseDto.builder()
-			.userCardId(card.getUserCardId())
-			.cardId(card.getCardId())
-			.cardName(card.getCardName())
-			.cardType(card.getCardType())
-			.cardImageUrl(card.getCardImageUrl())
-			.description(card.getDescription())
-			.cardNetwork(card.getCardNetwork())
-			.annualFee(card.getAnnualFee())
-			.maskedCardNumber(maskCardNumber(card.getPanLast4()))
-			.tokenExpiryDate(card.getTokenExpiryDate())
-			.status(card.getStatus())
-			.primary(card.getPrimaryCard())
-			.recommendationEnabled(card.getRecommendationEnabled())
-			.supported(card.getSupported())
-			.minBenefitAmount(card.getMinBenefitAmount())
+		// 선택한 카드 대표카드 설정
+		int updatedCount =
+			cardMapper.setPrimaryCard(userId, userCardId);
+
+		if (updatedCount != 1) {
+			throw new CardSettingUpdateException(
+				"대표카드 설정에 실패했습니다."
+			);
+		}
+
+		return CardRepresentativeResponseDto.builder()
+			.userCardId(userCardId)
+			.primary(true)
 			.build();
 	}
 
-	public List<CardListResponseDto> getCardList(Long userId) {
-		List<UserCardListVO> cardList = cardMapper.findAllByUserId(userId);
+	/**
+	 * 특정 카드의 추천 포함 여부를 변경한다.
+	 */
+	@Transactional
+	public CardRecommendationResponseDto updateRecommendation(Long userId, Long userCardId,
+		Boolean recommendationEnabled) {
 
-		return cardList.stream()
-			.map(this::toCardListResponseDto)
-			.collect(Collectors.toList());
+		validateActiveOwnedCard(userId, userCardId);
+
+		int updatedCount = cardMapper.updateRecommendationEnabled(userId, userCardId, recommendationEnabled);
+
+		if (updatedCount != 1) {
+			throw new CardSettingUpdateException(
+				"카드 추천 설정 변경에 실패했습니다."
+			);
+		}
+
+		return CardRecommendationResponseDto.builder()
+			.userCardId(userCardId)
+			.recommendationEnabled(recommendationEnabled)
+			.build();
 	}
 
+	/**
+	 * 추천 도메인에서 사용할 사용자의 카드 후보 정보를 조회한다.
+	 * 추천이 활성화된 ACTIVE 카드에 혜택과 월별 실적 정보를 함께 구성한다.
+	 */
+	public List<RecommendationCardCandidateVO> getRecommendationCandidates(Long userId) {
+
+		List<UserCardRecommendationVO> cards =
+			cardMapper.findRecommendationCardsByUserId(userId);
+
+		if (cards.isEmpty()) {
+			return List.of();
+		}
+
+		List<CardMonthlyStatusVO> monthlyStatuses =
+			cardMapper.findMonthlyStatusByUserId(userId);
+
+		String currentYearMonth = YearMonth.now(ZONE)
+			.format(DateTimeFormatter.ofPattern("yyyyMM"));
+
+		// 카드별로 월별 실적을 그룹화한다.
+		Map<Long, List<CardMonthlyStatusVO>> monthlyStatusByCard =
+			monthlyStatuses.stream()
+				.collect(Collectors.groupingBy(
+					CardMonthlyStatusVO::getUserCardId
+				));
+
+		return cards.stream()
+			.map(card -> toRecommendationCandidate(
+				card,
+				monthlyStatusByCard.getOrDefault(
+					card.getUserCardId(),
+					List.of()
+				),
+				currentYearMonth
+			))
+			.toList();
+	}
+
+	/**
+	 * 카드 목록 조회 결과 VO를 응답 DTO로 변환한다.
+	 */
 	private CardListResponseDto toCardListResponseDto(UserCardListVO userCard) {
 		return CardListResponseDto.builder()
 			.userCardId(userCard.getUserCardId())
@@ -184,6 +272,9 @@ public class CardService {
 			.build();
 	}
 
+	/**
+	 * 카드 끝 4자리를 표시용 마스킹 번호로 변환한다.
+	 */
 	private String maskCardNumber(String panLast4) {
 		if (panLast4 == null || panLast4.isBlank()) {
 			return null;
@@ -191,149 +282,110 @@ public class CardService {
 		return "**** **** **** " + panLast4;
 	}
 
-	@Transactional
-	public CardRepresentativeResponseDto setRepresentativeCard(Long userId, Long userCardId) {
-
-		validateActiveOwnedCard(userId, userCardId);
-
-		// 기존 대표카드 해제
-		cardMapper.clearPrimaryCard(userId);
-
-		// 선택한 카드 대표카드 설정
-		int updatedCount =
-			cardMapper.setPrimaryCard(userId, userCardId);
-
-		if (updatedCount != 1) {
-			throw new IllegalStateException(
-				"대표카드 설정에 실패했습니다."
-			);
+	/**
+	 * 문자열 형태의 카드 혜택 정보를 JSON 객체로 변환한다.
+	 */
+	private JsonNode parseBenefitsInfo(String benefitsInfo) {
+		if (benefitsInfo == null || benefitsInfo.isBlank()) {
+			return objectMapper.createObjectNode();
 		}
-
-		return CardRepresentativeResponseDto.builder()
-			.userCardId(userCardId)
-			.primary(true)
-			.build();
+		try {
+			JsonNode root = objectMapper.readTree(benefitsInfo);
+			fillDiscountRateForPointAccumulation(root);
+			return root;
+		} catch (JsonProcessingException e) {
+			throw new CardBenefitParseException("카드 혜택 JSON 형식이 올바르지 않습니다.", e);
+		}
 	}
 
-	@Transactional
-	public CardRecommendationResponseDto updateRecommendation(Long userId, Long userCardId,
-		Boolean recommendationEnabled) {
-
-		validateActiveOwnedCard(userId, userCardId);
-
-		int updatedCount = cardMapper.updateRecommendationEnabled(userId, userCardId, recommendationEnabled);
-
-		if (updatedCount != 1) {
-			throw new IllegalStateException(
-				"카드 추천 설정 변경에 실패했습니다."
-			);
+	/**
+	 * 프론트는 혜택 배지를 discountRate/discountAmount 기준으로 렌더링하는데(둘 다 없으면
+	 * description 원문이 그대로 노출됨), 적립형(POINT_ACCUMULATION) 혜택은 원본 데이터에
+	 * discountRate 대신 rewardRate로 저장돼 있어 배지가 깨진다. 적립도 결제금액 대비
+	 * 비율이라는 계산 의미는 할인과 같으므로(BenefitJsonParser와 동일 취급), discountRate가
+	 * 없을 때만 rewardRate 값을 그대로 채워 넣는다 - 원본 rewardRate 필드는 남겨 둔다.
+	 */
+	private void fillDiscountRateForPointAccumulation(JsonNode root) {
+		for (JsonNode tier : root.path("performanceTiers")) {
+			for (JsonNode benefit : tier.path("benefits")) {
+				if (!(benefit instanceof ObjectNode benefitObject)) {
+					continue;
+				}
+				if (!"POINT_ACCUMULATION".equals(benefitObject.path("discountMethod").asText())) {
+					continue;
+				}
+				if (benefitObject.has("discountRate") || !benefitObject.has("rewardRate")) {
+					continue;
+				}
+				benefitObject.set("discountRate", benefitObject.get("rewardRate"));
+			}
 		}
-
-		return CardRecommendationResponseDto.builder()
-			.userCardId(userCardId)
-			.recommendationEnabled(recommendationEnabled)
-			.build();
 	}
 
-	private void validateActiveOwnedCard(
-		Long userId,
-		Long userCardId
-	) {
-		boolean exists =
-			cardMapper.existsActiveUserCard(userId, userCardId);
+	/**
+	 * 조회 연월이 yyyyMM 형식인지 검증한다.
+	 */
+	private void validateYearMonth(String yearMonth) {
+		try {
+			YearMonth.parse(
+				yearMonth,
+				DateTimeFormatter.ofPattern("yyyyMM")
+			);
+		} catch (DateTimeParseException e) {
+			throw new InvalidYearMonthException(
+				"yearMonth는 YYYYMM 형식이어야 합니다."
+			);
+		}
+	}
+
+	/**
+	 * 현재 실적 대비 목표 실적의 달성률을 계산한다.
+	 * 달성률은 최대 100%로 제한한다.
+	 */
+	private double calculateAchievementRate(long currentAmount, long requiredAmount) {
+		if (requiredAmount == 0L) {
+			return 100.0;
+		}
+
+		double rate = (double)currentAmount / requiredAmount * 100;
+		double roundedRate = Math.round(rate * 10.0) / 10.0;
+
+		return Math.min(roundedRate, 100.0);
+	}
+
+	/**
+	 * 요청한 카드가 사용자의 정상 사용 가능한 보유 카드인지 검증한다.
+	 */
+	private void validateActiveOwnedCard(Long userId, Long userCardId) {
+		boolean exists = cardMapper.existsActiveUserCard(userId, userCardId);
 
 		if (!exists) {
-			throw new IllegalArgumentException(
+			throw new UserCardNotAvailableException(
 				"정상 사용 가능한 보유 카드를 찾을 수 없습니다."
 			);
 		}
 	}
 
 	/**
-	 * 추천 도메인에서 사용할 사용자의 보유 카드 정보를 조회한다.
-	 *
-	 * 추천이 활성화된 ACTIVE 카드만 대상으로 하며,
-	 * 각 카드에 혜택 JSON과 월별 실적 정보를 함께 구성한다.
-	 *
-	 * 과거 완료 월 실적은 spendHistory에,
-	 * 현재 월 누적 실적은 currentMonthSpend에 분리하여 전달한다.
+	 * 카드 기본 정보와 월별 실적을 추천용 카드 후보 객체로 변환한다.
 	 */
-	public List<RecommendationCardCandidateVO> getRecommendationCandidates(Long userId) {
-
-		List<UserCardRecommendationVO> cards =
-			cardMapper.findRecommendationCardsByUserId(userId);
-
-		if (cards.isEmpty()) {
-			return List.of();
-		}
-
-		List<CardMonthlyStatusVO> monthlyStatuses =
-			cardMapper.findMonthlyStatusByUserId(userId);
-
-		String currentYearMonth = YearMonth.now(APP_ZONE)
-			.format(DateTimeFormatter.ofPattern("yyyyMM"));
-
-		/*
-		 * userCardId별로 월별 실적을 묶는다.
-		 *
-		 * 예)
-		 * 1 -> [202606, 202607, 202608]
-		 * 2 -> [202606, 202607, 202608]
-		 */
-		Map<Long, List<CardMonthlyStatusVO>> monthlyStatusByCard =
-			monthlyStatuses.stream()
-				.collect(Collectors.groupingBy(
-					CardMonthlyStatusVO::getUserCardId
-				));
-
-		return cards.stream()
-			.map(card -> toRecommendationCandidate(
-				card,
-				monthlyStatusByCard.getOrDefault(
-					card.getUserCardId(),
-					List.of()
-				),
-				currentYearMonth
-			))
-			.collect(Collectors.toList());
-	}
-
-	/**
-	 * 카드 기본정보와 월별 실적 이력을
-	 * 추천 도메인에서 사용하는 RecommendationCardCandidateVO로 변환한다.
-	 */
-	private RecommendationCardCandidateVO toRecommendationCandidate(
-		UserCardRecommendationVO card,
-		List<CardMonthlyStatusVO> monthlyStatuses,
-		String currentYearMonth
-	) {
+	private RecommendationCardCandidateVO toRecommendationCandidate(UserCardRecommendationVO card,
+		List<CardMonthlyStatusVO> monthlyStatuses, String currentYearMonth) {
 
 		Map<String, Long> spendHistory = new HashMap<>();
-
 		long currentMonthSpend = 0L;
 
 		for (CardMonthlyStatusVO status : monthlyStatuses) {
-
 			String targetYearMonth = status.getTargetYearMonth();
-
 			long spendingAmount = status.getTotalSpendingAmount() == null ? 0L : status.getTotalSpendingAmount();
 
-			/*
-			 * 현재 월은 진행 중인 실적이므로
-			 * currentMonthSpend에 별도로 저장한다.
-			 */
+			// 현재 월 실적은 별도로 관리한다.
 			if (currentYearMonth.equals(targetYearMonth)) {
 				currentMonthSpend = spendingAmount;
 				continue;
 			}
 
-			/*
-			 * 현재 월보다 이전인 완료된 월만
-			 * spendHistory에 포함한다.
-			 *
-			 * yyyyMM 형식이므로 문자열 비교로도
-			 * 연월의 선후 관계를 비교할 수 있다.
-			 */
+			// 완료된 과거 월 실적만 이력에 포함한다.
 			if (targetYearMonth.compareTo(currentYearMonth) < 0) {
 				spendHistory.put(
 					targetYearMonth,

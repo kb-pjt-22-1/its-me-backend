@@ -4,9 +4,13 @@ import java.util.List;
 
 import lombok.Builder;
 import lombok.Getter;
+import lombok.extern.jackson.Jacksonized;
 
+// Redis 캐시(BenefitServiceImpl.getBenefitCoaching)에 JSON으로 저장했다가 다시 읽어와야 해서
+// @Builder만으로는 부족하다 - Jackson이 역직렬화 시 이 빌더를 쓰도록 @Jacksonized를 붙였다.
 @Getter
 @Builder
+@Jacksonized
 public class BenefitCoachResponseDto {
 
 	/**
@@ -21,6 +25,7 @@ public class BenefitCoachResponseDto {
 
 	@Getter
 	@Builder
+	@Jacksonized
 	public static class BenefitCoachItemDto {
 
 		private String title;

@@ -3,6 +3,8 @@ package site.benepay.domain.card.service;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
+import site.benepay.common.exception.UserNotFoundException;
+import site.benepay.domain.user.mapper.UserMapper;
 import site.benepay.integration.kbcard.client.KbCardClient;
 import site.benepay.integration.kbcard.dto.KbCustomerCardsResponseDto;
 
@@ -19,6 +21,7 @@ public class CardSyncService {
 
 	private final KbCardClient kbCardClient;
 	private final CardRegistrationService cardRegistrationService;
+	private final UserMapper userMapper;
 
 	public int syncCards(Long userId, String ciHash) {
 		KbCustomerCardsResponseDto response =
@@ -32,5 +35,18 @@ public class CardSyncService {
 			userId,
 			response.getCards()
 		);
+	}
+
+	/**
+	 * 사용자가 앱에서 직접 누르는 수동 재동기화용 진입점이다. 회원가입 직후 자동 연동
+	 * (UserSignedUpCardSyncHandler)이 목서버 순간 장애 등으로 실패해도 재시도 수단이
+	 * 없었던 문제를 보완한다 - ciHash를 이벤트로 안 받고 userId로 직접 조회한다.
+	 */
+	public int syncCards(Long userId) {
+		String ciHash = userMapper.findByUserId(userId)
+			.orElseThrow(() -> new UserNotFoundException("사용자를 찾을 수 없습니다."))
+			.getCiHash();
+
+		return syncCards(userId, ciHash);
 	}
 }

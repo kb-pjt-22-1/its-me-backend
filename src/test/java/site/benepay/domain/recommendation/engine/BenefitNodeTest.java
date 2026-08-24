@@ -64,4 +64,49 @@ class BenefitNodeTest {
 		assertThat(limited.isMerchantLimited()).isTrue();
 		assertThat(limited.merchantNote()).isEqualTo("스타벅스·이디야 한정");
 	}
+
+	// ---- matchesMerchant ----
+
+	@Test
+	void matchesMerchantAlwaysTrueWhenNotMerchantLimited() {
+		BenefitNode unrestricted = node("MERCHANT_CATEGORY", List.of("5812"), List.of(), null);
+
+		assertThat(unrestricted.matchesMerchant("아무 음식점")).isTrue();
+		assertThat(unrestricted.matchesMerchant(null)).isTrue();
+	}
+
+	@Test
+	void matchesMerchantTrueWhenMerchantNameIsNullRegardlessOfRestriction() {
+		// 매장이 특정되지 않은 호출(지갑 전체 기준 계산 등)이면 매장 한정 혜택도 걸러내지 않는다.
+		BenefitNode outbackOnly = node("MERCHANT_BRAND", List.of("5812"), List.of("아웃백"), null);
+
+		assertThat(outbackOnly.matchesMerchant(null)).isTrue();
+	}
+
+	@Test
+	void matchesMerchantFalseForDifferentRestaurantInSameCategory() {
+		// 실제 버그 재현: "직장인 보너스 체크카드"의 아웃백 10% 할인이 같은 5812(음식점)
+		// 카테고리의 다른 매장까지 적용되면 안 된다.
+		BenefitNode outbackOnly = node("MERCHANT_BRAND", List.of("5812"), List.of("아웃백"), null);
+
+		assertThat(outbackOnly.matchesMerchant("아웃백")).isTrue();
+		assertThat(outbackOnly.matchesMerchant("맥도날드")).isFalse();
+		assertThat(outbackOnly.matchesMerchant("김밥천국")).isFalse();
+	}
+
+	@Test
+	void matchesMerchantIgnoresSpacingAndCase() {
+		BenefitNode outbackOnly = node("MERCHANT_BRAND", List.of("5812"), List.of("아웃백"), null);
+
+		assertThat(outbackOnly.matchesMerchant("아웃백 강남점")).isTrue();
+		assertThat(outbackOnly.matchesMerchant("아 웃 백")).isTrue();
+	}
+
+	@Test
+	void matchesMerchantFalseWhenMerchantNameIsBlank() {
+		BenefitNode outbackOnly = node("MERCHANT_BRAND", List.of("5812"), List.of("아웃백"), null);
+
+		assertThat(outbackOnly.matchesMerchant("")).isFalse();
+		assertThat(outbackOnly.matchesMerchant("   ")).isFalse();
+	}
 }

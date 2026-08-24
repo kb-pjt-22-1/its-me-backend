@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import site.benepay.domain.benefit.dto.AnnualFeeBreakEvenResponseDto;
 import site.benepay.domain.benefit.dto.BenefitCoachResponseDto;
 import site.benepay.domain.benefit.dto.CategoryBenefitStatusResponseDto;
+import site.benepay.domain.benefit.dto.ExpiringBenefitsResponseDto;
 import site.benepay.domain.benefit.dto.MonthlyBenefitReportResponseDto;
 import site.benepay.domain.benefit.service.BenefitService;
 
@@ -91,6 +92,20 @@ public class BenefitController {
 	) {
 		List<CategoryBenefitStatusResponseDto> response =
 			benefitService.getCategoryBenefitStatus(userId, yearMonth);
+
+		return ResponseEntity.ok(response);
+	}
+
+	/**
+	 * 이번 달 적용 중인 혜택 중 아직 안 쓴 것을 금액 큰 순으로 최대 3개 조회한다
+	 * ("놓치기 쉬운 혜택", #48).
+	 */
+	@GetMapping("/expiring")
+	public ResponseEntity<ExpiringBenefitsResponseDto> getExpiringBenefits(
+		@AuthenticationPrincipal Long userId
+	) {
+		ExpiringBenefitsResponseDto response =
+			benefitService.getExpiringBenefits(userId);
 
 		return ResponseEntity.ok(response);
 	}

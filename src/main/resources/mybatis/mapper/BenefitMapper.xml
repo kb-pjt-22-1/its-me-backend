@@ -198,4 +198,43 @@
 
     </select>
 
+    <!--
+        놓치기 쉬운 혜택(#48) 전용. categoryCodes가 비어있는 혜택(브랜드 한정/ALL_MERCHANTS)의
+        사용 여부는 카테고리 단위로 판정할 수 없어서, 이번 달 이 카드로 결제한 가맹점명을
+        그대로 대조 목록으로 쓴다.
+    -->
+    <select id="findThisMonthMerchantNamesByUserCardId"
+            resultType="java.lang.String">
+
+        SELECT DISTINCT m.merchant_name
+        FROM payments p
+        INNER JOIN merchants m
+        ON m.merchant_id = p.merchant_id
+        WHERE p.user_card_id = #{userCardId}
+        AND p.payment_status = 'APPROVED'
+        AND p.payment_time &gt;= #{startPaymentTime}
+        AND p.payment_time &lt; #{endPaymentTime}
+
+    </select>
+
+    <!--
+        최근 결제한 곳 주변 혜택(#48 2번 섹션) 전용. 가장 최근 승인된 결제 1건의 가맹점
+        위경도만 필요하다.
+    -->
+    <select id="findMostRecentPaymentLocationByUserId"
+            resultType="site.benepay.domain.benefit.vo.RecentPaymentLocationVO">
+
+        SELECT m.latitude, m.longitude
+        FROM payments p
+        INNER JOIN user_cards uc
+        ON uc.user_card_id = p.user_card_id
+        INNER JOIN merchants m
+        ON m.merchant_id = p.merchant_id
+        WHERE uc.user_id = #{userId}
+        AND p.payment_status = 'APPROVED'
+        ORDER BY p.payment_time DESC
+        LIMIT 1
+
+    </select>
+
 </mapper>

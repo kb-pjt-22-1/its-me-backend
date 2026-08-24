@@ -85,6 +85,13 @@
           AND is_deleted = FALSE
     </update>
 
+    <update id="updateFcmToken">
+        UPDATE users
+        SET fcm_token = #{fcmToken}
+        WHERE user_id = #{userId}
+          AND is_deleted = FALSE
+    </update>
+
     <update id="updatePinHash">
         UPDATE users
         SET pin_hash = #{pinHash}

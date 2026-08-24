@@ -26,6 +26,10 @@ public class PaymentHistoryVO {
 	@NonNull
 	private Long userCardId;
 	@NonNull
+	private Long merchantId;
+	// 브랜드 없이 등록된 매장도 있어(개인 매장 등) nullable.
+	private Long brandId;
+	@NonNull
 	private String merchantName;
 	// 결제 이벤트(PaymentApprovedEvent/PaymentCanceledEvent)에 실어 보내는 용도.
 	// benefit 도메인이 카테고리별 혜택 사용액(user_card_benefit_monthly_status)을
@@ -45,6 +49,9 @@ public class PaymentHistoryVO {
 	private BigDecimal discountAmount;
 	@NonNull
 	private BigDecimal finalAmount;
+	// 이 결제에 적용된 혜택의 serviceName. 적용된 혜택이 없으면(할인 0원) null - benefit
+	// 도메인이 card_benefit_monthly_usage를 갱신할 때(BenefitUsageEventHandler) 키로 쓴다.
+	private String benefitServiceName;
 	@NonNull
 	private String paymentStatus;
 	@NonNull

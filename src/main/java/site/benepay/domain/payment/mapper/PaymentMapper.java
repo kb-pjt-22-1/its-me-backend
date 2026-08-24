@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import org.apache.ibatis.annotations.Param;
 
+import site.benepay.domain.payment.vo.CardBenefitContextVO;
 import site.benepay.domain.payment.vo.PaymentHistoryVO;
 import site.benepay.domain.payment.vo.PaymentVO;
 import site.benepay.domain.payment.vo.UserCardPaymentTokenVO;
@@ -13,6 +14,12 @@ import site.benepay.domain.payment.vo.UserCardPaymentTokenVO;
 public interface PaymentMapper {
 
 	int insertPayment(PaymentVO payment);
+
+	// 결제 완료 시점에 어느 혜택을 적용할지 계산하기 위한 카드 정보(benefits_info + 전월 실적).
+	// 카드를 못 찾으면 빈 값 - completeToken은 이미 findActiveCardPaymentToken/issueToken에서
+	// 카드 소유권을 검증했으므로 정상 흐름에서는 항상 값이 있다.
+	Optional<CardBenefitContextVO> findCardBenefitContext(@Param("userCardId") Long userCardId,
+		@Param("previousYearMonth") String previousYearMonth);
 
 	// merchants/user_cards/cards와 조인해 화면 표시용 값까지 채워서 단건 조회
 	Optional<PaymentHistoryVO> findByPaymentId(@Param("paymentId") Long paymentId);

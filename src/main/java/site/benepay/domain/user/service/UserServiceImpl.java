@@ -9,6 +9,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import site.benepay.auth.security.jwt.JwtProperties;
 import site.benepay.common.event.UserSignedUpEvent;
 import site.benepay.common.exception.AccountLockedException;
 import site.benepay.common.exception.DuplicateUserException;
@@ -18,10 +19,15 @@ import site.benepay.common.exception.PinAlreadyRegisteredException;
 import site.benepay.common.exception.UserNotFoundException;
 import site.benepay.common.exception.WithdrawalNotConfirmedException;
 import site.benepay.common.util.RedisKeys;
+import site.benepay.domain.bookmark.mapper.BookmarkMapper;
+import site.benepay.domain.card.mapper.CardMapper;
 import site.benepay.domain.user.dto.ChangePasswordRequestDto;
+import site.benepay.domain.user.dto.LoginResponseDto;
 import site.benepay.domain.user.dto.RegisterPinRequestDto;
 import site.benepay.domain.user.dto.SignUpRequestDto;
+import site.benepay.domain.user.dto.TokenPairDto;
 import site.benepay.domain.user.dto.UpdateDeletePinRequestDto;
+import site.benepay.domain.user.dto.UpdateFcmTokenRequestDto;
 import site.benepay.domain.user.dto.UpdateProfileRequestDto;
 import site.benepay.domain.user.dto.UserResponseDto;
 import site.benepay.domain.user.dto.VerifyPasswordRequestDto;
@@ -44,43 +50,53 @@ public class UserServiceImpl implements UserService {
 	private final TokenService tokenService;
 	private final SignupVerificationStore signupVerificationStore;
 	private final ApplicationEventPublisher eventPublisher;
+	private final JwtProperties jwtProperties;
+	private final CardMapper cardMapper;
+	private final BookmarkMapper bookmarkMapper;
 
 	public UserServiceImpl(UserMapper userMapper, PasswordEncoder passwordEncoder,
 		RedisLockoutService redisLockoutService, TokenService tokenService,
-		SignupVerificationStore signupVerificationStore, ApplicationEventPublisher eventPublisher) {
+		SignupVerificationStore signupVerificationStore, ApplicationEventPublisher eventPublisher,
+		JwtProperties jwtProperties, CardMapper cardMapper, BookmarkMapper bookmarkMapper) {
 		this.userMapper = userMapper;
 		this.passwordEncoder = passwordEncoder;
 		this.redisLockoutService = redisLockoutService;
 		this.tokenService = tokenService;
 		this.signupVerificationStore = signupVerificationStore;
 		this.eventPublisher = eventPublisher;
+		this.jwtProperties = jwtProperties;
+		this.cardMapper = cardMapper;
+		this.bookmarkMapper = bookmarkMapper;
 	}
 
 	@Override
 	@Transactional
-	public UserResponseDto signUp(SignUpRequestDto request) {
+	public LoginResponseDto signUp(SignUpRequestDto request) {
 		if (userMapper.existsByLoginId(request.getLoginId())) {
-			throw new DuplicateUserException("login id already in use: " + request.getLoginId());
+			throw new DuplicateUserException("이미 사용 중인 아이디입니다: " + request.getLoginId());
 		}
 
 		SignupVerificationStore.VerifiedIdentity identity = signupVerificationStore
 			.redeem(request.getVerificationToken())
-			.orElseThrow(() -> new InvalidTokenException("identity verification token is invalid or expired"));
+			.orElseThrow(() -> new InvalidTokenException("본인인증 토큰이 유효하지 않거나 만료되었습니다."));
 
-		// PortOne 인증 시점에 이미 한 번 걸렀지만, 그 사이 다른 요청이 같은 DI로 먼저
+		// 휴대폰 본인인증 시점에 이미 한 번 걸렀지만, 그 사이 다른 요청이 같은 DI로 먼저
 		// 가입했을 수 있어 여기서 한 번 더 확인한다. 최종 방어선은 어차피 users.di UNIQUE다.
 		if (userMapper.existsByDiHash(identity.diHash)) {
-			throw new DuplicateUserException("identity already registered");
+			throw new DuplicateUserException("이미 가입된 사용자입니다.");
 		}
 		// ci_hash도 di와 마찬가지로 users 테이블에 UNIQUE라 최종 방어선은 DB가 지키지만,
 		// 인증은 됐는데 이미 가입된 사람인 경우를 여기서 먼저 걸러 더 명확한 예외로 알려준다.
 		if (userMapper.existsByCiHash(identity.ciHash)) {
-			throw new DuplicateUserException("identity already registered");
+			throw new DuplicateUserException("이미 가입된 사용자입니다.");
 		}
+
+		PinValidator.validate(request.getPin());
 
 		User user = User.builder()
 			.loginId(request.getLoginId())
 			.loginPasswordHash(passwordEncoder.encode(request.getPassword()))
+			.pinHash(passwordEncoder.encode(request.getPin()))
 			.name(identity.name)
 			.phoneNumber(identity.phoneNumber)
 			.birthDate(identity.birthDate)
@@ -104,7 +120,10 @@ public class UserServiceImpl implements UserService {
 			new UserSignedUpEvent(user.getUserId(), user.getCiHash())
 		);
 
-		return UserResponseDto.from(user);
+		// 가입 성공 시 바로 토큰을 발급한다(자동 로그인) - 프론트가 재로그인 없이 홈으로
+		// 이동할 수 있게 하기 위함. login과 동일한 발급 로직(TokenService.issueTokenPair)이다.
+		TokenPairDto tokens = tokenService.issueTokenPair(user);
+		return LoginResponseDto.of(user, tokens, jwtProperties.getAccessTokenExpirationMillis() / 1000);
 	}
 
 	@Override
@@ -124,6 +143,13 @@ public class UserServiceImpl implements UserService {
 		// 트랜잭션 안이라 결과는 같지만, 아예 self-invocation이 없도록 조회를 직접 한다.
 		User updatedUser = findActiveUser(userId);
 		return UserResponseDto.from(updatedUser);
+	}
+
+	@Override
+	@Transactional
+	public void updateFcmToken(Long userId, UpdateFcmTokenRequestDto request) {
+		findActiveUser(userId);
+		userMapper.updateFcmToken(userId, request.getFcmToken());
 	}
 
 	@Override
@@ -152,14 +178,14 @@ public class UserServiceImpl implements UserService {
 		String lockKey = RedisKeys.passwordLock(userId);
 
 		if (redisLockoutService.isLocked(lockKey)) {
-			throw new AccountLockedException("password verification is temporarily locked");
+			throw new AccountLockedException("비밀번호 확인 시도가 반복되어 일시적으로 잠겼습니다.");
 		}
 
 		User user = findActiveUser(userId);
 		if (!passwordEncoder.matches(currentPassword, user.getLoginPasswordHash())) {
 			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, 5, Duration.ofMinutes(10),
 				Duration.ofMinutes(30));
-			throw new InvalidCredentialsException("current password is incorrect");
+			throw new InvalidCredentialsException("현재 비밀번호가 일치하지 않습니다.");
 		}
 		redisLockoutService.clearFailuresAndLock(failureKey, lockKey);
 		return user;
@@ -170,7 +196,7 @@ public class UserServiceImpl implements UserService {
 	public void registerPin(Long userId, RegisterPinRequestDto request) {
 		User user = findActiveUser(userId);
 		if (user.getPinHash() != null) {
-			throw new PinAlreadyRegisteredException("PIN already registered; use the update endpoint instead");
+			throw new PinAlreadyRegisteredException("이미 등록된 PIN입니다. 변경 API를 이용해 주세요.");
 		}
 		PinValidator.validate(request.getPin());
 		userMapper.updatePinHash(userId, passwordEncoder.encode(request.getPin()));
@@ -205,31 +231,39 @@ public class UserServiceImpl implements UserService {
 		String lockKey = RedisKeys.pinLock(userId);
 
 		if (redisLockoutService.isLocked(lockKey)) {
-			throw new AccountLockedException("PIN verification is temporarily locked");
+			throw new AccountLockedException("PIN 확인 시도가 반복되어 일시적으로 잠겼습니다.");
 		}
 
 		User user = findActiveUser(userId);
 		if (user.getPinHash() == null || !passwordEncoder.matches(currentPin, user.getPinHash())) {
 			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, 5, Duration.ofMinutes(10),
 				Duration.ofSeconds(30));
-			throw new InvalidCredentialsException("PIN is incorrect");
+			throw new InvalidCredentialsException("PIN이 일치하지 않습니다.");
 		}
 		redisLockoutService.clearFailuresAndLock(failureKey, lockKey);
 	}
 
 	@Override
 	@Transactional
-	public void withdraw(Long userId, boolean confirmed) {
+	public void withdraw(Long userId, String accessToken, boolean confirmed) {
 		if (!confirmed) {
-			throw new WithdrawalNotConfirmedException("withdrawal confirmation flag is required");
+			throw new WithdrawalNotConfirmedException("탈퇴 확인이 필요합니다.");
 		}
 		findActiveUser(userId);
 		userMapper.softDeleteAndAnonymize(userId);
+		// 카드/북마크는 탈퇴와 같은 트랜잭션 안에서 정리한다 - "탈퇴는 됐는데 카드는 남아있다" 같은
+		// 불일치를 만들지 않기 위함. 결제내역(payments)은 회계/분쟁 대응 목적으로 보존 정책이라
+		// 손대지 않는다(사용자 결정 사항).
+		cardMapper.softDeleteAllByUserId(userId);
+		bookmarkMapper.softDeleteAllByUserId(userId);
+		// 세션도 즉시 끊는다 - refresh만 지우면 이미 발급된 access 토큰은 만료 전까지 계속
+		// 인증을 통과하므로, logout과 동일하게 access 토큰도 블랙리스트에 넣는다.
+		tokenService.blacklistAccessToken(accessToken);
 		tokenService.revokeRefreshToken(userId);
 	}
 
 	private User findActiveUser(Long userId) {
 		return userMapper.findByUserId(userId)
-			.orElseThrow(() -> new UserNotFoundException("user not found"));
+			.orElseThrow(() -> new UserNotFoundException("사용자를 찾을 수 없습니다."));
 	}
 }

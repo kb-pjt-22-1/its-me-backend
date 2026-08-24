@@ -9,8 +9,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
+import org.springframework.web.servlet.config.annotation.PathMatchConfigurer;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistration;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class WebConfigTest {
 
@@ -61,5 +68,27 @@ class WebConfigTest {
         LocalValidatorFactoryBean validator = webConfig.validator();
 
         assertThat(validator).isNotNull();
+    }
+
+    @Test
+    void configurePathMatchDisablesPathPatternParserForSpringfoxCompatibility() {
+        PathMatchConfigurer configurer = mock(PathMatchConfigurer.class);
+
+        webConfig.configurePathMatch(configurer);
+
+        verify(configurer).setPatternParser(null);
+    }
+
+    @Test
+    void addResourceHandlersServesSwaggerUiFromTheSpringfoxWebjar() {
+        ResourceHandlerRegistry registry = mock(ResourceHandlerRegistry.class);
+        ResourceHandlerRegistration registration = mock(ResourceHandlerRegistration.class);
+        when(registry.addResourceHandler("/swagger-ui/**")).thenReturn(registration);
+        when(registration.addResourceLocations(anyString())).thenReturn(registration);
+
+        webConfig.addResourceHandlers(registry);
+
+        verify(registry).addResourceHandler("/swagger-ui/**");
+        verify(registration).addResourceLocations("classpath:/META-INF/resources/webjars/springfox-swagger-ui/");
     }
 }

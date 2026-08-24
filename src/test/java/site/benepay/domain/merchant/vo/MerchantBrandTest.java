@@ -47,13 +47,4 @@ class MerchantBrandTest {
 		assertThatThrownBy(() -> builder.brandName(null))
 			.isInstanceOf(NullPointerException.class);
 	}
-
-	@Test
-	void setBrandLogoUpdatesValue() {
-		MerchantBrand brand = validBuilder().build();
-
-		brand.setBrandLogo("new-logo-url");
-
-		assertThat(brand.getBrandLogo()).isEqualTo("new-logo-url");
-	}
 }

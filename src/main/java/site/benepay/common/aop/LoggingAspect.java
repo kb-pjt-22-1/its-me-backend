@@ -7,9 +7,11 @@ import org.aspectj.lang.annotation.AfterThrowing;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Before;
 import org.aspectj.lang.annotation.Pointcut;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
+import java.util.Collection;
 
 /**
  * 컨트롤러 로깅용 공통 Aspect
@@ -50,7 +52,27 @@ public class LoggingAspect {
         log.info("<<< {}.{}() result={}",
                 joinPoint.getSignature().getDeclaringTypeName(),
                 joinPoint.getSignature().getName(),
-                result);
+                summarize(result));
+    }
+
+    /**
+     * 로그 대상 결과를 요약한다 <p>
+     * 응답 본문이 컬렉션(매장 목록 등)이면 원소를 전부 찍지 않고 개수만 남긴다.
+     * @param result 메서드가 반환한 값
+     * @return 로그에 남길 요약 문자열
+     */
+    private Object summarize(Object result) {
+        if (result instanceof ResponseEntity<?> responseEntity) {
+            Object body = responseEntity.getBody();
+            if (body instanceof Collection<?> collection) {
+                return "<%s size=%d>".formatted(responseEntity.getStatusCode(), collection.size());
+            }
+            return responseEntity;
+        }
+        if (result instanceof Collection<?> collection) {
+            return "size=%d".formatted(collection.size());
+        }
+        return result;
     }
 
     /**

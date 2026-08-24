@@ -1,5 +1,7 @@
 package site.benepay.integration.kbcard.dto;
 
+import javax.validation.constraints.NotBlank;
+
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -15,14 +17,21 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class CardIssuedWebhookRequestDto {
 
+	@NotBlank
 	private String eventId;
 
+	@NotBlank
 	private String ciHash;
 
+	@NotBlank
 	private String cardReferenceId;
+	@NotBlank
 	private String issuerProductCode;
 
+	@NotBlank
 	private String cardLast4;
+	@NotBlank
 	private String cardType;
+	@NotBlank
 	private String cardStatus;
 }
