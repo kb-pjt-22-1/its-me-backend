@@ -101,7 +101,7 @@ public class TokenServiceImpl implements TokenService {
 	public TokenPairDto rotateRefreshToken(String presentedRefreshToken) {
 		if (!jwtTokenProvider.validateToken(presentedRefreshToken)
 			|| !JwtTokenProvider.TOKEN_TYPE_REFRESH.equals(jwtTokenProvider.getTokenType(presentedRefreshToken))) {
-			throw new InvalidTokenException("refresh token is invalid, expired, or of the wrong type");
+			throw new InvalidTokenException("리프레시 토큰이 유효하지 않거나 만료되었습니다.");
 		}
 
 		Long userId = jwtTokenProvider.getUserId(presentedRefreshToken);
@@ -109,7 +109,7 @@ public class TokenServiceImpl implements TokenService {
 
 		String raw = redisTemplate.opsForValue().get(RedisKeys.refresh(userId));
 		if (raw == null) {
-			throw new InvalidTokenException("no active session for this refresh token");
+			throw new InvalidTokenException("해당 리프레시 토큰에 대한 활성 세션이 없습니다.");
 		}
 		RefreshTokenState state = readState(raw);
 
@@ -128,7 +128,7 @@ public class TokenServiceImpl implements TokenService {
 			redisTemplate.opsForValue().set(RedisKeys.alert(userId),
 				"refresh token reuse detected at " + System.currentTimeMillis(), Duration.ofDays(30));
 			log.warn("Refresh token reuse detected for userId={}", userId);
-			throw new TokenReuseException("refresh token reuse detected; all sessions revoked");
+			throw new TokenReuseException("이미 사용된 리프레시 토큰이 재사용되어 모든 세션이 종료되었습니다.");
 		}
 
 		// presentedJti가 현재 세션도, 그 직전 세션도 아니다 - 이 회전 체인과 전혀 무관한, 이미
@@ -137,7 +137,7 @@ public class TokenServiceImpl implements TokenService {
 		// 근거가 안 된다 - 여기서 현재 세션을 지우면, 밀려난 기기가 재로그인해도 "지울 이전
 		// 세션이 없다"고 판단해 새로 로그인한 기기가 상대를 강제 로그아웃시키지 못하는 문제가
 		// 생긴다(SessionDisplacedEvent 참고). 그래서 이 경우엔 이 요청만 거부하고 state는 그대로 둔다.
-		throw new InvalidTokenException("refresh token does not match any active session");
+		throw new InvalidTokenException("리프레시 토큰이 활성 세션과 일치하지 않습니다.");
 	}
 
 	@Override
@@ -159,7 +159,7 @@ public class TokenServiceImpl implements TokenService {
 
 	private TokenPairDto rotate(Long userId, RefreshTokenState previousState) {
 		User user = userMapper.findByUserId(userId)
-			.orElseThrow(() -> new UserNotFoundException("user not found for refresh token"));
+			.orElseThrow(() -> new UserNotFoundException("리프레시 토큰에 해당하는 사용자를 찾을 수 없습니다."));
 
 		String newJti = UUID.randomUUID().toString();
 		String newAccessToken = jwtTokenProvider.generateAccessToken(user);

@@ -42,20 +42,20 @@ public class AuthServiceImpl implements AuthService {
 	@Transactional(readOnly = true)
 	public LoginResponseDto login(LoginRequestDto request) {
 		User user = userMapper.findByLoginId(request.getLoginId())
-			.orElseThrow(() -> new InvalidCredentialsException("invalid login id or password"));
+			.orElseThrow(() -> new InvalidCredentialsException("아이디 또는 비밀번호가 올바르지 않습니다."));
 
 		Long userId = user.getUserId();
 		String failureKey = RedisKeys.loginFailure(userId);
 		String lockKey = RedisKeys.loginLock(userId);
 
 		if (redisLockoutService.isLocked(lockKey)) {
-			throw new AccountLockedException("account temporarily locked due to repeated login failures");
+			throw new AccountLockedException("로그인 실패가 반복되어 계정이 일시적으로 잠겼습니다.");
 		}
 
 		if (!passwordEncoder.matches(request.getPassword(), user.getLoginPasswordHash())) {
 			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, 5, Duration.ofMinutes(10),
-				Duration.ofMinutes(30));
-			throw new InvalidCredentialsException("invalid login id or password");
+				Duration.ofMinutes(5));
+			throw new InvalidCredentialsException("아이디 또는 비밀번호가 올바르지 않습니다.");
 		}
 
 		redisLockoutService.clearFailuresAndLock(failureKey, lockKey);

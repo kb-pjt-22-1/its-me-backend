@@ -13,6 +13,6 @@ import lombok.NoArgsConstructor;
 public class VerifyPinRequestDto {
 
 	@NotBlank
-	@Pattern(regexp = "^\\d{6}$", message = "PIN must be exactly 6 digits")
+	@Pattern(regexp = "^\\d{6}$", message = "PIN은 정확히 6자리 숫자여야 합니다.")
 	private String pin;
 }

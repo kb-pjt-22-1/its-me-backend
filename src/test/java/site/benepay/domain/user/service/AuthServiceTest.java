@@ -119,7 +119,7 @@ class AuthServiceTest {
 
 		verify(redisLockoutService).recordFailureAndMaybeLock(
 			RedisKeys.loginFailure(USER_ID), RedisKeys.loginLock(USER_ID), 5, Duration.ofMinutes(10),
-			Duration.ofMinutes(30));
+			Duration.ofMinutes(5));
 		verify(tokenService, never()).issueTokenPair(any());
 	}
 
