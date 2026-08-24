@@ -19,6 +19,19 @@
         ORDER BY merchant_id DESC
     </select>
 
+    <select id="findLimited" resultType="site.benepay.domain.merchant.vo.Merchant">
+        SELECT
+        <include refid="merchantColumns"/>
+        FROM merchants
+        <where>
+            <if test="categoryCode != null">
+                category_code = #{categoryCode}
+            </if>
+        </where>
+        ORDER BY merchant_id DESC
+        LIMIT #{limit}
+    </select>
+
     <!-- 매장 상세(핀 클릭) 조회 -->
     <select id="findByMerchantId" resultType="site.benepay.domain.merchant.vo.Merchant">
         SELECT

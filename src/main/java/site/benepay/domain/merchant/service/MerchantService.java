@@ -6,7 +6,7 @@ import site.benepay.domain.merchant.dto.MerchantResponseDto;
 
 public interface MerchantService {
 
-	List<MerchantResponseDto> getMerchants(String categoryCode);
+	List<MerchantResponseDto> getMerchants(String categoryCode, int limit);
 
 	MerchantResponseDto getMerchant(Long merchantId);
 

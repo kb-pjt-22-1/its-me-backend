@@ -46,8 +46,8 @@ public class MerchantServiceImpl implements MerchantService {
 
 	@Override
 	@Transactional(readOnly = true)
-	public List<MerchantResponseDto> getMerchants(String categoryCode) {
-		return merchantMapper.findAll(categoryCode).stream()
+	public List<MerchantResponseDto> getMerchants(String categoryCode, int limit) {
+		return merchantMapper.findLimited(categoryCode, limit).stream()
 			.map(MerchantResponseDto::from)
 			.toList();
 	}
