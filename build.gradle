@@ -30,7 +30,6 @@ sonar {
       "**/common/config/WebAppInitializer.java",
       "**/common/config/SecurityWebApplicationInitializer.java",
       "**/common/config/SwaggerConfig.java",
-      "**/common/config/PortOneProperties.java",
       "**/auth/security/jwt/JwtProperties.java"
     ].join(",")
   }
