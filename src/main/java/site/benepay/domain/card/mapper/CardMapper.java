@@ -1,11 +1,13 @@
 package site.benepay.domain.card.mapper;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 import org.apache.ibatis.annotations.Param;
 
+import site.benepay.domain.card.vo.CardIdByProductCodeVO;
 import site.benepay.domain.card.vo.CardMonthlyStatusVO;
 import site.benepay.domain.card.vo.UserCardBenefitVO;
 import site.benepay.domain.card.vo.UserCardDetailVO;
@@ -50,6 +52,13 @@ public interface CardMapper {
 
 	Optional<Long> findCardIdByIssuerProductCode(
 		@Param("issuerProductCode") String issuerProductCode
+	);
+
+	// CardRegistrationService.registerCards가 카드 목록 전체를 한 번에 조회할 때 쓴다 -
+	// 카드마다 findCardIdByIssuerProductCode를 반복 호출하는 N+1을 피하기 위함. 호출부가
+	// issuerProductCode -> cardId Map으로 바로 접기 좋게 (code, id) 쌍 목록으로 돌려준다.
+	List<CardIdByProductCodeVO> findCardIdsByIssuerProductCodes(
+		@Param("issuerProductCodes") Collection<String> issuerProductCodes
 	);
 
 	boolean existsPrimaryCardByUserId(

@@ -166,6 +166,18 @@
           AND is_supported = TRUE
     </select>
 
+    <!--registerCards가 카드 목록 전체를 한 번에 조회할 때 쓴다(N+1 방지) - 위 단건 조회와
+    같은 조건, 여러 issuer_product_code를 한 번에 받는다는 점만 다르다.-->
+    <select id="findCardIdsByIssuerProductCodes" resultType="site.benepay.domain.card.vo.CardIdByProductCodeVO">
+        SELECT issuer_product_code AS issuerProductCode, card_id AS cardId
+        FROM cards
+        WHERE issuer_product_code IN
+        <foreach item="code" collection="issuerProductCodes" open="(" separator="," close=")">
+            #{code}
+        </foreach>
+        AND is_supported = TRUE
+    </select>
+
     <!--신규 카드가 사용자의 첫 카드인지 판단하기 위해
     기존 대표 카드 존재 여부를 확인한다.-->
     <select id="existsPrimaryCardByUserId" resultType="boolean">

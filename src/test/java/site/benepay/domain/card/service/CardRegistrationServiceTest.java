@@ -9,7 +9,6 @@ import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import site.benepay.domain.card.mapper.CardMapper;
+import site.benepay.domain.card.vo.CardIdByProductCodeVO;
 import site.benepay.domain.card.vo.UserCardVO;
 import site.benepay.integration.kbcard.dto.KbCardResponseDto;
 
@@ -40,7 +40,8 @@ class CardRegistrationServiceTest {
 	void registerCardsMapsAndRegistersOneCard() {
 		KbCardResponseDto card = activeCard("card-ref-1", "product-1", "1111");
 		when(cardMapper.existsPrimaryCardByUserId(USER_ID)).thenReturn(false);
-		when(cardMapper.findCardIdByIssuerProductCode("product-1")).thenReturn(Optional.of(CARD_ID));
+		when(cardMapper.findCardIdsByIssuerProductCodes(List.of("product-1")))
+			.thenReturn(List.of(cardIdRow("product-1", CARD_ID)));
 		when(cardMapper.insertUserCardIfAbsent(any(UserCardVO.class))).thenReturn(1);
 
 		int result = cardRegistrationService.registerCards(USER_ID, List.of(card));
@@ -68,8 +69,8 @@ class CardRegistrationServiceTest {
 		KbCardResponseDto first = activeCard("card-ref-1", "product-1", "1111");
 		KbCardResponseDto second = activeCard("card-ref-2", "product-2", "2222");
 		when(cardMapper.existsPrimaryCardByUserId(USER_ID)).thenReturn(false);
-		when(cardMapper.findCardIdByIssuerProductCode("product-1")).thenReturn(Optional.of(101L));
-		when(cardMapper.findCardIdByIssuerProductCode("product-2")).thenReturn(Optional.of(102L));
+		when(cardMapper.findCardIdsByIssuerProductCodes(List.of("product-1", "product-2")))
+			.thenReturn(List.of(cardIdRow("product-1", 101L), cardIdRow("product-2", 102L)));
 		when(cardMapper.insertUserCardIfAbsent(any(UserCardVO.class))).thenReturn(1);
 
 		int result = cardRegistrationService.registerCards(USER_ID, List.of(first, second));
@@ -90,7 +91,8 @@ class CardRegistrationServiceTest {
 	void registerCardsDoesNotCountDuplicateCardReferenceId() {
 		KbCardResponseDto card = activeCard("duplicate-ref", "product-1", "1111");
 		when(cardMapper.existsPrimaryCardByUserId(USER_ID)).thenReturn(true);
-		when(cardMapper.findCardIdByIssuerProductCode("product-1")).thenReturn(Optional.of(CARD_ID));
+		when(cardMapper.findCardIdsByIssuerProductCodes(List.of("product-1")))
+			.thenReturn(List.of(cardIdRow("product-1", CARD_ID)));
 		when(cardMapper.insertUserCardIfAbsent(any(UserCardVO.class))).thenReturn(0);
 
 		assertThat(cardRegistrationService.registerCards(USER_ID, List.of(card))).isZero();
@@ -102,10 +104,11 @@ class CardRegistrationServiceTest {
 	void registerCardsSkipsUnknownProductCode() {
 		KbCardResponseDto card = activeCard("card-ref-1", "unknown-product", "1111");
 		when(cardMapper.existsPrimaryCardByUserId(USER_ID)).thenReturn(false);
-		when(cardMapper.findCardIdByIssuerProductCode("unknown-product")).thenReturn(Optional.empty());
+		when(cardMapper.findCardIdsByIssuerProductCodes(List.of("unknown-product")))
+			.thenReturn(List.of());
 
 		assertThat(cardRegistrationService.registerCards(USER_ID, List.of(card))).isZero();
-		verify(cardMapper).findCardIdByIssuerProductCode("unknown-product");
+		verify(cardMapper).findCardIdsByIssuerProductCodes(List.of("unknown-product"));
 		verify(cardMapper, never()).insertUserCardIfAbsent(any(UserCardVO.class));
 	}
 
@@ -114,7 +117,8 @@ class CardRegistrationServiceTest {
 	void registerCardsSetsNewCardNonPrimaryWhenPrimaryExists() {
 		KbCardResponseDto card = activeCard("card-ref-1", "product-1", "1111");
 		when(cardMapper.existsPrimaryCardByUserId(USER_ID)).thenReturn(true);
-		when(cardMapper.findCardIdByIssuerProductCode("product-1")).thenReturn(Optional.of(CARD_ID));
+		when(cardMapper.findCardIdsByIssuerProductCodes(List.of("product-1")))
+			.thenReturn(List.of(cardIdRow("product-1", CARD_ID)));
 		when(cardMapper.insertUserCardIfAbsent(any(UserCardVO.class))).thenReturn(1);
 
 		cardRegistrationService.registerCards(USER_ID, List.of(card));
@@ -145,5 +149,12 @@ class CardRegistrationServiceTest {
 		card.setCardStatus("ACTIVE");
 		card.setTokenStatus("ACTIVE");
 		return card;
+	}
+
+	private CardIdByProductCodeVO cardIdRow(String productCode, Long cardId) {
+		CardIdByProductCodeVO row = new CardIdByProductCodeVO();
+		row.setIssuerProductCode(productCode);
+		row.setCardId(cardId);
+		return row;
 	}
 }
