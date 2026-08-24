@@ -32,6 +32,7 @@ import site.benepay.domain.recommendation.engine.BenefitNode;
 import site.benepay.domain.recommendation.engine.BenefitUsage;
 import site.benepay.domain.recommendation.engine.Mode3Result;
 import site.benepay.domain.recommendation.engine.PerformanceTier;
+import site.benepay.domain.recommendation.engine.RecommendationParams;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 import site.benepay.domain.recommendation.mapper.RecommendationMapper;
 import site.benepay.domain.recommendation.vo.RecommendationBenefitUsageVO;
@@ -110,6 +111,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 				candidate -> candidate,
 				candidate -> BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper)
 			));
+		RecommendationParams params = personalizeParams(heldCards, parsedTiers);
 
 		if (categoryName == null) {
 			return heldCards.stream()
@@ -134,7 +136,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 				? new Mode3Result(0L, 0.0, 0.0, 0.0, 0.0, 0L, 0L, 0.0, "이 카테고리 통상 결제액 기준이 없어 비교할 수 없음", null)
 				: scorePriority(candidate, categoryCode, merchantName, categoryName, typicalAmount,
 					walletSpendHistory, parsedTiers.get(candidate),
-					usageByCard.getOrDefault(candidate.getUserCardId(), Map.of()))))
+					usageByCard.getOrDefault(candidate.getUserCardId(), Map.of()), params)))
 			.toList();
 
 		Long bestUserCardId = evaluated.stream()
@@ -223,6 +225,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 
 		Map<String, Long> walletSpendHistory = aggregateWalletSpendHistory(heldCards);
 		Map<Long, Map<String, BenefitUsage>> usageByCard = loadUsageByCard(userId);
+		RecommendationParams params = personalizeParams(heldCards, parsedTiers);
 
 		// 카테고리당 한 번만 계산해, 카드 x 카테고리 전체 조합을 평가하는 동안 재사용한다.
 		Map<String, Long> typicalAmountByCategory = new HashMap<>();
@@ -234,7 +237,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		}
 
 		WalletBestPick best = findWalletBestPick(heldCards, categoryNames, typicalAmountByCategory, walletSpendHistory,
-			parsedTiers, usageByCard);
+			parsedTiers, usageByCard, params);
 
 		if (best == null) {
 			return TodayCardRecommendationResponseDto.empty();
@@ -247,7 +250,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 				best.card(), merchant.getCategoryCode(), merchant.getMerchantName(),
 				categoryNames.get(merchant.getCategoryCode()),
 				typicalAmountByCategory.get(merchant.getCategoryCode()), walletSpendHistory, bestCardTiers,
-				usageByCard.getOrDefault(best.card().getUserCardId(), Map.of())
+				usageByCard.getOrDefault(best.card().getUserCardId(), Map.of()), params
 			)))
 			.filter(entry -> entry.getValue().total() > 0)
 			.sorted(Comparator.comparing(
@@ -293,7 +296,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 		Map<String, Long> typicalAmountByCategory,
 		Map<String, Long> walletSpendHistory,
 		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers,
-		Map<Long, Map<String, BenefitUsage>> usageByCard
+		Map<Long, Map<String, BenefitUsage>> usageByCard,
+		RecommendationParams params
 	) {
 		WalletBestPick best = null;
 		for (RecommendationCardCandidateVO candidate : heldCards) {
@@ -303,7 +307,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 				// 매장이 특정되지 않은 지갑 전체 기준 계산이라 merchantName=null - MERCHANT_BRAND
 				// 혜택도 "이 카테고리 어딘가에서는 유리하다"는 잠재력으로는 그대로 반영한다.
 				Mode3Result result = scorePriority(candidate, categoryCode, null, categoryNames.get(categoryCode),
-					category.getValue(), walletSpendHistory, parsedTiers.get(candidate), usage);
+					category.getValue(), walletSpendHistory, parsedTiers.get(candidate), usage, params);
 				if (result.total() > 0 && (best == null || result.total() > best.result().total())) {
 					best = new WalletBestPick(candidate, categoryCode, result);
 				}
@@ -342,6 +346,9 @@ public class RecommendationServiceImpl implements RecommendationService {
 				candidate -> candidate,
 				candidate -> BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper)
 			));
+		// 보유 카드가 없으면 findTopCards가 곧바로 EMPTY를 반환해 params를 아예 안 쓰므로,
+		// 그 경우엔 개인화 계산(recommendationParamsLoader.params() 조회 포함)을 건너뛴다.
+		RecommendationParams params = heldCards.isEmpty() ? null : personalizeParams(heldCards, parsedTiers);
 
 		// 카드별 이번 달/올해 혜택 소진액(card_benefit_monthly_usage) - 매장 N개를 평가하는
 		// 동안 반복 조회하지 않도록 한 번만 가져온다. 한도가 이미 소진된 카드는 이 값으로
@@ -350,7 +357,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 
 		return merchants.stream()
 			.map(merchant -> toOptimalCardRecommendation(merchant, heldCards, categoryNames, walletSpendHistory,
-				parsedTiers, usageByCard))
+				parsedTiers, usageByCard, params))
 			.toList();
 	}
 
@@ -420,13 +427,14 @@ public class RecommendationServiceImpl implements RecommendationService {
 		Map<String, String> categoryNames,
 		Map<String, Long> walletSpendHistory,
 		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers,
-		Map<Long, Map<String, BenefitUsage>> usageByCard
+		Map<Long, Map<String, BenefitUsage>> usageByCard,
+		RecommendationParams params
 	) {
 		String categoryName = categoryNames.get(merchant.getCategoryCode());
 		TopCardsResult topCardsResult = categoryName == null
 			? TopCardsResult.EMPTY
 			: findTopCards(heldCards, merchant.getCategoryCode(), merchant.getMerchantName(), categoryName,
-			walletSpendHistory, parsedTiers, usageByCard);
+			walletSpendHistory, parsedTiers, usageByCard, params);
 
 		// note()는 계산 근거를 전부 푸는 디버그용 문구라 UI에 그대로 노출하면 안 된다 -
 		// shortDescription()이 "카페 10% 할인 · 최대 1,000원"처럼 한 줄 노출용으로 정리된 값이다.
@@ -475,7 +483,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 		String categoryName,
 		Map<String, Long> walletSpendHistory,
 		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers,
-		Map<Long, Map<String, BenefitUsage>> usageByCard
+		Map<Long, Map<String, BenefitUsage>> usageByCard,
+		RecommendationParams params
 	) {
 		if (heldCards.isEmpty()) {
 			return TopCardsResult.EMPTY;
@@ -491,7 +500,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 				candidate,
 				scorePriority(candidate, categoryCode, merchantName, categoryName, typicalAmount, walletSpendHistory,
 					parsedTiers.get(candidate),
-					usageByCard.getOrDefault(candidate.getUserCardId(), Map.of()))
+					usageByCard.getOrDefault(candidate.getUserCardId(), Map.of()), params)
 			))
 			.filter(entry -> entry.getValue().total() > 0)
 			.sorted(Comparator.<Map.Entry<RecommendationCardCandidateVO, Mode3Result>>comparingDouble(
@@ -548,7 +557,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 		long typicalAmount,
 		Map<String, Long> walletSpendHistory,
 		List<PerformanceTier> tiers,
-		Map<String, BenefitUsage> usageByServiceName
+		Map<String, BenefitUsage> usageByServiceName,
+		RecommendationParams params
 	) {
 		Map<String, Long> spendHistory =
 			candidate.getSpendHistory() == null ? Collections.emptyMap() : candidate.getSpendHistory();
@@ -557,9 +567,27 @@ public class RecommendationServiceImpl implements RecommendationService {
 
 		return BenefitEngine.evaluatePriority(
 			tiers, prevMonthSpend, currentMonthSpend, categoryCode, merchantName, categoryName, typicalAmount,
-			spendHistory, walletSpendHistory, recommendationParamsLoader.params(), LocalDate.now(APP_ZONE),
+			spendHistory, walletSpendHistory, params, LocalDate.now(APP_ZONE),
 			PRIORITY_BETA, usageByServiceName
 		);
+	}
+
+	/**
+	 * 전역 추천 파라미터의 historyPrior/defaultCv를 이 유저의 보유 카드 이력으로 대체한다
+	 * (BenefitEngine.personalizeConstants 참고). 요청당 한 번만 계산해 재사용한다 - 카드
+	 * 여러 장 x 카테고리/매장 여러 개를 평가하는 동안 매번 다시 계산할 필요가 없다.
+	 */
+	private RecommendationParams personalizeParams(
+		List<RecommendationCardCandidateVO> heldCards,
+		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers
+	) {
+		List<BenefitEngine.CardHistory> histories = heldCards.stream()
+			.map(candidate -> new BenefitEngine.CardHistory(parsedTiers.get(candidate), candidate.getSpendHistory()))
+			.filter(history -> !history.tiers().isEmpty() && history.spendHistory() != null)
+			.toList();
+
+		RecommendationParams base = recommendationParamsLoader.params();
+		return base.withConstants(BenefitEngine.personalizeConstants(histories, base.constants()));
 	}
 
 	/**

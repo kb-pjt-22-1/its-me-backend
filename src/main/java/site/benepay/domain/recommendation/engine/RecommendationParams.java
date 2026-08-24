@@ -18,6 +18,10 @@ public record RecommendationParams(
 	Constants constants
 ) {
 
+	public RecommendationParams withConstants(Constants newConstants) {
+		return new RecommendationParams(typicalPaymentAmount, ticketHistogram, weekdayIndex, newConstants);
+	}
+
 	public record TicketHistogram(double[] centers, Map<String, long[]> counts) {
 
 		/**
