@@ -157,6 +157,8 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ErrorResponse> handleCardSettingUpdateException(CardSettingUpdateException ex,
 		HttpServletRequest request) {
 
+		log.error("카드 설정 갱신 실패: {}", ex.getMessage(), ex);
+
 		return errorResponse(
 			HttpStatus.INTERNAL_SERVER_ERROR,
 			ex.getMessage(),
