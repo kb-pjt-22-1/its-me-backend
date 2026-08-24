@@ -5,7 +5,7 @@ import javax.validation.Valid;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import lombok.RequiredArgsConstructor;
 import site.benepay.common.util.TokenExtractor;
 import site.benepay.domain.user.dto.ChangePasswordRequestDto;
 import site.benepay.domain.user.dto.RegisterPinRequestDto;
@@ -29,22 +30,20 @@ import site.benepay.domain.user.service.UserService;
 
 @RestController
 @RequestMapping("/api/users/me")
+@RequiredArgsConstructor
 public class MemberController {
 
 	private final UserService userService;
 
-	public MemberController(UserService userService) {
-		this.userService = userService;
-	}
-
 	@GetMapping
-	public ResponseEntity<UserResponseDto> getMyProfile() {
-		return ResponseEntity.ok(userService.getMyProfile(currentUserId()));
+	public ResponseEntity<UserResponseDto> getMyProfile(@AuthenticationPrincipal Long userId) {
+		return ResponseEntity.ok(userService.getMyProfile(userId));
 	}
 
 	@PutMapping
-	public ResponseEntity<UserResponseDto> updateMyProfile(@Valid @RequestBody UpdateProfileRequestDto request) {
-		return ResponseEntity.ok(userService.updateProfile(currentUserId(), request));
+	public ResponseEntity<UserResponseDto> updateMyProfile(@AuthenticationPrincipal Long userId,
+		@Valid @RequestBody UpdateProfileRequestDto request) {
+		return ResponseEntity.ok(userService.updateProfile(userId, request));
 	}
 
 	/**
@@ -53,51 +52,53 @@ public class MemberController {
 	 * 동시에 지원하지 않는다.
 	 */
 	@PatchMapping("/fcm-token")
-	public ResponseEntity<Void> updateFcmToken(@Valid @RequestBody UpdateFcmTokenRequestDto request) {
-		userService.updateFcmToken(currentUserId(), request);
+	public ResponseEntity<Void> updateFcmToken(@AuthenticationPrincipal Long userId,
+		@Valid @RequestBody UpdateFcmTokenRequestDto request) {
+		userService.updateFcmToken(userId, request);
 		return ResponseEntity.noContent().build();
 	}
 
 	@PostMapping("/verify-password")
-	public ResponseEntity<Void> verifyPassword(@Valid @RequestBody VerifyPasswordRequestDto request) {
-		userService.verifyPassword(currentUserId(), request);
+	public ResponseEntity<Void> verifyPassword(@AuthenticationPrincipal Long userId,
+		@Valid @RequestBody VerifyPasswordRequestDto request) {
+		userService.verifyPassword(userId, request);
 		return ResponseEntity.noContent().build();
 	}
 
 	@PutMapping("/password")
-	public ResponseEntity<Void> changePassword(@Valid @RequestBody ChangePasswordRequestDto request) {
-		userService.changePassword(currentUserId(), request);
+	public ResponseEntity<Void> changePassword(@AuthenticationPrincipal Long userId,
+		@Valid @RequestBody ChangePasswordRequestDto request) {
+		userService.changePassword(userId, request);
 		return ResponseEntity.noContent().build();
 	}
 
 	@PostMapping("/pin")
-	public ResponseEntity<Void> registerPin(@Valid @RequestBody RegisterPinRequestDto request) {
-		userService.registerPin(currentUserId(), request);
+	public ResponseEntity<Void> registerPin(@AuthenticationPrincipal Long userId,
+		@Valid @RequestBody RegisterPinRequestDto request) {
+		userService.registerPin(userId, request);
 		return ResponseEntity.status(HttpStatus.CREATED).build();
 	}
 
 	@PutMapping("/pin")
-	public ResponseEntity<Void> updateOrDeletePin(@Valid @RequestBody UpdateDeletePinRequestDto request) {
-		userService.updateOrDeletePin(currentUserId(), request);
+	public ResponseEntity<Void> updateOrDeletePin(@AuthenticationPrincipal Long userId,
+		@Valid @RequestBody UpdateDeletePinRequestDto request) {
+		userService.updateOrDeletePin(userId, request);
 		return ResponseEntity.noContent().build();
 	}
 
 	// 결제 화면에서 간편 비밀번호 인증 게이트로 쓴다 - verify-password와 같은 용도, 대상만 PIN.
 	@PostMapping("/verify-pin")
-	public ResponseEntity<Void> verifyPin(@Valid @RequestBody VerifyPinRequestDto request) {
-		userService.verifyPin(currentUserId(), request);
+	public ResponseEntity<Void> verifyPin(@AuthenticationPrincipal Long userId,
+		@Valid @RequestBody VerifyPinRequestDto request) {
+		userService.verifyPin(userId, request);
 		return ResponseEntity.noContent().build();
 	}
 
 	@DeleteMapping
-	public ResponseEntity<Void> withdraw(@RequestParam(defaultValue = "false") boolean confirmed,
-		HttpServletRequest servletRequest) {
+	public ResponseEntity<Void> withdraw(@AuthenticationPrincipal Long userId,
+		@RequestParam(defaultValue = "false") boolean confirmed, HttpServletRequest servletRequest) {
 		String accessToken = TokenExtractor.extractBearerToken(servletRequest);
-		userService.withdraw(currentUserId(), accessToken, confirmed);
+		userService.withdraw(userId, accessToken, confirmed);
 		return ResponseEntity.noContent().build();
-	}
-
-	private Long currentUserId() {
-		return (Long)SecurityContextHolder.getContext().getAuthentication().getPrincipal();
 	}
 }
