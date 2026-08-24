@@ -36,7 +36,7 @@ public class PaymentController {
 	@GetMapping("/{paymentId}")
 	public ResponseEntity<PaymentHistoryResponseDto> getPayment(@AuthenticationPrincipal Long userId,
 		@PathVariable Long paymentId) {
-		PaymentHistoryResponseDto response = paymentService.getPayment(paymentId);
+		PaymentHistoryResponseDto response = paymentService.getPayment(userId, paymentId);
 
 		return ResponseEntity.ok(response);
 	}

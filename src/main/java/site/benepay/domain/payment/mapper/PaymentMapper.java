@@ -21,8 +21,15 @@ public interface PaymentMapper {
 	Optional<CardBenefitContextVO> findCardBenefitContext(@Param("userCardId") Long userCardId,
 		@Param("previousYearMonth") String previousYearMonth);
 
-	// merchants/user_cards/cards와 조인해 화면 표시용 값까지 채워서 단건 조회
+	// merchants/user_cards/cards와 조인해 화면 표시용 값까지 채워서 단건 조회. 소유권 필터가 없으므로
+	// 호출부가 이미 다른 경로로(예: cancelApprovedPayment의 UPDATE 조건) 소유권을 확인한 뒤에만 써야
+	// 한다. 사용자 요청을 직접 처리하는 경로는 findByPaymentIdAndUserId를 쓴다.
 	Optional<PaymentHistoryVO> findByPaymentId(@Param("paymentId") Long paymentId);
+
+	// 단건 상세 조회(GET /api/v1/payments/{paymentId})용 - userId까지 조인 조건에 넣어 다른 사용자의
+	// 결제를 paymentId만으로 조회할 수 없게 한다.
+	Optional<PaymentHistoryVO> findByPaymentIdAndUserId(@Param("paymentId") Long paymentId,
+		@Param("userId") Long userId);
 
 	// 위와 같은 조인으로 이 사용자 소유 카드의 결제 내역을 최신순으로 조회.
 	// startPaymentTime/endPaymentTime이 있으면 그 구간만(끝은 미포함), 둘 다 null이면 전체 조회.
