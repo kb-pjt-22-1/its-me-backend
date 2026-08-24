@@ -1,7 +1,5 @@
 package site.benepay.domain.user.service;
 
-import java.time.Duration;
-
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,8 +51,8 @@ public class AuthServiceImpl implements AuthService {
 		}
 
 		if (!passwordEncoder.matches(request.getPassword(), user.getLoginPasswordHash())) {
-			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, 5, Duration.ofMinutes(10),
-				Duration.ofMinutes(5));
+			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, LoginAttemptPolicy.MAX_ATTEMPTS,
+				LoginAttemptPolicy.FAILURE_WINDOW, LoginAttemptPolicy.LOGIN_LOCK_DURATION);
 			throw new InvalidCredentialsException("아이디 또는 비밀번호가 올바르지 않습니다.");
 		}
 
