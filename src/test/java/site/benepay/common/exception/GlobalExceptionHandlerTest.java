@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
@@ -177,6 +178,16 @@ class GlobalExceptionHandlerTest {
                 handler.handleUnexpected(new RuntimeException("boom"), request);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
-        assertThat(response.getBody().message()).isEqualTo("예상치 못한 서버 오류가 발생했습니다.");
+        assertThat(response.getBody().message()).isEqualTo("예상치 못한 서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+
+    @Test
+    void handleQueryTimeoutReturnsGatewayTimeout() {
+        ResponseEntity<ErrorResponse> response =
+                handler.handleQueryTimeout(new QueryTimeoutException("Redis command timed out"), request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.GATEWAY_TIMEOUT);
+        assertThat(response.getBody().message()).isEqualTo("요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.");
+        assertThat(response.getBody().path()).isEqualTo(PATH);
     }
 }

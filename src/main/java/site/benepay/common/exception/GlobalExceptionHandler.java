@@ -3,6 +3,7 @@ package site.benepay.common.exception;
 import javax.servlet.http.HttpServletRequest;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -231,13 +232,22 @@ public class GlobalExceptionHandler {
 		return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage(), request);
 	}
 
+	// DB(HikariCP/MyBatis)나 Redis(Lettuce - RedisCommandTimeoutException이 Spring Data Redis에
+	// 의해 이 타입으로 변환됨) 응답이 설정된 시간 안에 안 와서 끊긴 경우. 사용자 입장에서는
+	// "내 요청이 잘못됐다"가 아니라 "지금 서버가 느리다"는 뜻이라 재시도를 유도하는 문구로 구분한다.
+	@ExceptionHandler(QueryTimeoutException.class)
+	public ResponseEntity<ErrorResponse> handleQueryTimeout(QueryTimeoutException ex, HttpServletRequest request) {
+		log.error("요청 처리 시간 초과", ex);
+		return errorResponse(HttpStatus.GATEWAY_TIMEOUT, "요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.", request);
+	}
+
 	/**
 	 * 별도로 처리되지 않은 예외를 공통 서버 오류로 처리한다.
 	 */
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) {
 		log.error("서버 오류", ex);
-		return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "예상치 못한 서버 오류가 발생했습니다.", request);
+		return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "예상치 못한 서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", request);
 	}
 
 	private static ResponseEntity<ErrorResponse> errorResponse(HttpStatus status, String message,
