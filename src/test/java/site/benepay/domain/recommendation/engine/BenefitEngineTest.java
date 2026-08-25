@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -768,5 +769,103 @@ class BenefitEngineTest {
 
 		assertThat(result.now()).isZero();
 		assertThat(result.shortDescription()).isEqualTo("카페 10% 할인");
+	}
+
+	// ---------------------------------------------------------------- personalizeConstants (유저별 개인화)
+
+	@Test
+	void personalizeConstantsReturnsGlobalConstantsWhenThereIsNoHistory() {
+		RecommendationParams.Constants result =
+			BenefitEngine.personalizeConstants(List.of(), testConstants());
+
+		assertThat(result).isEqualTo(testConstants());
+	}
+
+	@Test
+	void personalizeConstantsRaisesHistoryPriorWhenCardsConsistentlyReachBenefitingTiers() {
+		// tier0(0~299,999)은 혜택 없음, tier1(300,000~)부터 혜택 - 매달 지출이 전부 tier1이라
+		// "구간을 채운 달"이 100%다.
+		List<PerformanceTier> tiers = oneTierCard(300_000, 10, null, 0, null);
+		BenefitEngine.CardHistory history = new BenefitEngine.CardHistory(
+			tiers, Map.of("202501", 350_000L, "202502", 400_000L, "202503", 500_000L));
+
+		RecommendationParams.Constants result =
+			BenefitEngine.personalizeConstants(List.of(history), testConstants());
+
+		assertThat(result.historyPrior()).isGreaterThan(testConstants().historyPrior());
+		assertThat(result.historyPrior()).isEqualTo(1.0);
+	}
+
+	@Test
+	void personalizeConstantsLowersHistoryPriorWhenCardsRarelyReachBenefitingTiers() {
+		// 같은 카드지만 매달 지출이 tier0(혜택 없음) 범위에 머무른다 - "구간을 채운 달"이 0%다.
+		List<PerformanceTier> tiers = oneTierCard(300_000, 10, null, 0, null);
+		BenefitEngine.CardHistory history = new BenefitEngine.CardHistory(
+			tiers, Map.of("202501", 50_000L, "202502", 80_000L, "202503", 20_000L));
+
+		RecommendationParams.Constants result =
+			BenefitEngine.personalizeConstants(List.of(history), testConstants());
+
+		assertThat(result.historyPrior()).isLessThan(testConstants().historyPrior());
+		assertThat(result.historyPrior()).isEqualTo(0.0);
+	}
+
+	@Test
+	void personalizeConstantsKeepsDefaultCvGlobalWhenNoCardHasTwoMonthsOfHistory() {
+		// 카드 두 장 다 이력이 1개월뿐이라 cv() 실측 대상에서 빠진다 - defaultCv는 global 그대로.
+		List<PerformanceTier> tiers = oneTierCard(0, 10, null, 0, null);
+		BenefitEngine.CardHistory shortHistoryA =
+			new BenefitEngine.CardHistory(tiers, Map.of("202501", 50_000L));
+		BenefitEngine.CardHistory shortHistoryB =
+			new BenefitEngine.CardHistory(tiers, Map.of("202501", 80_000L));
+
+		RecommendationParams.Constants result =
+			BenefitEngine.personalizeConstants(List.of(shortHistoryA, shortHistoryB), testConstants());
+
+		assertThat(result.defaultCv()).isEqualTo(testConstants().defaultCv());
+	}
+
+	@Test
+	void personalizeConstantsAveragesDefaultCvAcrossCardsWithTwoOrMoreMonths() {
+		List<PerformanceTier> tiers = oneTierCard(0, 10, null, 0, null);
+		BenefitEngine.CardHistory qualifying = new BenefitEngine.CardHistory(
+			tiers, Map.of("202501", 100_000L, "202502", 100_000L, "202503", 100_000L));
+
+		RecommendationParams.Constants result =
+			BenefitEngine.personalizeConstants(List.of(qualifying), testConstants());
+
+		// 지출이 매달 동일(변동 없음)하므로 실측 cv는 minCv 바닥에 걸린다.
+		assertThat(result.defaultCv()).isEqualTo(testConstants().minCv());
+	}
+
+	@Test
+	void personalizeConstantsDoesNotCrashOnNullMonthValuesInSpendHistory() {
+		// aggregateWalletSpendHistory와 달리 카드별 spendHistory는 정리되지 않은 원본이라
+		// null 월값이 섞여 들어올 수 있다 - historyPrior/defaultCv 계산 둘 다 죽지 않아야 한다.
+		List<PerformanceTier> tiers = oneTierCard(0, 10, null, 0, null);
+		Map<String, Long> historyWithNull = new HashMap<>();
+		historyWithNull.put("202501", null);
+		historyWithNull.put("202502", 100_000L);
+		BenefitEngine.CardHistory history = new BenefitEngine.CardHistory(tiers, historyWithNull);
+
+		assertThatCode(() -> BenefitEngine.personalizeConstants(List.of(history), testConstants()))
+			.doesNotThrowAnyException();
+	}
+
+	@Test
+	void personalizeConstantsKeepsNonPersonalizedFieldsFromGlobal() {
+		List<PerformanceTier> tiers = oneTierCard(300_000, 10, null, 0, null);
+		BenefitEngine.CardHistory history = new BenefitEngine.CardHistory(
+			tiers, Map.of("202501", 350_000L));
+
+		RecommendationParams.Constants result =
+			BenefitEngine.personalizeConstants(List.of(history), testConstants());
+
+		assertThat(result.priorStrength()).isEqualTo(testConstants().priorStrength());
+		assertThat(result.minCv()).isEqualTo(testConstants().minCv());
+		assertThat(result.pFlowMin()).isEqualTo(testConstants().pFlowMin());
+		assertThat(result.pFlowMax()).isEqualTo(testConstants().pFlowMax());
+		assertThat(result.fuelPricePerLiter()).isEqualTo(testConstants().fuelPricePerLiter());
+		assertThat(result.buildReachThreshold()).isEqualTo(testConstants().buildReachThreshold());
 	}
 }

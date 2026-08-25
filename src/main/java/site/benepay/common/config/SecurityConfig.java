@@ -35,7 +35,11 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 		http
-			.csrf(AbstractHttpConfigurer::disable)
+			// 세션/쿠키 기반 인증을 전혀 쓰지 않는 stateless Bearer 토큰 API다(액세스 토큰은
+			// Authorization 헤더, 리프레시 토큰은 요청 바디로만 전달 - TokenExtractor,
+			// AuthController 참고). 브라우저가 자동으로 실어보내는 자격증명이 없으므로 CSRF가
+			// 성립하지 않아 비활성화가 안전하다.
+			.csrf(AbstractHttpConfigurer::disable) // NOSONAR java:S4502 - 쿠키 미사용 stateless API, 위 주석 참고
 			.formLogin(AbstractHttpConfigurer::disable)
 			.httpBasic(AbstractHttpConfigurer::disable)
 			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

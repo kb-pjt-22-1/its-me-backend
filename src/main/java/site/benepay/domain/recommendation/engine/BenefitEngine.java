@@ -4,6 +4,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -531,5 +532,87 @@ public final class BenefitEngine {
 
 		return new Mode3Result(now, future, prob.pFill(), prob.pFlow(), prob.pHist(), gap, gain, total, note,
 			shortDescription);
+	}
+
+	// ==================================================================== 유저별 개인화
+
+	/** 카드 한 장의 구간 목록 + 월별 지출 이력. personalizeConstants() 입력용. */
+	public record CardHistory(List<PerformanceTier> tiers, Map<String, Long> spendHistory) {
+	}
+
+	/**
+	 * 전역 상수(recommendation-params.json) 중 유저 데이터로 계산 가능한 값만 그 유저의
+	 * 보유 카드 이력으로 대체한다. 나머지 필드(priorStrength/minCv/pFlowMin/pFlowMax 등)는
+	 * global을 그대로 복사한다 - historyPrior만 개인화하기로 한 이유는 pHist 공식 자체가
+	 * 이력이 쌓일수록 prior 영향력을 자연히 줄이는 자기보정 구조라, priorStrength까지
+	 * 유저별로 건드리면 같은 효과를 중복 반영하는 셈이기 때문이다.
+	 *
+	 * @param cardHistories 빈 tiers는 호출부가 미리 걸러서 넘겨야 한다(activeTier가 빈
+	 *        리스트에서 tiers.get(0)을 호출해 터진다).
+	 */
+	public static RecommendationParams.Constants personalizeConstants(
+		List<CardHistory> cardHistories, RecommendationParams.Constants global
+	) {
+		return new RecommendationParams.Constants(
+			global.fuelPricePerLiter(),
+			personalizedHistoryPrior(cardHistories, global),
+			global.priorStrength(),
+			personalizedDefaultCv(cardHistories, global),
+			global.minCv(),
+			global.pFlowMin(),
+			global.pFlowMax(),
+			global.buildReachThreshold()
+		);
+	}
+
+	/**
+	 * 보유 카드 전체의 (월, 지출액) 조합마다 그 시점 activeTier에 카테고리 무관 실제 혜택이
+	 * 하나라도 있었으면 "hit"으로 센다. "이 유저는 평소 카드 구간을 얼마나 잘 채워왔는가"의
+	 * 실측 비율이라, 특정 카테고리/특정 구간 문턱에 종속되지 않는 값이다. 이력이 전혀 없으면
+	 * global 값을 그대로 쓴다.
+	 */
+	private static double personalizedHistoryPrior(List<CardHistory> cardHistories,
+		RecommendationParams.Constants global) {
+		long totalMonths = 0;
+		long totalHits = 0;
+		for (CardHistory history : cardHistories) {
+			for (Long amount : history.spendHistory().values()) {
+				totalMonths++;
+				PerformanceTier tier = activeTier(history.tiers(), amount == null ? 0L : amount);
+				if (!tier.realBenefits().isEmpty()) {
+					totalHits++;
+				}
+			}
+		}
+		return totalMonths == 0 ? global.historyPrior() : (double) totalHits / totalMonths;
+	}
+
+	/**
+	 * cv()가 이력 2개월 미만인 카드에 쓰는 콜드스타트 폴백값을, "이 유저의 다른 카드들은
+	 * 평소 얼마나 들쭉날쭉한가"의 평균으로 대체한다. 이력이 2개월 이상인 카드가 하나도 없으면
+	 * (완전 신규 유저) global 값을 그대로 쓴다.
+	 */
+	private static double personalizedDefaultCv(List<CardHistory> cardHistories,
+		RecommendationParams.Constants global) {
+		double sum = 0.0;
+		int count = 0;
+		for (CardHistory history : cardHistories) {
+			if (history.spendHistory().size() >= 2) {
+				sum += cv(sanitize(history.spendHistory()), global);
+				count++;
+			}
+		}
+		return count == 0 ? global.defaultCv() : sum / count;
+	}
+
+	// cv()/dailyRate()는 지갑 전체로 이미 합산된(aggregateWalletSpendHistory로 null을 0으로
+	// 정리한) 이력만 받는 걸 전제로 만들어졌다. 여기서는 카드 하나의 원본 spendHistory를 직접
+	// 넘기므로, 같은 정리를 이 경계에서 한 번 더 해준다.
+	private static Map<String, Long> sanitize(Map<String, Long> spendHistory) {
+		Map<String, Long> sanitized = new HashMap<>();
+		for (Map.Entry<String, Long> entry : spendHistory.entrySet()) {
+			sanitized.put(entry.getKey(), entry.getValue() == null ? 0L : entry.getValue());
+		}
+		return sanitized;
 	}
 }

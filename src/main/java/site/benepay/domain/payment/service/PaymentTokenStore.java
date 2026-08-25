@@ -3,10 +3,12 @@ package site.benepay.domain.payment.service;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Collections;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -34,6 +36,22 @@ public class PaymentTokenStore {
 	private static final String PAYMENT_METHOD_BARCODE = "BARCODE";
 
 	private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
+
+	// transitionIfIssued를 GET 후 SET(check-then-act)으로 구현하면 동시에 여러 완료/취소
+	// 요청이 들어왔을 때 전부 "ISSUED"를 보고 통과해버려 결제가 중복 생성될 수 있다(레이스
+	// 컨디션 - k6 concurrency-stress.js로 10개 동시 요청 중 3건 중복 결제 재현됨). Redis는
+	// 스크립트를 단일 스레드로 원자 실행하므로, 조회-검사-저장을 스크립트 하나로 묶어야
+	// 동시 요청 중 정확히 하나만 전환에 성공하는 것을 보장할 수 있다.
+	private static final RedisScript<String> TRANSITION_IF_ISSUED_SCRIPT = RedisScript.of(
+		"local raw = redis.call('GET', KEYS[1]) "
+			+ "if not raw then return false end "
+			+ "local token = cjson.decode(raw) "
+			+ "if token.status ~= '" + STATUS_ISSUED + "' then return false end "
+			+ "token.status = ARGV[1] "
+			+ "local newRaw = cjson.encode(token) "
+			+ "redis.call('SET', KEYS[1], newRaw, 'EX', ARGV[2]) "
+			+ "return newRaw",
+		String.class);
 
 	private final StringRedisTemplate redisTemplate;
 	private final ObjectMapper objectMapper = new ObjectMapper();
@@ -83,17 +101,19 @@ public class PaymentTokenStore {
 
 	// ISSUED 상태인 토큰만 targetStatus로 바꾼다. 이미 다른 상태거나 존재하지 않으면(만료 포함)
 	// 아무것도 안 하고 빈 값을 돌려준다 - 상태 판단(예외를 던질지)은 Service의 책임으로 남겨둔다.
+	// GET-검사-SET을 Lua 스크립트 하나로 묶어 원자적으로 실행한다(TRANSITION_IF_ISSUED_SCRIPT 참고).
 	private Optional<PaymentTokenVO> transitionIfIssued(String paymentTokenId, String targetStatus) {
-		Optional<PaymentTokenVO> current = find(paymentTokenId);
-		if (current.isEmpty() || !STATUS_ISSUED.equals(current.get().getStatus())) {
+		String newRaw = redisTemplate.execute(
+			TRANSITION_IF_ISSUED_SCRIPT,
+			Collections.singletonList(RedisKeys.paymentToken(paymentTokenId)),
+			targetStatus,
+			String.valueOf(FINAL_STATE_TTL.getSeconds())
+		);
+
+		if (newRaw == null) {
 			return Optional.empty();
 		}
-
-		PaymentTokenVO token = current.get();
-		token.setStatus(targetStatus);
-		save(token, FINAL_STATE_TTL);
-
-		return Optional.of(token);
+		return Optional.of(deserialize(newRaw));
 	}
 
 	private void save(PaymentTokenVO token, Duration ttl) {

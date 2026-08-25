@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * AES-256으로 양방향 암호화한다. 키는 encryption_keys 테이블에서 읽는다.
@@ -37,7 +38,10 @@ public class AesGcmEncryptor implements Encryptor {
 
     // 키는 런타임에 바뀌지 않는데 가입할 때마다 조회하면 낭비다. 다만 기동 시점에 읽으면
     // DB가 아직 안 떠 있을 때 컨텍스트가 통째로 실패하므로 첫 사용 때 채운다.
-    private volatile SecretKey cachedKey;
+    // volatile 필드 + synchronized 이중 검사 대신 AtomicReference를 쓴다 - 락 없이도
+    // 스레드 세이프가 타입 자체로 보장되고, 냉시작 때 동시 요청이 겹쳐 loadKey()가 한두 번
+    // 더 불려도 조회는 멱등이라 결과에 영향이 없다.
+    private final AtomicReference<SecretKey> cachedKey = new AtomicReference<>();
 
     public AesGcmEncryptor(EncryptionKeyMapper encryptionKeyMapper) {
         this.encryptionKeyMapper = encryptionKeyMapper;
@@ -96,17 +100,7 @@ public class AesGcmEncryptor implements Encryptor {
     }
 
     private SecretKey key() {
-        SecretKey key = cachedKey;
-        if (key == null) {
-            synchronized (this) {
-                key = cachedKey;
-                if (key == null) {
-                    key = loadKey();
-                    cachedKey = key;
-                }
-            }
-        }
-        return key;
+        return cachedKey.updateAndGet(existing -> existing != null ? existing : loadKey());
     }
 
     private SecretKey loadKey() {
