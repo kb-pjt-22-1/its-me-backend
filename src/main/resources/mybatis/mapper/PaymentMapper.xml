@@ -63,6 +63,13 @@
         WHERE p.payment_id = #{paymentId}
     </select>
 
+    <select id="findByPaymentIdAndUserId" resultMap="paymentHistoryResultMap">
+        SELECT <include refid="paymentHistoryColumns" />
+        <include refid="paymentHistoryJoins" />
+        WHERE p.payment_id = #{paymentId}
+          AND uc.user_id = #{userId}
+    </select>
+
     <select id="findPaymentHistoryByUserId" resultMap="paymentHistoryResultMap">
         SELECT <include refid="paymentHistoryColumns" />
         <include refid="paymentHistoryJoins" />
@@ -90,10 +97,16 @@
           AND token_expiry_date >= CURDATE()
     </select>
 
+    <!-- merchant_id(PK) 인덱스로 임의의 시작점 이후 첫 행만 찾는다. ORDER BY RAND()는 40,000+건
+         전체를 스캔+정렬하므로(c278336에서 고친 /api/v1/merchants LIMIT 없는 스캔과 같은 유형의
+         문제), 대신 [1, MAX(merchant_id)] 사이 난수를 뽑아 그 이상인 첫 행을 인덱스로 바로 찾는다. -->
     <select id="findRandomMerchantId" resultType="java.lang.Long">
         SELECT merchant_id
         FROM merchants
-        ORDER BY RAND()
+        WHERE merchant_id >= (
+            SELECT FLOOR(RAND() * MAX(merchant_id)) + 1 FROM merchants
+        )
+        ORDER BY merchant_id
             LIMIT 1
     </select>
 

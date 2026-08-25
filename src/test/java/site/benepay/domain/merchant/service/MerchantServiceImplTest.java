@@ -84,9 +84,10 @@ class MerchantServiceImplTest {
 
 	@Test
 	void getMerchantsMapsEveryMerchantToADto() {
-		when(merchantMapper.findAll(null)).thenReturn(List.of(existingMerchant("M001"), existingMerchant("M002")));
+		when(merchantMapper.findLimited(null, 100))
+			.thenReturn(List.of(existingMerchant("M001"), existingMerchant("M002")));
 
-		List<MerchantResponseDto> result = merchantService.getMerchants(null);
+		List<MerchantResponseDto> result = merchantService.getMerchants(null, 100);
 
 		assertThat(result).hasSize(2);
 		assertThat(result).extracting(MerchantResponseDto::getMerchantCode).containsExactly("M001", "M002");
@@ -94,19 +95,19 @@ class MerchantServiceImplTest {
 
 	@Test
 	void getMerchantsReturnsEmptyListWhenNoneExist() {
-		when(merchantMapper.findAll(null)).thenReturn(List.of());
+		when(merchantMapper.findLimited(null, 100)).thenReturn(List.of());
 
-		assertThat(merchantService.getMerchants(null)).isEmpty();
+		assertThat(merchantService.getMerchants(null, 100)).isEmpty();
 	}
 
 	@Test
 	void getMerchantsPassesCategoryCodeThroughToMapper() {
-		when(merchantMapper.findAll("5812")).thenReturn(List.of(existingMerchant("M001")));
+		when(merchantMapper.findLimited("5812", 100)).thenReturn(List.of(existingMerchant("M001")));
 
-		List<MerchantResponseDto> result = merchantService.getMerchants("5812");
+		List<MerchantResponseDto> result = merchantService.getMerchants("5812", 100);
 
 		assertThat(result).hasSize(1);
-		verify(merchantMapper).findAll("5812");
+		verify(merchantMapper).findLimited("5812", 100);
 	}
 
 	// ---- getMerchant(merchantId) ----

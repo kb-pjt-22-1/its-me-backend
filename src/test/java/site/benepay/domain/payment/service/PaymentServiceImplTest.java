@@ -72,9 +72,9 @@ class PaymentServiceImplTest {
 
 	@Test
 	void getPaymentReturnsTheMappedResponseWhenFound() {
-		when(paymentMapper.findByPaymentId(PAYMENT_ID)).thenReturn(Optional.of(row("APPROVED")));
+		when(paymentMapper.findByPaymentIdAndUserId(PAYMENT_ID, USER_ID)).thenReturn(Optional.of(row("APPROVED")));
 
-		PaymentHistoryResponseDto response = paymentService.getPayment(PAYMENT_ID);
+		PaymentHistoryResponseDto response = paymentService.getPayment(USER_ID, PAYMENT_ID);
 
 		assertThat(response.getPaymentId()).isEqualTo(PAYMENT_ID);
 		assertThat(response.getMerchantId()).isEqualTo(MERCHANT_ID);
@@ -103,9 +103,9 @@ class PaymentServiceImplTest {
 			.paymentStatus("APPROVED")
 			.paymentMethod("QR")
 			.build();
-		when(paymentMapper.findByPaymentId(PAYMENT_ID)).thenReturn(Optional.of(noBrand));
+		when(paymentMapper.findByPaymentIdAndUserId(PAYMENT_ID, USER_ID)).thenReturn(Optional.of(noBrand));
 
-		PaymentHistoryResponseDto response = paymentService.getPayment(PAYMENT_ID);
+		PaymentHistoryResponseDto response = paymentService.getPayment(USER_ID, PAYMENT_ID);
 
 		assertThat(response.getMerchantId()).isEqualTo(MERCHANT_ID);
 		assertThat(response.getBrandId()).isNull();
@@ -113,9 +113,18 @@ class PaymentServiceImplTest {
 
 	@Test
 	void getPaymentThrowsWhenNotFound() {
-		when(paymentMapper.findByPaymentId(PAYMENT_ID)).thenReturn(Optional.empty());
+		when(paymentMapper.findByPaymentIdAndUserId(PAYMENT_ID, USER_ID)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> paymentService.getPayment(PAYMENT_ID))
+		assertThatThrownBy(() -> paymentService.getPayment(USER_ID, PAYMENT_ID))
+			.isInstanceOf(PaymentNotFoundException.class);
+	}
+
+	@Test
+	void getPaymentDoesNotLeakAnotherUsersPaymentByGuessingTheId() {
+		Long otherUsersId = 999L;
+		when(paymentMapper.findByPaymentIdAndUserId(PAYMENT_ID, otherUsersId)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> paymentService.getPayment(otherUsersId, PAYMENT_ID))
 			.isInstanceOf(PaymentNotFoundException.class);
 	}
 

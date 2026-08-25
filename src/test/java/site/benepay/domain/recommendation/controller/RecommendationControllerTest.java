@@ -2,14 +2,11 @@ package site.benepay.domain.recommendation.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,9 +14,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 import site.benepay.common.exception.InvalidCoordinateException;
 import site.benepay.common.facade.Facade;
@@ -40,17 +34,6 @@ class RecommendationControllerTest {
 	@BeforeEach
 	void setUp() {
 		controller = new RecommendationController(facade);
-
-		Authentication authentication = mock(Authentication.class);
-		lenient().when(authentication.getPrincipal()).thenReturn(USER_ID);
-		SecurityContext securityContext = mock(SecurityContext.class);
-		lenient().when(securityContext.getAuthentication()).thenReturn(authentication);
-		SecurityContextHolder.setContext(securityContext);
-	}
-
-	@AfterEach
-	void tearDown() {
-		SecurityContextHolder.clearContext();
 	}
 
 	@Test
@@ -63,7 +46,8 @@ class RecommendationControllerTest {
 			.build();
 		when(facade.getCardRecommendations(USER_ID, MERCHANT_ID)).thenReturn(response);
 
-		ResponseEntity<MerchantCardRecommendationResponseDto> result = controller.getCardRecommendations(MERCHANT_ID);
+		ResponseEntity<MerchantCardRecommendationResponseDto> result =
+			controller.getCardRecommendations(USER_ID, MERCHANT_ID);
 
 		assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(result.getBody()).isEqualTo(response);
@@ -83,7 +67,8 @@ class RecommendationControllerTest {
 			.build();
 		when(facade.getTodayCardRecommendation(USER_ID, lat, lng)).thenReturn(response);
 
-		ResponseEntity<TodayCardRecommendationResponseDto> result = controller.getTodayCardRecommendation(lat, lng);
+		ResponseEntity<TodayCardRecommendationResponseDto> result =
+			controller.getTodayCardRecommendation(USER_ID, lat, lng);
 
 		assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
 		assertThat(result.getBody()).isEqualTo(response);
@@ -92,7 +77,7 @@ class RecommendationControllerTest {
 
 	@Test
 	void getTodayCardRecommendationRejectsOutOfRangeCoordinate() {
-		assertThatThrownBy(() -> controller.getTodayCardRecommendation(-91.0, 127.0))
+		assertThatThrownBy(() -> controller.getTodayCardRecommendation(USER_ID, -91.0, 127.0))
 			.isInstanceOf(InvalidCoordinateException.class);
 	}
 }

@@ -300,7 +300,7 @@ class UserServiceTest {
 
 		verify(redisLockoutService).recordFailureAndMaybeLock(
 			RedisKeys.passwordFailure(USER_ID), RedisKeys.passwordLock(USER_ID), 5, Duration.ofMinutes(10),
-			Duration.ofMinutes(30));
+			Duration.ofMinutes(5));
 	}
 
 	@Test
@@ -329,7 +329,7 @@ class UserServiceTest {
 
 		verify(redisLockoutService, org.mockito.Mockito.times(2)).recordFailureAndMaybeLock(
 			RedisKeys.passwordFailure(USER_ID), RedisKeys.passwordLock(USER_ID), 5, Duration.ofMinutes(10),
-			Duration.ofMinutes(30));
+			Duration.ofMinutes(5));
 	}
 
 	// ---- password change ----
@@ -357,7 +357,7 @@ class UserServiceTest {
 
 		verify(redisLockoutService).recordFailureAndMaybeLock(
 			RedisKeys.passwordFailure(USER_ID), RedisKeys.passwordLock(USER_ID), 5, Duration.ofMinutes(10),
-			Duration.ofMinutes(30));
+			Duration.ofMinutes(5));
 		verify(userMapper, never()).updatePasswordHash(any(), any());
 	}
 

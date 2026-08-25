@@ -30,8 +30,8 @@ public class PaymentServiceImpl implements PaymentService {
 	private final ApplicationEventPublisher eventPublisher;
 
 	@Override
-	public PaymentHistoryResponseDto getPayment(Long paymentId) {
-		return paymentMapper.findByPaymentId(paymentId)
+	public PaymentHistoryResponseDto getPayment(Long userId, Long paymentId) {
+		return paymentMapper.findByPaymentIdAndUserId(paymentId, userId)
 			.map(PaymentHistoryResponseDto::from)
 			.orElseThrow(() -> new PaymentNotFoundException("결제 내역을 찾을 수 없습니다."));
 	}

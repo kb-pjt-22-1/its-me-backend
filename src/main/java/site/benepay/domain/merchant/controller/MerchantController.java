@@ -29,6 +29,13 @@ public class MerchantController {
 	// centerLat/centerLng 기준 가까운 순 이 개수까지만 자른다. 나머지는 화면에서 마커
 	// 클러스터링으로 뭉쳐 보여준다.
 	private static final int BOUNDS_SEARCH_LIMIT = 500;
+	// GET /api/v1/merchants 기본 상한 - categoryCode 없이 부르면 예전엔 매장 전체(2만 건+)를
+	// LIMIT 없이 다 내려줘서, 로그인 직후 App.vue가 이 API를 부를 때마다 500ms+가 걸렸다
+	// (지도 자체가 아니라 이 호출이 지도 화면 진입 시점과 겹쳐서 체감 로딩을 늘렸다).
+	// "카테고리 전체 검색"(Map.vue searchCategoryAll)이 쓰는 값이라, 웬만한 카테고리는 다
+	// 들어오도록 넉넉하게 잡는다 - 이보다 매장이 많은 카테고리는 나머지가 클러스터링으로 뭉쳐
+	// 보이던 지도 화면과 달리 안 보이게 되니, 필요해지면 진짜 페이지네이션으로 바꿔야 한다.
+	private static final int MERCHANT_LIST_LIMIT = 2000;
 
 	private final MerchantService merchantService;
 	private final Facade facade;
@@ -42,7 +49,7 @@ public class MerchantController {
 	public ResponseEntity<List<MerchantResponseDto>> getMerchants(
 		@RequestParam(required = false) String categoryCode
 	) {
-		return ResponseEntity.ok(merchantService.getMerchants(categoryCode));
+		return ResponseEntity.ok(merchantService.getMerchants(categoryCode, MERCHANT_LIST_LIMIT));
 	}
 
 	/**
