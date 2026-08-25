@@ -247,7 +247,7 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex, HttpServletRequest request) {
 		log.error("서버 오류", ex);
-		return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "예상치 못한 서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", request);
+		return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "잠시 후 다시 시도해 주세요.", request);
 	}
 
 	private static ResponseEntity<ErrorResponse> errorResponse(HttpStatus status, String message,
