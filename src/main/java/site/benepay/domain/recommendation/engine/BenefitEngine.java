@@ -313,7 +313,34 @@ public final class BenefitEngine {
 		long paymentAmount,
 		Map<String, BenefitUsage> usageByServiceName
 	) {
-		PerformanceTier active = activeTier(tiers, prevMonthSpend);
+		return selectPaymentBenefit(tiers, prevMonthSpend, categoryCode, merchantName, paymentAmount,
+			usageByServiceName, GracePeriod.NONE, null, null);
+	}
+
+	/**
+	 * 신규 카드 실적 유예기간을 반영하는 오버로드. activeTier 자리만
+	 * activeTierWithGracePeriod로 바뀌고 나머지 로직은 동일하다 - 결제 시점 할인도 "이번 달
+	 * 받을 수 있는 혜택" 화면(BenefitServiceImpl)과 같은 유예기간 규칙을 따르게 하려는
+	 * 목적이다(둘이 다르면 화면엔 혜택이 보이는데 실제 결제엔 안 먹는 불일치가 생긴다).
+	 *
+	 * @param gracePeriod cards.benefits_info의 gracePeriod - 없으면 GracePeriod.NONE
+	 * @param cardIssuedYearMonth 카드 등록월. 모르면(레거시 데이터 등) null - 이 경우 유예기간
+	 *        미적용으로 안전하게 폴백한다(activeTierWithGracePeriod의 null 가드).
+	 * @param targetYearMonth 유예기간 적용 여부를 판단할 기준월(결제 시점 = 지금 이 달)
+	 */
+	public static BenefitApplication selectPaymentBenefit(
+		List<PerformanceTier> tiers,
+		long prevMonthSpend,
+		String categoryCode,
+		String merchantName,
+		long paymentAmount,
+		Map<String, BenefitUsage> usageByServiceName,
+		GracePeriod gracePeriod,
+		YearMonth cardIssuedYearMonth,
+		YearMonth targetYearMonth
+	) {
+		PerformanceTier active =
+			activeTierWithGracePeriod(tiers, prevMonthSpend, gracePeriod, cardIssuedYearMonth, targetYearMonth);
 		Long combinedCap = active.combinedCap();
 		long combinedRemaining = combinedCap == null
 			? Long.MAX_VALUE
@@ -512,13 +539,47 @@ public final class BenefitEngine {
 		double beta,
 		Map<String, BenefitUsage> usageByServiceName
 	) {
+		return evaluatePriority(tiers, prevMonthSpend, currentMonthSpend, categoryCode, merchantName, categoryName,
+			typicalAmount, cardSpendHistory, walletSpendHistory, params, today, beta, usageByServiceName,
+			GracePeriod.NONE, null);
+	}
+
+	/**
+	 * 신규 카드 실적 유예기간을 반영하는 오버로드. now(activeTier)에만 유예기간을 반영하고,
+	 * baseline(다음 달 기준선)·historyPrior 개인화(personalizedHistoryPrior)는 의도적으로
+	 * 그대로 둔다 - 팀 결정: baseline까지 올리면 "다음 구간까지 채웠을 때의 추가 이득(gain)"
+	 * 계산이 유예기간 종료 시점(발급월+다음달 경계)과 얽혀 더 복잡해지고, historyPrior에
+	 * 반영하면 "유저가 평소 구간을 잘 채우는지"라는 지표에 카드사가 그냥 준 혜택이 섞여
+	 * 의미가 흐려진다.
+	 *
+	 * @param gracePeriod cards.benefits_info의 gracePeriod - 없으면 GracePeriod.NONE
+	 * @param cardIssuedYearMonth 카드 등록월. 모르면 null(유예기간 미적용으로 폴백)
+	 */
+	public static Mode3Result evaluatePriority(
+		List<PerformanceTier> tiers,
+		long prevMonthSpend,
+		long currentMonthSpend,
+		String categoryCode,
+		String merchantName,
+		String categoryName,
+		long typicalAmount,
+		Map<String, Long> cardSpendHistory,
+		Map<String, Long> walletSpendHistory,
+		RecommendationParams params,
+		LocalDate today,
+		double beta,
+		Map<String, BenefitUsage> usageByServiceName,
+		GracePeriod gracePeriod,
+		YearMonth cardIssuedYearMonth
+	) {
 		boolean hasAnywhere =
 			tiers.stream().anyMatch(t -> !t.benefitsForCategory(categoryCode, merchantName).isEmpty());
 		if (!hasAnywhere) {
 			return Mode3Result.blank("이 카테고리 혜택 자체가 없음");
 		}
 
-		PerformanceTier active = activeTier(tiers, prevMonthSpend);
+		PerformanceTier active = activeTierWithGracePeriod(
+			tiers, prevMonthSpend, gracePeriod, cardIssuedYearMonth, YearMonth.from(today));
 		TierBenefit activeBenefit =
 			bestTierBenefit(active, categoryCode, merchantName, categoryName, typicalAmount, params,
 				usageByServiceName);

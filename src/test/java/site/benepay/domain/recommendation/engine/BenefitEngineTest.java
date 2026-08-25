@@ -337,6 +337,87 @@ class BenefitEngineTest {
 		assertThat(result.tierName()).isEqualTo("0구간");
 	}
 
+	// ------------------------------------------- 신규 카드 실적 유예기간 - evaluatePriority/selectPaymentBenefit 통합
+
+	@Test
+	void evaluatePriorityAppliesGracePeriodToNowWhenPreviousMonthSpendingIsZero() {
+		List<PerformanceTier> tiers = tieredCardWithGraceTarget();
+		GracePeriod gracePeriod = new GracePeriod(true, false, "TIER_1");
+		YearMonth cardIssuedYearMonth = YearMonth.from(TODAY);
+
+		// 유예기간이 없었다면 prevMonthSpend=0 -> 0구간(혜택 없음) -> now=0이어야 한다.
+		Mode3Result result = BenefitEngine.evaluatePriority(
+			tiers, 0L, 0L, CAFE, null, "카페", TICKET, Map.of(), Map.of(), TEST_PARAMS, TODAY, 1.0, Map.of(),
+			gracePeriod, cardIssuedYearMonth
+		);
+
+		assertThat(result.now()).isEqualTo(500L); // TICKET(10,000) * 5%
+	}
+
+	@Test
+	void evaluatePriorityDoesNotApplyGracePeriodToTheBaselineOrGain() {
+		// 0구간(혜택 없음) / TIER_1(유예기간 대상, 5%) - baselineTier(currentMonthSpend=0 기준)가
+		// 유예기간까지 반영해버리면 next(=TIER_1)와 baseline이 같아져 gain이 0이 돼버린다.
+		// baseline은 유예기간을 반영하지 않기로 한 팀 결정이 지켜지는지 확인한다 - 반영했다면
+		// gain=0(TIER_1-TIER_1), 반영 안 했다면 gain=500(TIER_1-0구간)이어야 한다.
+		List<PerformanceTier> tiers = tieredCardWithGraceTarget();
+		GracePeriod gracePeriod = new GracePeriod(true, false, "TIER_1");
+		YearMonth cardIssuedYearMonth = YearMonth.from(TODAY);
+
+		Mode3Result result = BenefitEngine.evaluatePriority(
+			tiers, 0L, 0L, CAFE, null, "카페", TICKET, Map.of(), Map.of(), TEST_PARAMS, TODAY, 1.0, Map.of(),
+			gracePeriod, cardIssuedYearMonth
+		);
+
+		assertThat(result.gain()).isEqualTo(500L);
+	}
+
+	@Test
+	void evaluatePriorityOverloadWithoutGracePeriodBehavesLikeGracePeriodNone() {
+		List<PerformanceTier> tiers = tieredCardWithGraceTarget();
+
+		Mode3Result result = evaluatePriority(tiers, 0L, Map.of(), Map.of(), TODAY, 1.0);
+
+		assertThat(result.now()).isZero(); // 유예기간 정보를 안 넘기면 기존과 동일하게 0구간
+	}
+
+	@Test
+	void selectPaymentBenefitAppliesGracePeriodWhenPreviousMonthSpendingIsZero() {
+		List<PerformanceTier> tiers = tieredCardWithGraceTarget();
+		GracePeriod gracePeriod = new GracePeriod(true, false, "TIER_1");
+		YearMonth cardIssuedYearMonth = YearMonth.of(2026, 8);
+
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(
+			tiers, 0L, CAFE, null, TICKET, Map.of(), gracePeriod, cardIssuedYearMonth, YearMonth.of(2026, 8)
+		);
+
+		assertThat(application.discountAmount()).isEqualTo(500L);
+	}
+
+	@Test
+	void selectPaymentBenefitIgnoresGracePeriodOutsideTheGraceWindow() {
+		List<PerformanceTier> tiers = tieredCardWithGraceTarget();
+		GracePeriod gracePeriod = new GracePeriod(true, false, "TIER_1");
+		YearMonth cardIssuedYearMonth = YearMonth.of(2026, 8);
+
+		// 발급월+2개월 - 유예기간(발급월+다음달까지) 밖이라 미적용.
+		BenefitApplication application = BenefitEngine.selectPaymentBenefit(
+			tiers, 0L, CAFE, null, TICKET, Map.of(), gracePeriod, cardIssuedYearMonth, YearMonth.of(2026, 10)
+		);
+
+		assertThat(application).isEqualTo(BenefitApplication.NONE);
+	}
+
+	@Test
+	void selectPaymentBenefitOverloadWithoutGracePeriodBehavesLikeGracePeriodNone() {
+		List<PerformanceTier> tiers = tieredCardWithGraceTarget();
+
+		BenefitApplication application =
+			BenefitEngine.selectPaymentBenefit(tiers, 0L, CAFE, null, TICKET, Map.of());
+
+		assertThat(application).isEqualTo(BenefitApplication.NONE); // 유예기간 정보를 안 넘기면 기존과 동일
+	}
+
 	// ---------------------------------------------------------------- 리터당 할인
 
 	@Test

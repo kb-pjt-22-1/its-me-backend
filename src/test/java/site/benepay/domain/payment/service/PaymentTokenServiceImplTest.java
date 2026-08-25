@@ -86,9 +86,16 @@ class PaymentTokenServiceImplTest {
 	}
 
 	private CardBenefitContextVO cardBenefitContext(long previousMonthSpendingAmount, String benefitsInfo) {
+		return cardBenefitContext(previousMonthSpendingAmount, benefitsInfo, null);
+	}
+
+	private CardBenefitContextVO cardBenefitContext(
+		long previousMonthSpendingAmount, String benefitsInfo, LocalDateTime userCardCreatedAt
+	) {
 		CardBenefitContextVO context = new CardBenefitContextVO();
 		context.setPreviousMonthSpendingAmount(previousMonthSpendingAmount);
 		context.setBenefitsInfo(benefitsInfo);
+		context.setUserCardCreatedAt(userCardCreatedAt);
 		return context;
 	}
 
@@ -278,6 +285,40 @@ class PaymentTokenServiceImplTest {
 		ArgumentCaptor<PaymentApprovedEvent> eventCaptor = ArgumentCaptor.forClass(PaymentApprovedEvent.class);
 		verify(eventPublisher).publishEvent(eventCaptor.capture());
 		assertThat(eventCaptor.getValue().benefitServiceName()).isEqualTo("카페 할인");
+	}
+
+	// 신규 카드 실적 유예기간(gracePeriod) - 전월 실적이 0이라도 발급월+다음달까지는 지정 구간
+	// 혜택을 결제 시점에도 그대로 받아야 한다("이번 달 받을 수 있는 혜택" 화면과 동일 규칙).
+	private static final String CAFE_GRACE_PERIOD_TIER1_50_PERCENT = "{\"performanceTiers\":["
+		+ "{\"minimumSpending\":0,\"benefits\":[]},"
+		+ "{\"benefitNodeId\":\"TIER_1\",\"minimumSpending\":300000,"
+		+ "\"benefits\":[{\"serviceName\":\"카페 할인\",\"benefitType\":\"MERCHANT_CATEGORY\","
+		+ "\"categoryCodes\":[\"5813\"],\"discountMethod\":\"STATEMENT_DISCOUNT\",\"discountRate\":50,"
+		+ "\"minimumPaymentAmount\":0}]}"
+		+ "],\"gracePeriod\":{\"available\":true,\"minimumSpendingRequired\":false,"
+		+ "\"applicableBenefitNodeId\":\"TIER_1\"}}";
+
+	@Test
+	void completeTokenAppliesGracePeriodBenefitForANewlyIssuedCardWithNoPreviousMonthSpending() {
+		when(paymentTokenStore.find(PAYMENT_TOKEN_ID)).thenReturn(Optional.of(token(MERCHANT_ID, "ISSUED")));
+		when(paymentTokenStore.markUsedIfIssued(PAYMENT_TOKEN_ID))
+			.thenReturn(Optional.of(token(MERCHANT_ID, "USED")));
+		when(paymentMapper.findByPaymentId(any())).thenReturn(Optional.of(historyRow("카페 할인")));
+		when(merchantService.getMerchant(MERCHANT_ID))
+			.thenReturn(MerchantResponseDto.builder().merchantId(MERCHANT_ID).categoryCode("5813").build());
+		// 전월 실적 0(prevMonthSpend=0) + 카드가 오늘(이번 달) 발급됨 - 유예기간 안이다.
+		when(paymentMapper.findCardBenefitContext(eq(USER_CARD_ID), any())).thenReturn(Optional.of(
+			cardBenefitContext(0L, CAFE_GRACE_PERIOD_TIER1_50_PERCENT, LocalDateTime.now())));
+
+		paymentTokenService.completeToken(PAYMENT_TOKEN_ID);
+
+		ArgumentCaptor<PaymentVO> captor = ArgumentCaptor.forClass(PaymentVO.class);
+		verify(paymentMapper).insertPayment(captor.capture());
+		PaymentVO inserted = captor.getValue();
+		assertThat(inserted.getBenefitServiceName()).isEqualTo("카페 할인");
+		BigDecimal expectedDiscount =
+			BigDecimal.valueOf(Math.round(inserted.getOriginalAmount().doubleValue() * 0.5));
+		assertThat(inserted.getDiscountAmount()).isEqualByComparingTo(expectedDiscount);
 	}
 
 	// 실제 버그 재현: "직장인 보너스 체크카드"의 아웃백 10% 할인(MERCHANT_BRAND)이 categoryCode만

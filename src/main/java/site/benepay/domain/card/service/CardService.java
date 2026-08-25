@@ -401,6 +401,7 @@ public class CardService {
 		candidate.setCardName(card.getCardName());
 		candidate.setCardImageUrl(card.getCardImageUrl());
 		candidate.setBenefitsInfo(card.getBenefitsInfo());
+		candidate.setUserCardCreatedAt(card.getUserCardCreatedAt());
 
 		candidate.setSpendHistory(spendHistory);
 		candidate.setCurrentMonthSpend(currentMonthSpend);

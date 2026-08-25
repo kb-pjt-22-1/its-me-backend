@@ -229,7 +229,8 @@
                c.card_id        AS cardId,
                c.card_name      AS cardName,
                c.card_image_url AS cardImageUrl,
-               c.benefits_info  AS benefitsInfo
+               c.benefits_info  AS benefitsInfo,
+               uc.created_at    AS userCardCreatedAt
         FROM user_cards uc
                  INNER JOIN cards c
                             ON uc.card_id = c.card_id
