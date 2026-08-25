@@ -308,6 +308,9 @@ class RecommendationServiceImplTest {
 	@Test
 	void marksMerchantUnavailableWhenCategoryIsNotAnAnalyzedMajorCategory() {
 		stubCafeCategory();
+		// 매장 카테고리가 분석 대상 밖이라 typicalAmount 조회까진 안 가지만, 보유 카드가 있어
+		// personalizeParams()가 요청당 1회 recommendationParamsLoader.params()를 조회한다.
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of()));
 
 		List<NearbyMerchantRecommendationResponseDto> result = recommendationService.recommendMerchants(
 			USER_ID,
