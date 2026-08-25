@@ -4,13 +4,16 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.geo.Distance;
@@ -29,6 +32,8 @@ import org.springframework.data.redis.domain.geo.Metrics;
 import site.benepay.common.util.RedisKeys;
 import site.benepay.domain.bookmark.mapper.BookmarkMapper;
 import site.benepay.domain.bookmark.vo.Bookmark;
+import site.benepay.domain.merchant.mapper.MerchantMapper;
+import site.benepay.domain.merchant.vo.Merchant;
 import site.benepay.domain.notification.dto.PushNotificationMessage;
 import site.benepay.domain.notification.service.NotificationHistoryStore;
 import site.benepay.domain.notification.service.PushNotificationSender;
@@ -44,6 +49,9 @@ class NearbyBookmarkedMerchantPushHandlerTest {
 
 	@Mock
 	private BookmarkMapper bookmarkMapper;
+
+	@Mock
+	private MerchantMapper merchantMapper;
 
 	@Mock
 	private StringRedisTemplate redisTemplate;
@@ -65,11 +73,24 @@ class NearbyBookmarkedMerchantPushHandlerTest {
 	@BeforeEach
 	void setUp() {
 		handler = new NearbyBookmarkedMerchantPushHandler(
-			bookmarkMapper, redisTemplate, pushNotificationSender, notificationHistoryStore);
+			bookmarkMapper, merchantMapper, redisTemplate, pushNotificationSender, notificationHistoryStore);
 	}
 
 	private Bookmark bookmark(Long merchantId) {
 		return Bookmark.builder().bookmarkId(1L).userId(USER_ID).merchantId(merchantId).build();
+	}
+
+	private Merchant merchant(Long merchantId, String merchantName) {
+		return Merchant.builder()
+			.merchantId(merchantId)
+			.categoryCode("5311")
+			.brandId(1L)
+			.merchantCode("M-" + merchantId)
+			.merchantName(merchantName)
+			.address("서울시 강남구")
+			.latitude(BigDecimal.valueOf(LAT))
+			.longitude(BigDecimal.valueOf(LNG))
+			.build();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -115,6 +136,36 @@ class NearbyBookmarkedMerchantPushHandlerTest {
 			eq(USER_ID), eq(NotificationType.NEARBY_MERCHANT), anyString(), anyString(), eq(MERCHANT_ID));
 		verify(valueOperations).set(eq(RedisKeys.nearbyMerchantFlag(USER_ID, MERCHANT_ID)), anyString(),
 			eq(Duration.ofDays(1)));
+	}
+
+	@Test
+	void pushBodyIncludesTheMerchantNameInsteadOfTheGenericPhrase() {
+		when(bookmarkMapper.findActiveByUserId(USER_ID)).thenReturn(List.of(bookmark(MERCHANT_ID)));
+		stubGeoSearch(geoResultsWithin(MERCHANT_ID));
+		when(redisTemplate.hasKey(RedisKeys.nearbyMerchantFlag(USER_ID, MERCHANT_ID))).thenReturn(false);
+		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+		when(merchantMapper.findByMerchantId(MERCHANT_ID)).thenReturn(Optional.of(merchant(MERCHANT_ID, "스타벅스 강남점")));
+
+		handler.handle(new UserLocationUpdatedEvent(USER_ID, LAT, LNG));
+
+		ArgumentCaptor<PushNotificationMessage> captor = ArgumentCaptor.forClass(PushNotificationMessage.class);
+		verify(pushNotificationSender).send(captor.capture());
+		assertThat(captor.getValue().body()).isEqualTo("스타벅스 강남점 근처에 도착했어요. 지금 바로 확인해보세요.");
+	}
+
+	@Test
+	void pushBodyFallsBackToTheGenericPhraseWhenTheMerchantNameIsUnavailable() {
+		when(bookmarkMapper.findActiveByUserId(USER_ID)).thenReturn(List.of(bookmark(MERCHANT_ID)));
+		stubGeoSearch(geoResultsWithin(MERCHANT_ID));
+		when(redisTemplate.hasKey(RedisKeys.nearbyMerchantFlag(USER_ID, MERCHANT_ID))).thenReturn(false);
+		when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+		when(merchantMapper.findByMerchantId(MERCHANT_ID)).thenReturn(Optional.empty());
+
+		handler.handle(new UserLocationUpdatedEvent(USER_ID, LAT, LNG));
+
+		ArgumentCaptor<PushNotificationMessage> captor = ArgumentCaptor.forClass(PushNotificationMessage.class);
+		verify(pushNotificationSender).send(captor.capture());
+		assertThat(captor.getValue().body()).isEqualTo("저장해둔 매장 근처에 도착했어요. 지금 바로 확인해보세요.");
 	}
 
 	@Test
