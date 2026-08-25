@@ -1,6 +1,8 @@
 package site.benepay.domain.card.service;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -8,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import site.benepay.domain.card.mapper.CardMapper;
+import site.benepay.domain.card.vo.CardIdByProductCodeVO;
 import site.benepay.domain.card.vo.UserCardVO;
 import site.benepay.integration.kbcard.dto.KbCardResponseDto;
 
@@ -36,6 +39,18 @@ public class CardRegistrationService {
 		boolean primaryCardExists =
 			cardMapper.existsPrimaryCardByUserId(userId);
 
+		// 카드마다 findCardIdByIssuerProductCode를 반복 호출하는 대신, 대상 상품 코드를
+		// 모아 한 번에 조회한다. INSERT는 동시성 안전을 위해(아래 NOT EXISTS 참고) 여전히
+		// 건별로 하지만, 읽기 쪽 N+1은 여기서 없앤다.
+		List<String> linkableProductCodes = cards.stream()
+			.filter(this::isLinkable)
+			.map(KbCardResponseDto::getProductCode)
+			.distinct()
+			.toList();
+		Map<String, Long> cardIdByProductCode = cardMapper.findCardIdsByIssuerProductCodes(linkableProductCodes)
+			.stream()
+			.collect(Collectors.toMap(CardIdByProductCodeVO::getIssuerProductCode, CardIdByProductCodeVO::getCardId));
+
 		int insertedCount = 0;
 
 		for (KbCardResponseDto kbCard : cards) {
@@ -51,9 +66,7 @@ public class CardRegistrationService {
 				continue;
 			}
 
-			Long cardId = cardMapper
-				.findCardIdByIssuerProductCode(kbCard.getProductCode())
-				.orElse(null);
+			Long cardId = cardIdByProductCode.get(kbCard.getProductCode());
 
 			if (cardId == null) {
 				/*

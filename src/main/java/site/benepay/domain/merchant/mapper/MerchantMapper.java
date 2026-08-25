@@ -11,6 +11,11 @@ public interface MerchantMapper {
 
 	List<Merchant> findAll(@Param("categoryCode") String categoryCode);
 
+	// GET /api/v1/merchants(목록 조회)용. findAll은 GEO 인덱스 재구축(MerchantGeoSyncScheduler)이
+	// 전체 매장을 필요로 해서 건드리지 않고, 클라이언트가 매번 2만 건+ 전체를 받아가지 않도록
+	// 별도로 LIMIT을 건 조회를 둔다.
+	List<Merchant> findLimited(@Param("categoryCode") String categoryCode, @Param("limit") int limit);
+
 	Optional<Merchant> findByMerchantId(@Param("merchantId") Long merchantId);
 
 	// Redis GEO 검색(MerchantGeoQueryService)이 반경 검색으로 이미 추려낸 merchantId들의 상세

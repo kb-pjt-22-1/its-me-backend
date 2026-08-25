@@ -60,7 +60,7 @@ class PaymentControllerTest {
 	void getPaymentReturnsOkWithTheServiceResult() {
 		PaymentHistoryResponseDto found =
 			PaymentHistoryResponseDto.builder().paymentId(PAYMENT_ID).paymentStatus("APPROVED").build();
-		when(paymentService.getPayment(PAYMENT_ID)).thenReturn(found);
+		when(paymentService.getPayment(USER_ID, PAYMENT_ID)).thenReturn(found);
 
 		ResponseEntity<PaymentHistoryResponseDto> response = controller.getPayment(USER_ID, PAYMENT_ID);
 

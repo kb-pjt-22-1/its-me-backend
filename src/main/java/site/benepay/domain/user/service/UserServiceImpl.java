@@ -1,6 +1,5 @@
 package site.benepay.domain.user.service;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 
@@ -183,8 +182,8 @@ public class UserServiceImpl implements UserService {
 
 		User user = findActiveUser(userId);
 		if (!passwordEncoder.matches(currentPassword, user.getLoginPasswordHash())) {
-			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, 5, Duration.ofMinutes(10),
-				Duration.ofMinutes(30));
+			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, LoginAttemptPolicy.MAX_ATTEMPTS,
+				LoginAttemptPolicy.FAILURE_WINDOW, LoginAttemptPolicy.PASSWORD_REVERIFY_LOCK_DURATION);
 			throw new InvalidCredentialsException("현재 비밀번호가 일치하지 않습니다.");
 		}
 		redisLockoutService.clearFailuresAndLock(failureKey, lockKey);
@@ -236,8 +235,8 @@ public class UserServiceImpl implements UserService {
 
 		User user = findActiveUser(userId);
 		if (user.getPinHash() == null || !passwordEncoder.matches(currentPin, user.getPinHash())) {
-			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, 5, Duration.ofMinutes(10),
-				Duration.ofSeconds(30));
+			redisLockoutService.recordFailureAndMaybeLock(failureKey, lockKey, LoginAttemptPolicy.MAX_ATTEMPTS,
+				LoginAttemptPolicy.FAILURE_WINDOW, LoginAttemptPolicy.PIN_REVERIFY_LOCK_DURATION);
 			throw new InvalidCredentialsException("PIN이 일치하지 않습니다.");
 		}
 		redisLockoutService.clearFailuresAndLock(failureKey, lockKey);

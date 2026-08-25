@@ -6,7 +6,7 @@ import site.benepay.domain.payment.dto.PaymentHistoryResponseDto;
 
 public interface PaymentService {
 
-	PaymentHistoryResponseDto getPayment(Long paymentId);
+	PaymentHistoryResponseDto getPayment(Long userId, Long paymentId);
 
 	// yearMonth(yyyyMM)가 있으면 그 달만, null/빈 문자열이면 전체 내역을 반환한다.
 	List<PaymentHistoryResponseDto> getPaymentHistory(Long userId, String yearMonth);

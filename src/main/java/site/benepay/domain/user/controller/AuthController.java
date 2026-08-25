@@ -5,12 +5,13 @@ import javax.validation.Valid;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import lombok.RequiredArgsConstructor;
 import site.benepay.common.util.TokenExtractor;
 import site.benepay.domain.user.dto.LoginRequestDto;
 import site.benepay.domain.user.dto.LoginResponseDto;
@@ -27,18 +28,12 @@ import site.benepay.domain.user.service.UserService;
 
 @RestController
 @RequestMapping("/api/auth")
+@RequiredArgsConstructor
 public class AuthController {
 
 	private final UserService userService;
 	private final AuthService authService;
 	private final SignupIdentityService signupIdentityService;
-
-	public AuthController(UserService userService, AuthService authService,
-		SignupIdentityService signupIdentityService) {
-		this.userService = userService;
-		this.authService = authService;
-		this.signupIdentityService = signupIdentityService;
-	}
 
 	/**
 	 * 회원가입 1단계: 휴대폰 본인인증 - 인증번호 발송. 이름+생년월일+휴대폰번호로 내부 중복
@@ -81,8 +76,7 @@ public class AuthController {
 	}
 
 	@PostMapping("/logout")
-	public ResponseEntity<Void> logout(HttpServletRequest servletRequest) {
-		Long userId = (Long)SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+	public ResponseEntity<Void> logout(@AuthenticationPrincipal Long userId, HttpServletRequest servletRequest) {
 		String accessToken = TokenExtractor.extractBearerToken(servletRequest);
 		authService.logout(accessToken, userId);
 		return ResponseEntity.noContent().build();

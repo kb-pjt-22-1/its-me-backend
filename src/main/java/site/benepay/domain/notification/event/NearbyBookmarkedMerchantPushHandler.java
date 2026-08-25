@@ -90,6 +90,12 @@ public class NearbyBookmarkedMerchantPushHandler {
 		GeoResults<GeoLocation<String>> geoResults =
 			redisTemplate.opsForGeo().search(RedisKeys.MERCHANT_GEO_ALL, reference, shape, args);
 
+		// GeoOperations.search()는 merchants:geo:all 키가 아직 없으면(신규 환경, 혹은 flush 직후)
+		// null을 돌려준다 - MerchantGeoQueryService.search()가 동일한 케이스를 이미 방어하고 있다.
+		if (geoResults == null) {
+			return Set.of();
+		}
+
 		return geoResults.getContent().stream()
 			.map(GeoResult::getContent)
 			.map(GeoLocation::getName)

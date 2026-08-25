@@ -72,7 +72,7 @@ class MerchantControllerTest {
 
 	@Test
 	void getMerchantsReturnsOkWithBody() throws Exception {
-		when(merchantService.getMerchants(null)).thenReturn(List.of(merchantResponse()));
+		when(merchantService.getMerchants(eq(null), anyInt())).thenReturn(List.of(merchantResponse()));
 
 		MvcResult result = mockMvc.perform(get("/api/v1/merchants"))
 			.andExpect(status().isOk())
@@ -85,12 +85,12 @@ class MerchantControllerTest {
 
 	@Test
 	void getMerchantsPassesCategoryCodeWhenProvided() throws Exception {
-		when(merchantService.getMerchants("5812")).thenReturn(List.of(merchantResponse()));
+		when(merchantService.getMerchants(eq("5812"), anyInt())).thenReturn(List.of(merchantResponse()));
 
 		mockMvc.perform(get("/api/v1/merchants").param("categoryCode", "5812"))
 			.andExpect(status().isOk());
 
-		verify(merchantService).getMerchants("5812");
+		verify(merchantService).getMerchants(eq("5812"), anyInt());
 	}
 
 	// ---- GET /api/v1/merchants/{merchantId} ----

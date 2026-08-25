@@ -1,7 +1,7 @@
 package site.benepay.domain.recommendation.controller;
 
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,10 +30,9 @@ public class RecommendationController {
 	 */
 	@GetMapping("/merchants/{merchantId}/cards")
 	public ResponseEntity<MerchantCardRecommendationResponseDto> getCardRecommendations(
+		@AuthenticationPrincipal Long userId,
 		@PathVariable Long merchantId
 	) {
-		Long userId = getAuthenticatedUserId();
-
 		return ResponseEntity.ok(facade.getCardRecommendations(userId, merchantId));
 	}
 
@@ -45,12 +44,11 @@ public class RecommendationController {
 	 */
 	@GetMapping("/today")
 	public ResponseEntity<TodayCardRecommendationResponseDto> getTodayCardRecommendation(
+		@AuthenticationPrincipal Long userId,
 		@RequestParam double lat,
 		@RequestParam double lng
 	) {
 		GeoCoordinateValidator.validate(lat, lng);
-
-		Long userId = getAuthenticatedUserId();
 
 		return ResponseEntity.ok(facade.getTodayCardRecommendation(userId, lat, lng));
 	}
@@ -63,10 +61,4 @@ public class RecommendationController {
 	 * 위 getTodayCardRecommendation도 같은 원칙을 따른다 - 이 컨트롤러(추천 도메인)는
 	 * 매장 도메인을 모르므로 후보 조회는 Facade 안에서 하고, 여긴 Facade에만 의존한다.
 	 */
-
-	private Long getAuthenticatedUserId() {
-		return (Long)SecurityContextHolder.getContext()
-			.getAuthentication()
-			.getPrincipal();
-	}
 }
