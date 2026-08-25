@@ -3,6 +3,7 @@ package site.benepay.domain.recommendation.engine;
 import static org.assertj.core.api.Assertions.*;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -243,6 +244,97 @@ class BenefitEngineTest {
 		PerformanceTier active = BenefitEngine.activeTier(tiers, 50_000);
 
 		assertThat(active.tierName()).isEqualTo("1구간");
+	}
+
+	// ---------------------------------------------------------------- 신규 카드 실적 유예기간
+
+	private static List<PerformanceTier> tieredCardWithGraceTarget() {
+		return List.of(
+			new PerformanceTier(null, "0구간", 0, 299_999L, null, null, List.of()),
+			new PerformanceTier("TIER_1", "1구간", 300_000, null, null, null,
+				List.of(rateBenefit(CAFE, 5, null, 0)))
+		);
+	}
+
+	@Test
+	void graceTierAppliesWhenCardHasNoPreviousMonthSpendingAndIsWithinTheGraceWindow() {
+		List<PerformanceTier> tiers = tieredCardWithGraceTarget();
+		GracePeriod gracePeriod = new GracePeriod(true, false, "TIER_1");
+
+		// 8월에 발급된 카드, 8월 조회(발급월 자체) - 전월 실적 0이면 원래는 0구간.
+		PerformanceTier result = BenefitEngine.activeTierWithGracePeriod(
+			tiers, 0L, gracePeriod, YearMonth.of(2026, 8), YearMonth.of(2026, 8)
+		);
+
+		assertThat(result.tierName()).isEqualTo("1구간");
+	}
+
+	@Test
+	void graceTierStillAppliesInTheMonthAfterIssuance() {
+		List<PerformanceTier> tiers = tieredCardWithGraceTarget();
+		GracePeriod gracePeriod = new GracePeriod(true, false, "TIER_1");
+
+		// "최초 카드 사용등록일부터 다음 달 말일까지" - 발급월 다음 달까지는 유예기간 안이다.
+		PerformanceTier result = BenefitEngine.activeTierWithGracePeriod(
+			tiers, 0L, gracePeriod, YearMonth.of(2026, 8), YearMonth.of(2026, 9)
+		);
+
+		assertThat(result.tierName()).isEqualTo("1구간");
+	}
+
+	@Test
+	void graceTierNoLongerAppliesTwoMonthsAfterIssuance() {
+		List<PerformanceTier> tiers = tieredCardWithGraceTarget();
+		GracePeriod gracePeriod = new GracePeriod(true, false, "TIER_1");
+
+		PerformanceTier result = BenefitEngine.activeTierWithGracePeriod(
+			tiers, 0L, gracePeriod, YearMonth.of(2026, 8), YearMonth.of(2026, 10)
+		);
+
+		assertThat(result.tierName()).isEqualTo("0구간");
+	}
+
+	@Test
+	void graceTierDoesNotDowngradeATierAlreadyEarnedByRealSpending() {
+		List<PerformanceTier> tiers = List.of(
+			new PerformanceTier(null, "0구간", 0, 299_999L, null, null, List.of()),
+			new PerformanceTier("TIER_1", "1구간", 300_000, 999_999L, null, null,
+				List.of(rateBenefit(CAFE, 5, null, 0))),
+			new PerformanceTier("TIER_2", "2구간", 1_000_000, null, null, null,
+				List.of(rateBenefit(CAFE, 10, null, 0)))
+		);
+		GracePeriod gracePeriod = new GracePeriod(true, false, "TIER_1");
+
+		// 전월 실적으로 이미 2구간을 확보했으면, 유예기간의 1구간으로 낮추면 안 된다.
+		PerformanceTier result = BenefitEngine.activeTierWithGracePeriod(
+			tiers, 1_200_000L, gracePeriod, YearMonth.of(2026, 8), YearMonth.of(2026, 8)
+		);
+
+		assertThat(result.tierName()).isEqualTo("2구간");
+	}
+
+	@Test
+	void graceTierDoesNotApplyWhenMinimumSpendingIsRequired() {
+		List<PerformanceTier> tiers = tieredCardWithGraceTarget();
+		GracePeriod gracePeriod = new GracePeriod(true, true, "TIER_1"); // minimumSpendingRequired=true
+
+		PerformanceTier result = BenefitEngine.activeTierWithGracePeriod(
+			tiers, 0L, gracePeriod, YearMonth.of(2026, 8), YearMonth.of(2026, 8)
+		);
+
+		assertThat(result.tierName()).isEqualTo("0구간");
+	}
+
+	@Test
+	void graceTierDoesNotApplyWhenCardIssuedYearMonthIsUnknown() {
+		List<PerformanceTier> tiers = tieredCardWithGraceTarget();
+		GracePeriod gracePeriod = new GracePeriod(true, false, "TIER_1");
+
+		PerformanceTier result = BenefitEngine.activeTierWithGracePeriod(
+			tiers, 0L, gracePeriod, null, YearMonth.of(2026, 8)
+		);
+
+		assertThat(result.tierName()).isEqualTo("0구간");
 	}
 
 	// ---------------------------------------------------------------- 리터당 할인

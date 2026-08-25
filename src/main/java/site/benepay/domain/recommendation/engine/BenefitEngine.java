@@ -45,6 +45,39 @@ public final class BenefitEngine {
 			.orElseThrow();
 	}
 
+	/**
+	 * activeTier에 신규 카드 실적 유예기간을 반영한다. cards.benefits_info의 gracePeriod가
+	 * "최초 카드 사용등록일부터 다음 달 말일까지"라고 문서화한 대로, 카드 발급월과 그 다음 달
+	 * 동안은 gracePeriod.minimumSpendingRequired가 false면 전월 실적과 무관하게
+	 * applicableBenefitNodeId 구간의 혜택을 받을 수 있다. 이 규칙이 카드 데이터에는
+	 * 있었지만 실제로 어디서도 적용되지 않고 있었다 - 방금 발급받은 카드는 전월 실적이
+	 * 0이라 activeTier가 항상 0구간(혜택 없음)으로 떨어졌다.
+	 *
+	 * <p>실적으로 이미 유예기간 구간 이상을 확보했다면 낮추지 않는다(둘 중 minimumSpending이
+	 * 더 높은 구간을 쓴다).</p>
+	 */
+	public static PerformanceTier activeTierWithGracePeriod(
+		List<PerformanceTier> tiers, long prevMonthSpend, GracePeriod gracePeriod,
+		YearMonth cardIssuedYearMonth, YearMonth targetYearMonth
+	) {
+		PerformanceTier normal = activeTier(tiers, prevMonthSpend);
+		if (!gracePeriod.available() || gracePeriod.minimumSpendingRequired() || cardIssuedYearMonth == null) {
+			return normal;
+		}
+
+		boolean withinGracePeriod = !targetYearMonth.isBefore(cardIssuedYearMonth)
+			&& !targetYearMonth.isAfter(cardIssuedYearMonth.plusMonths(1));
+		if (!withinGracePeriod) {
+			return normal;
+		}
+
+		return tiers.stream()
+			.filter(t -> t.benefitNodeId() != null && t.benefitNodeId().equals(gracePeriod.applicableBenefitNodeId()))
+			.findFirst()
+			.filter(graceTier -> graceTier.minimumSpending() > normal.minimumSpending())
+			.orElse(normal);
+	}
+
 	public static double effectiveRate(BenefitNode b, boolean weekend, double fuelPricePerLiter) {
 		if (PER_LITER_METHODS.contains(b.discountMethod())) {
 			long perLiter = weekend ? b.weekendDiscountPerLiter() : b.weekdayDiscountPerLiter();

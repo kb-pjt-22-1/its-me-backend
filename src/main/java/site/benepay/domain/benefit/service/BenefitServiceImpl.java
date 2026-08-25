@@ -68,6 +68,7 @@ import site.benepay.domain.recommendation.dto.RecommendedCardResponseDto;
 import site.benepay.domain.recommendation.engine.BenefitEngine;
 import site.benepay.domain.recommendation.engine.BenefitJsonParser;
 import site.benepay.domain.recommendation.engine.BenefitNode;
+import site.benepay.domain.recommendation.engine.GracePeriod;
 import site.benepay.domain.recommendation.engine.PerformanceTier;
 import site.benepay.domain.recommendation.engine.RecommendationParamsLoader;
 
@@ -1714,8 +1715,18 @@ public class BenefitServiceImpl implements BenefitService {
 				? 0L
 				: card.getPreviousMonthSpendingAmount();
 
+		GracePeriod gracePeriod =
+			BenefitJsonParser.parseGracePeriod(card.getBenefitsInfo(), objectMapper);
+
+		YearMonth cardIssuedYearMonth =
+			card.getUserCardCreatedAt() == null
+				? null
+				: YearMonth.from(card.getUserCardCreatedAt());
+
 		PerformanceTier activeTier =
-			BenefitEngine.activeTier(tiers, prevMonthSpend);
+			BenefitEngine.activeTierWithGracePeriod(
+				tiers, prevMonthSpend, gracePeriod, cardIssuedYearMonth, targetYearMonth
+			);
 
 		List<CategoryBenefitStatusResponseDto> statuses =
 			new ArrayList<>();
