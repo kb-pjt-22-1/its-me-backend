@@ -16,7 +16,8 @@
 
     <select id="findCardBenefitContext" resultType="site.benepay.domain.payment.vo.CardBenefitContextVO">
         SELECT c.benefits_info                          AS benefitsInfo,
-               COALESCE(cms.total_spending_amount, 0)    AS previousMonthSpendingAmount
+               COALESCE(cms.total_spending_amount, 0)    AS previousMonthSpendingAmount,
+               uc.created_at                             AS userCardCreatedAt
         FROM user_cards uc
                  INNER JOIN cards c
                             ON c.card_id = uc.card_id

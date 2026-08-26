@@ -1,5 +1,7 @@
 package site.benepay.domain.benefit.vo;
 
+import java.time.LocalDateTime;
+
 import lombok.Getter;
 import lombok.Setter;
 
@@ -22,4 +24,10 @@ public class HeldCardBenefitVO {
 	 * 이번 달 적용 중인 혜택 구간을 정한다(추천 도메인 모드 3과 동일 규약).
 	 */
 	private Long previousMonthSpendingAmount;
+
+	/**
+	 * 카드 등록 일시. 신규 카드 실적 유예기간(gracePeriod) 대상인지(카드 등록월+다음달인지)
+	 * 판단하는 기준이다 - BenefitEngine.activeTierWithGracePeriod 참고.
+	 */
+	private LocalDateTime userCardCreatedAt;
 }

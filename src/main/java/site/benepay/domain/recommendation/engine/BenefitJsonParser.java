@@ -44,6 +44,31 @@ public final class BenefitJsonParser {
 		}
 	}
 
+	/**
+	 * performanceTiers[]와 형제 필드인 최상위 gracePeriod 객체를 읽는다. 없거나 형식이
+	 * 잘못됐으면 "유예기간 없음"으로 취급한다(parse()가 잘못된 JSON을 혜택 없음으로
+	 * 취급하는 것과 동일한 관용 처리).
+	 */
+	public static GracePeriod parseGracePeriod(String benefitsInfoJson, ObjectMapper objectMapper) {
+		if (benefitsInfoJson == null || benefitsInfoJson.isBlank()) {
+			return GracePeriod.NONE;
+		}
+
+		try {
+			JsonNode node = objectMapper.readTree(benefitsInfoJson).path("gracePeriod");
+			if (!node.isObject()) {
+				return GracePeriod.NONE;
+			}
+			return new GracePeriod(
+				node.path("available").asBoolean(false),
+				node.path("minimumSpendingRequired").asBoolean(true),
+				textOrNull(node, "applicableBenefitNodeId")
+			);
+		} catch (JsonProcessingException e) {
+			return GracePeriod.NONE;
+		}
+	}
+
 	private static PerformanceTier parseTier(JsonNode tierNode) {
 		List<BenefitNode> benefits = new ArrayList<>();
 		for (JsonNode benefitNode : tierNode.path("benefits")) {

@@ -116,4 +116,25 @@ class BenefitJsonParserTest {
 
 		assertThat(benefit.discountRate()).isEqualTo(10.0);
 	}
+
+	@Test
+	void parseGracePeriodReturnsNoneForNullOrBlankOrMissingObject() {
+		assertThat(BenefitJsonParser.parseGracePeriod(null, objectMapper)).isEqualTo(GracePeriod.NONE);
+		assertThat(BenefitJsonParser.parseGracePeriod("", objectMapper)).isEqualTo(GracePeriod.NONE);
+		assertThat(BenefitJsonParser.parseGracePeriod("{}", objectMapper)).isEqualTo(GracePeriod.NONE);
+		assertThat(BenefitJsonParser.parseGracePeriod("이건 json이 아니다 {", objectMapper)).isEqualTo(GracePeriod.NONE);
+	}
+
+	@Test
+	void parseGracePeriodReadsTheTopLevelObjectAsASiblingOfPerformanceTiers() {
+		String json = "{\"performanceTiers\":[],\"gracePeriod\":{"
+			+ "\"available\":true,\"minimumSpendingRequired\":false,"
+			+ "\"applicableBenefitNodeId\":\"MY_FIT_DISCOUNT_TIER_1\"}}";
+
+		GracePeriod gracePeriod = BenefitJsonParser.parseGracePeriod(json, objectMapper);
+
+		assertThat(gracePeriod.available()).isTrue();
+		assertThat(gracePeriod.minimumSpendingRequired()).isFalse();
+		assertThat(gracePeriod.applicableBenefitNodeId()).isEqualTo("MY_FIT_DISCOUNT_TIER_1");
+	}
 }

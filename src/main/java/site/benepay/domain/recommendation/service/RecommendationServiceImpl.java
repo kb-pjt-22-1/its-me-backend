@@ -30,6 +30,7 @@ import site.benepay.domain.recommendation.engine.BenefitEngine;
 import site.benepay.domain.recommendation.engine.BenefitJsonParser;
 import site.benepay.domain.recommendation.engine.BenefitNode;
 import site.benepay.domain.recommendation.engine.BenefitUsage;
+import site.benepay.domain.recommendation.engine.GracePeriod;
 import site.benepay.domain.recommendation.engine.Mode3Result;
 import site.benepay.domain.recommendation.engine.PerformanceTier;
 import site.benepay.domain.recommendation.engine.RecommendationParams;
@@ -111,6 +112,11 @@ public class RecommendationServiceImpl implements RecommendationService {
 				candidate -> candidate,
 				candidate -> BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper)
 			));
+		Map<RecommendationCardCandidateVO, GracePeriod> parsedGracePeriods = heldCards.stream()
+			.collect(Collectors.toMap(
+				candidate -> candidate,
+				candidate -> BenefitJsonParser.parseGracePeriod(candidate.getBenefitsInfo(), objectMapper)
+			));
 		RecommendationParams params = personalizeParams(heldCards, parsedTiers);
 
 		if (categoryName == null) {
@@ -135,7 +141,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.map(candidate -> Map.entry(candidate, typicalAmount == null
 				? new Mode3Result(0L, 0.0, 0.0, 0.0, 0.0, 0L, 0L, 0.0, "이 카테고리 통상 결제액 기준이 없어 비교할 수 없음", null)
 				: scorePriority(candidate, categoryCode, merchantName, categoryName, typicalAmount,
-					walletSpendHistory, parsedTiers.get(candidate),
+					walletSpendHistory, parsedTiers.get(candidate), parsedGracePeriods.get(candidate),
 					usageByCard.getOrDefault(candidate.getUserCardId(), Map.of()), params)))
 			.toList();
 
@@ -222,6 +228,11 @@ public class RecommendationServiceImpl implements RecommendationService {
 				candidate -> candidate,
 				candidate -> BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper)
 			));
+		Map<RecommendationCardCandidateVO, GracePeriod> parsedGracePeriods = heldCards.stream()
+			.collect(Collectors.toMap(
+				candidate -> candidate,
+				candidate -> BenefitJsonParser.parseGracePeriod(candidate.getBenefitsInfo(), objectMapper)
+			));
 
 		Map<String, Long> walletSpendHistory = aggregateWalletSpendHistory(heldCards);
 		Map<Long, Map<String, BenefitUsage>> usageByCard = loadUsageByCard(userId);
@@ -237,7 +248,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		}
 
 		WalletBestPick best = findWalletBestPick(heldCards, categoryNames, typicalAmountByCategory, walletSpendHistory,
-			parsedTiers, usageByCard, params);
+			parsedTiers, parsedGracePeriods, usageByCard, params);
 
 		if (best == null) {
 			return TodayCardRecommendationResponseDto.empty();
@@ -250,6 +261,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 				best.card(), merchant.getCategoryCode(), merchant.getMerchantName(),
 				categoryNames.get(merchant.getCategoryCode()),
 				typicalAmountByCategory.get(merchant.getCategoryCode()), walletSpendHistory, bestCardTiers,
+				parsedGracePeriods.get(best.card()),
 				usageByCard.getOrDefault(best.card().getUserCardId(), Map.of()), params
 			)))
 			.filter(entry -> entry.getValue().total() > 0)
@@ -296,6 +308,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		Map<String, Long> typicalAmountByCategory,
 		Map<String, Long> walletSpendHistory,
 		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers,
+		Map<RecommendationCardCandidateVO, GracePeriod> parsedGracePeriods,
 		Map<Long, Map<String, BenefitUsage>> usageByCard,
 		RecommendationParams params
 	) {
@@ -307,7 +320,8 @@ public class RecommendationServiceImpl implements RecommendationService {
 				// 매장이 특정되지 않은 지갑 전체 기준 계산이라 merchantName=null - MERCHANT_BRAND
 				// 혜택도 "이 카테고리 어딘가에서는 유리하다"는 잠재력으로는 그대로 반영한다.
 				Mode3Result result = scorePriority(candidate, categoryCode, null, categoryNames.get(categoryCode),
-					category.getValue(), walletSpendHistory, parsedTiers.get(candidate), usage, params);
+					category.getValue(), walletSpendHistory, parsedTiers.get(candidate),
+					parsedGracePeriods.get(candidate), usage, params);
 				if (result.total() > 0 && (best == null || result.total() > best.result().total())) {
 					best = new WalletBestPick(candidate, categoryCode, result);
 				}
@@ -346,6 +360,11 @@ public class RecommendationServiceImpl implements RecommendationService {
 				candidate -> candidate,
 				candidate -> BenefitJsonParser.parse(candidate.getBenefitsInfo(), objectMapper)
 			));
+		Map<RecommendationCardCandidateVO, GracePeriod> parsedGracePeriods = heldCards.stream()
+			.collect(Collectors.toMap(
+				candidate -> candidate,
+				candidate -> BenefitJsonParser.parseGracePeriod(candidate.getBenefitsInfo(), objectMapper)
+			));
 		// 보유 카드가 없으면 findTopCards가 곧바로 EMPTY를 반환해 params를 아예 안 쓰므로,
 		// 그 경우엔 개인화 계산(recommendationParamsLoader.params() 조회 포함)을 건너뛴다.
 		RecommendationParams params = heldCards.isEmpty() ? null : personalizeParams(heldCards, parsedTiers);
@@ -357,7 +376,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 
 		return merchants.stream()
 			.map(merchant -> toOptimalCardRecommendation(merchant, heldCards, categoryNames, walletSpendHistory,
-				parsedTiers, usageByCard, params))
+				parsedTiers, parsedGracePeriods, usageByCard, params))
 			.toList();
 	}
 
@@ -427,6 +446,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		Map<String, String> categoryNames,
 		Map<String, Long> walletSpendHistory,
 		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers,
+		Map<RecommendationCardCandidateVO, GracePeriod> parsedGracePeriods,
 		Map<Long, Map<String, BenefitUsage>> usageByCard,
 		RecommendationParams params
 	) {
@@ -434,7 +454,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		TopCardsResult topCardsResult = categoryName == null
 			? TopCardsResult.EMPTY
 			: findTopCards(heldCards, merchant.getCategoryCode(), merchant.getMerchantName(), categoryName,
-			walletSpendHistory, parsedTiers, usageByCard, params);
+			walletSpendHistory, parsedTiers, parsedGracePeriods, usageByCard, params);
 
 		// note()는 계산 근거를 전부 푸는 디버그용 문구라 UI에 그대로 노출하면 안 된다 -
 		// shortDescription()이 "카페 10% 할인 · 최대 1,000원"처럼 한 줄 노출용으로 정리된 값이다.
@@ -483,6 +503,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		String categoryName,
 		Map<String, Long> walletSpendHistory,
 		Map<RecommendationCardCandidateVO, List<PerformanceTier>> parsedTiers,
+		Map<RecommendationCardCandidateVO, GracePeriod> parsedGracePeriods,
 		Map<Long, Map<String, BenefitUsage>> usageByCard,
 		RecommendationParams params
 	) {
@@ -499,7 +520,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 			.map(candidate -> Map.entry(
 				candidate,
 				scorePriority(candidate, categoryCode, merchantName, categoryName, typicalAmount, walletSpendHistory,
-					parsedTiers.get(candidate),
+					parsedTiers.get(candidate), parsedGracePeriods.get(candidate),
 					usageByCard.getOrDefault(candidate.getUserCardId(), Map.of()), params)
 			))
 			.filter(entry -> entry.getValue().total() > 0)
@@ -557,6 +578,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 		long typicalAmount,
 		Map<String, Long> walletSpendHistory,
 		List<PerformanceTier> tiers,
+		GracePeriod gracePeriod,
 		Map<String, BenefitUsage> usageByServiceName,
 		RecommendationParams params
 	) {
@@ -564,11 +586,13 @@ public class RecommendationServiceImpl implements RecommendationService {
 			candidate.getSpendHistory() == null ? Collections.emptyMap() : candidate.getSpendHistory();
 		long prevMonthSpend = spendHistory.isEmpty() ? 0L : spendHistory.get(Collections.max(spendHistory.keySet()));
 		long currentMonthSpend = candidate.getCurrentMonthSpend() == null ? 0L : candidate.getCurrentMonthSpend();
+		YearMonth cardIssuedYearMonth =
+			candidate.getUserCardCreatedAt() == null ? null : YearMonth.from(candidate.getUserCardCreatedAt());
 
 		return BenefitEngine.evaluatePriority(
 			tiers, prevMonthSpend, currentMonthSpend, categoryCode, merchantName, categoryName, typicalAmount,
 			spendHistory, walletSpendHistory, params, LocalDate.now(APP_ZONE),
-			PRIORITY_BETA, usageByServiceName
+			PRIORITY_BETA, usageByServiceName, gracePeriod, cardIssuedYearMonth
 		);
 	}
 

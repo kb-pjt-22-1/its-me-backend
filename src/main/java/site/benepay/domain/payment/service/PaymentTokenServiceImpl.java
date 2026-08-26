@@ -38,6 +38,7 @@ import site.benepay.domain.recommendation.engine.BenefitApplication;
 import site.benepay.domain.recommendation.engine.BenefitEngine;
 import site.benepay.domain.recommendation.engine.BenefitJsonParser;
 import site.benepay.domain.recommendation.engine.BenefitUsage;
+import site.benepay.domain.recommendation.engine.GracePeriod;
 import site.benepay.domain.recommendation.engine.PerformanceTier;
 
 @Service
@@ -164,6 +165,9 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 		}
 
 		List<PerformanceTier> tiers = BenefitJsonParser.parse(context.getBenefitsInfo(), objectMapper);
+		GracePeriod gracePeriod = BenefitJsonParser.parseGracePeriod(context.getBenefitsInfo(), objectMapper);
+		YearMonth cardIssuedYearMonth =
+			context.getUserCardCreatedAt() == null ? null : YearMonth.from(context.getUserCardCreatedAt());
 		long prevMonthSpend =
 			context.getPreviousMonthSpendingAmount() == null ? 0L : context.getPreviousMonthSpendingAmount();
 
@@ -172,7 +176,8 @@ public class PaymentTokenServiceImpl implements PaymentTokenService {
 
 		return BenefitEngine.selectPaymentBenefit(
 			tiers, prevMonthSpend, merchant.getCategoryCode(), merchant.getMerchantName(),
-			originalAmount.longValueExact(), usageByServiceName
+			originalAmount.longValueExact(), usageByServiceName,
+			gracePeriod, cardIssuedYearMonth, currentYearMonth
 		);
 	}
 
