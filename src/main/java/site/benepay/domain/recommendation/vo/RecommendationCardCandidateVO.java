@@ -1,5 +1,6 @@
 package site.benepay.domain.recommendation.vo;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 
 import lombok.Getter;
@@ -27,4 +28,8 @@ public class RecommendationCardCandidateVO {
 	private Map<String, Long> spendHistory;
 	// 이번 달 누적 실적(진행 중) - baselineTier/nextTier(gap) 기준.
 	private Long currentMonthSpend;
+	// 카드 등록 일시. 신규 카드 실적 유예기간(gracePeriod) 대상인지 판단하는 기준이다 -
+	// BenefitEngine.activeTierWithGracePeriod 참고. baselineTier/nextTier(다음 달 기준)에는
+	// 적용하지 않는다 - 유예기간은 activeTier(now)에만 반영하기로 한 결정이다.
+	private LocalDateTime userCardCreatedAt;
 }

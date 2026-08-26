@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -110,6 +111,7 @@ class TokenServiceTest {
         verify(eventPublisher, never()).publishEvent(any());
     }
 
+    @Disabled("단일 기기 로그인 제한 임시 비활성화(TokenServiceImpl.issueTokenPair의 displacePreviousSessionIfAny 호출 주석 처리)로 인해 skip - 기능 되돌리면 같이 되돌릴 것")
     @Test
     void issueTokenPairBlacklistsPreviousAccessTokenAndPublishesDisplacementEventWhenPriorSessionExists() throws Exception {
         String previousAccessToken = jwtTokenProvider.generateAccessToken(user);

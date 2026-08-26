@@ -62,7 +62,8 @@ public class TokenServiceImpl implements TokenService {
 		state.refreshToken = refreshToken;
 
 		saveState(user.getUserId(), state);
-		displacePreviousSessionIfAny(user.getUserId(), previousAccessToken);
+		// 단일 기기 로그인 제한 임시 비활성화 - 사용자 요청으로 잠시 꺼둠. 되돌릴 땐 아래 줄만 다시 살리면 됨.
+		// displacePreviousSessionIfAny(user.getUserId(), previousAccessToken);
 
 		return TokenPairDto.builder().accessToken(accessToken).refreshToken(refreshToken).build();
 	}

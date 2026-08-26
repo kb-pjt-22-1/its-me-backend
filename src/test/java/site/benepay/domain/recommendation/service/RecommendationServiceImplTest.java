@@ -133,6 +133,36 @@ class RecommendationServiceImplTest {
 		return vo;
 	}
 
+	/**
+	 * 신규 카드 실적 유예기간(gracePeriod) 대상 카드. spendHistory가 비어있어(prevMonthSpend=0)
+	 * 유예기간이 없다면 0구간(혜택 없음)이어야 하지만, TIER_1에 걸린 gracePeriod와
+	 * userCardCreatedAt(오늘, 발급월)이 있어 이번 달에는 TIER_1 혜택을 받아야 한다.
+	 */
+	private static RecommendationCardCandidateVO gracePeriodCandidate(
+		Long userCardId, String cardName, String categoryCode, double rate
+	) {
+		RecommendationCardCandidateVO vo = new RecommendationCardCandidateVO();
+		vo.setUserCardId(userCardId);
+		vo.setCardId(userCardId);
+		vo.setCardName(cardName);
+		vo.setCardImageUrl("https://example.com/" + userCardId + ".png");
+		vo.setBenefitsInfo(String.format(
+			"{\"performanceTiers\":["
+				+ "{\"minimumSpending\":0,\"benefits\":[]},"
+				+ "{\"benefitNodeId\":\"TIER_1\",\"minimumSpending\":300000,\"benefits\":["
+				+ "{\"serviceName\":\"%s\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":%s,\"minimumPaymentAmount\":0}]}"
+				+ "],\"gracePeriod\":{\"available\":true,\"minimumSpendingRequired\":false,"
+				+ "\"applicableBenefitNodeId\":\"TIER_1\"}}",
+			cardName, categoryCode, rate
+		));
+		vo.setSpendHistory(Map.of());
+		vo.setCurrentMonthSpend(0L);
+		vo.setUserCardCreatedAt(java.time.LocalDateTime.now());
+		return vo;
+	}
+
 	private static MerchantResponseDto merchant(Long merchantId, String categoryCode) {
 		return merchant(merchantId, categoryCode, "스타벅스 강남점");
 	}
@@ -749,6 +779,27 @@ class RecommendationServiceImplTest {
 
 		assertThat(best.isRecommended()).isTrue();
 		assertThat(worst.isRecommended()).isFalse();
+	}
+
+	@Test
+	void getCardRecommendationsAppliesGracePeriodForANewlyIssuedCardWithNoSpendHistory() {
+		RecommendationMerchantVO merchant = new RecommendationMerchantVO();
+		merchant.setMerchantId(MERCHANT_ID);
+		merchant.setMerchantName("스타벅스 강남점");
+		merchant.setCategoryCode(CAFE_CODE);
+		when(recommendationMapper.findMerchantForRecommendation(MERCHANT_ID)).thenReturn(merchant);
+		stubCafeCategory();
+		when(recommendationParamsLoader.params()).thenReturn(paramsWithTypicalAmounts(Map.of("카페", 10_000L)));
+
+		MerchantCardRecommendationResponseDto response = recommendationService.getCardRecommendations(
+			USER_ID, MERCHANT_ID, List.of(gracePeriodCandidate(1L, "신규발급카드", CAFE_CODE, 50))
+		);
+
+		// spendHistory가 비어있어(prevMonthSpend=0) 유예기간이 없었다면 performanceMet=false여야
+		// 하지만, gracePeriod 덕에 이번 달엔 혜택을 받아야 한다.
+		CardBenefitComparisonResponseDto result = response.getCards().get(0);
+		assertThat(result.isPerformanceMet()).isTrue();
+		assertThat(result.getBenefitDescription()).isEqualTo("카페 50% 할인");
 	}
 
 	@Test

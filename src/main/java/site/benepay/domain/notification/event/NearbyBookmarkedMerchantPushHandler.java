@@ -24,6 +24,8 @@ import lombok.extern.slf4j.Slf4j;
 import site.benepay.common.util.RedisKeys;
 import site.benepay.domain.bookmark.mapper.BookmarkMapper;
 import site.benepay.domain.bookmark.vo.Bookmark;
+import site.benepay.domain.merchant.mapper.MerchantMapper;
+import site.benepay.domain.merchant.vo.Merchant;
 import site.benepay.domain.notification.dto.PushNotificationMessage;
 import site.benepay.domain.notification.service.NotificationHistoryStore;
 import site.benepay.domain.notification.service.PushNotificationSender;
@@ -53,6 +55,7 @@ public class NearbyBookmarkedMerchantPushHandler {
 	private static final Duration SAFETY_TTL = Duration.ofDays(1);
 
 	private final BookmarkMapper bookmarkMapper;
+	private final MerchantMapper merchantMapper;
 	private final StringRedisTemplate redisTemplate;
 	private final PushNotificationSender pushNotificationSender;
 	private final NotificationHistoryStore notificationHistoryStore;
@@ -111,8 +114,14 @@ public class NearbyBookmarkedMerchantPushHandler {
 			return;
 		}
 
+		// 매장이 그 사이 삭제된 등 극단적인 경우에도 알림 자체는 막지 않도록 이름을 못 찾으면
+		// 기존 문구("저장해둔 매장")로 되돌아간다.
+		String merchantName = merchantMapper.findByMerchantId(merchantId)
+			.map(Merchant::getMerchantName)
+			.orElse("저장해둔 매장");
+
 		String title = "저장한 매장이 근처에 있어요";
-		String body = "저장해둔 매장 근처에 도착했어요. 지금 바로 확인해보세요.";
+		String body = merchantName + " 근처에 도착했어요. 지금 바로 확인해보세요.";
 
 		try {
 			pushNotificationSender.send(new PushNotificationMessage(

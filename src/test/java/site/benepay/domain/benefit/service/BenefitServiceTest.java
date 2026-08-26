@@ -868,6 +868,20 @@ class BenefitServiceTest {
 		return card;
 	}
 
+	private HeldCardBenefitVO heldCard(
+		Long userCardId,
+		String benefitsInfo,
+		Long previousMonthSpendingAmount,
+		LocalDateTime userCardCreatedAt
+	) {
+		HeldCardBenefitVO card =
+			heldCard(userCardId, benefitsInfo, previousMonthSpendingAmount);
+
+		card.setUserCardCreatedAt(userCardCreatedAt);
+
+		return card;
+	}
+
 	private String singleTierBenefitsInfo(
 		String serviceName,
 		String categoryCode,
@@ -903,6 +917,31 @@ class BenefitServiceTest {
 				+ "\"discountRate\":10,\"minimumPaymentAmount\":300000,"
 				+ "\"maximumDiscountAmountPerMonth\":50000,\"monthlyCountLimit\":10}]}"
 				+ "]}",
+			categoryCode,
+			categoryCode
+		);
+	}
+
+	// twoTierBenefitsInfo와 구간/혜택 값은 동일하되, 1구간에 benefitNodeId를 붙이고
+	// gracePeriod로 그 구간을 신규 카드 유예기간 대상으로 지정한다.
+	private String twoTierBenefitsInfoWithGracePeriod(
+		String categoryCode
+	) {
+		return String.format(
+			"{\"performanceTiers\":["
+				+ "{\"minimumSpending\":0,\"benefits\":["
+				+ "{\"serviceName\":\"기본 할인\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":5,\"minimumPaymentAmount\":0,"
+				+ "\"maximumDiscountAmountPerMonth\":10000,\"monthlyCountLimit\":2}]},"
+				+ "{\"benefitNodeId\":\"TIER_1\",\"minimumSpending\":300000,\"benefits\":["
+				+ "{\"serviceName\":\"우수 할인\",\"benefitType\":\"MERCHANT_CATEGORY\","
+				+ "\"categoryCodes\":[\"%s\"],\"discountMethod\":\"STATEMENT_DISCOUNT\","
+				+ "\"discountRate\":10,\"minimumPaymentAmount\":300000,"
+				+ "\"maximumDiscountAmountPerMonth\":50000,\"monthlyCountLimit\":10}]}"
+				+ "],"
+				+ "\"gracePeriod\":{\"available\":true,\"minimumSpendingRequired\":false,"
+				+ "\"applicableBenefitNodeId\":\"TIER_1\"}}",
 			categoryCode,
 			categoryCode
 		);
@@ -1177,6 +1216,55 @@ class BenefitServiceTest {
 
 		assertThat(status.getServiceName()).isEqualTo("우수 할인");
 		assertThat(status.getAmountLimit()).isEqualTo(50_000L);
+	}
+
+	// testuser로 로그인했을 때 "이번 달 받을 수 있는 혜택"이 안 뜨던 문제의 회귀 테스트.
+	// 이번 달 막 발급받은 카드는 전월 실적이 0이라 원래는 0구간(혜택 없음)으로 떨어졌는데,
+	// 카드 자체 benefitsInfo에 이미 "신규 카드는 전월 실적 없어도 1구간 혜택 제공"이라는
+	// gracePeriod가 있으면서도 어디서도 적용되지 않고 있었다.
+	@Test
+	void getCategoryBenefitStatusAppliesGracePeriodTierForANewlyIssuedCardWithNoPreviousMonthSpending() {
+		YearMonth targetYearMonth =
+			YearMonth.of(BASE_YEAR, 8);
+
+		YearMonth previousYearMonth =
+			targetYearMonth.minusMonths(1);
+
+		when(
+			benefitMapper.findHeldCardBenefitsByUserId(
+				USER_ID,
+				previousYearMonth.format(YEAR_MONTH_FORMATTER)
+			)
+		).thenReturn(
+			List.of(
+				heldCard(
+					USER_CARD_ID,
+					twoTierBenefitsInfoWithGracePeriod("5813"),
+					0L, // 전월 실적 없음 - 방금 발급받은 카드
+					targetYearMonth.atDay(23).atStartOfDay() // 이번 달에 발급됨
+				)
+			)
+		);
+
+		when(
+			benefitMapper.findCategoryBenefitUsageByUserId(
+				eq(USER_ID),
+				any(LocalDateTime.class),
+				any(LocalDateTime.class)
+			)
+		).thenReturn(List.of());
+
+		when(merchantCategoryService.getCategoryList()).thenReturn(List.of());
+
+		List<CategoryBenefitStatusResponseDto> result =
+			benefitService.getCategoryBenefitStatus(
+				USER_ID,
+				targetYearMonth.format(YEAR_MONTH_FORMATTER)
+			);
+
+		assertThat(result).hasSize(1);
+		assertThat(result.get(0).getServiceName()).isEqualTo("우수 할인");
+		assertThat(result.get(0).getAmountLimit()).isEqualTo(50_000L);
 	}
 
 	@Test
